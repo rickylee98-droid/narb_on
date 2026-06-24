@@ -251,15 +251,20 @@ def _chunked_forward(Q:           Tensor,
                      alpha:       Optional[Tensor] = None) -> Tensor:  # Phase 5.1 per-head α
     """
     O(N) chunked production forward — FULLY DIFFERENTIABLE training path.
-    §3.6: λ is a live tensor.  Cross-chunk carries are NOT detached so that
-    gradients flow back through all past K/V to q/k/v/out_proj and alpha_logit.
+    §3.6: λ is a live tensor.  Carries NOT detached: full BPTT.
 
-    Carry design — list-of-lists of independent per-class tensors:
-      carry_S_L[l][c] : (B,H,D,d_v)  accumulated out-of-place via `+`
-      carry_z_L[l][c] : (B,H,D)
-    Each class entry is a separate tensor → no shared storage → no version-
-    counter aliasing → no need for .detach() or .clone() on the read side.
-    The decode path (step()) keeps its own detached carries (gradients N/A).
+    Carry layout — ONE stacked tensor per level, all updates out-of-place:
+      carry_S_L[l] : (B, H, n_c, D, d_v)   n_c = 2^(l+1)
+      carry_z_L[l] : (B, H, n_c, D)
+
+    Fast path (T == C, every full chunk):
+      C = 2^L* is divisible by n_c = 2^L for all l < l_star, and
+      base = chunk_idx*C is always divisible by n_c, so cls[t] = t % n_c.
+      Tokens can be grouped by class via a reshape+permute (zero-copy view),
+      then READ and WRITE become ONE batched matmul per level:
+        252 Python/CUDA dispatches → 12  (l_star=6 levels × read + write).
+
+    Slow path (T < C, at most one partial last chunk): per-class fallback.
     """
     B, H, N, d = Q.shape
     d_v = V.shape[-1]
@@ -268,38 +273,36 @@ def _chunked_forward(Q:           Tensor,
     dev = Q.device
 
     Q, K, V = Q.float(), K.float(), V.float()
-    lam = lam.float().to(dev)   # tensor, grad flows
+    lam = lam.float().to(dev)
 
     out_chunks: list = []
     a_idx = torch.arange(C, dtype=torch.int64, device=dev)
 
-    # Intra-chunk prior block (λ-differentiable, computed once).
+    # Intra-chunk prior block (λ-differentiable, computed once for full chunks).
     prior_C = (1.0 - lam) * ones_masked.to(dev) + lam * T_masked.to(dev)  # (C,C)
 
-    # ── Carry state: per-class independent tensors (fully differentiable) ─
-    # carry_S_L[l][c]: (B,H,D,d_v) — accumulated via out-of-place + (no detach).
-    # carry_z_L[l][c]: (B,H,D)     — same.
-    # Global channel uses standard tensors accumulated out-of-place.
+    # Stacked carry tensors — shape (B,H,n_c,D,d_v) and (B,H,n_c,D).
+    # Out-of-place `+` on the full stacked tensor each chunk: autograd-safe,
+    # no clone/detach needed, full BPTT gradient through all past K/V.
     carry_S_g = torch.zeros(B, H, D, d_v, device=dev)
     carry_z_g = torch.zeros(B, H, D,      device=dev)
-    carry_S_L = [[torch.zeros(B, H, D, d_v, device=dev) for _ in range(1 << (l+1))]
-                 for l in range(l_star)]
-    carry_z_L = [[torch.zeros(B, H, D,      device=dev) for _ in range(1 << (l+1))]
-                 for l in range(l_star)]
+    carry_S_L = [torch.zeros(B, H, 1 << (l+1), D, d_v, device=dev) for l in range(l_star)]
+    carry_z_L = [torch.zeros(B, H, 1 << (l+1), D,      device=dev) for l in range(l_star)]
 
     n_chunks = (N + C - 1) // C
 
     for chunk_idx in range(n_chunks):
-        base = chunk_idx * C
-        end  = min(base + C, N)
-        T    = end - base
+        base    = chunk_idx * C
+        end     = min(base + C, N)
+        T       = end - base
+        is_full = (T == C)
 
         Qc = Q[:, :, base:end]
         Kc = K[:, :, base:end]
         Vc = V[:, :, base:end]
 
         # ── (A) Intra-chunk ───────────────────────────────────────────────
-        if T == C:
+        if is_full:
             prior = prior_C
         else:
             ones_T = torch.tril(torch.ones(T, T, device=dev))
@@ -311,41 +314,55 @@ def _chunked_forward(Q:           Tensor,
             f_mat = c0 + c1 * S_mat + c2 * S_mat * S_mat
         else:
             a_bc  = alpha.float().view(1, alpha.shape[0], 1, 1)
-            f_mat = (a_bc * S_mat + 1.0) ** 2                  # (B,H,T,T)
+            f_mat = (a_bc * S_mat + 1.0) ** 2
 
         Omega_intra = f_mat * prior
         num_intra   = torch.matmul(Omega_intra, Vc)            # (B,H,T,d_v)
         den_intra   = Omega_intra.sum(-1)                       # (B,H,T)
 
-        # ── (B) Cross-chunk: fully differentiable accumulation ────────────
+        # ── (B) Cross-chunk READ ──────────────────────────────────────────
         a_T  = a_idx[:T] + base
         PHIq = feature_map(Qc, c0, c1, c2, triu_rows, triu_cols, triu_w,
                            alpha=alpha)                         # (B,H,T,D)
 
-        # Dilated sum λ-free (scalar class index keeps each lookup at
-        # (B,H,D,d_v) = 2.3 MB not 184 MB).  index_add (out-of-place) scatters
-        # per-class results into dil_num without in-place ops on grad tensors.
         dil_num = torch.zeros(B, H, T, d_v, device=dev)
         dil_den = torch.zeros(B, H, T,      device=dev)
+
         for l in range(l_star):
             L     = l + 1
             n_c   = 1 << L
-            cls_l = (a_T % n_c).long()
             coeff = 0.5 ** L
-            for c_val in range(n_c):
-                mask  = (cls_l == c_val)
-                if not mask.any(): continue
-                idx_T  = mask.nonzero(as_tuple=False)[:, 0]   # (T_c,)
-                PHIq_c = PHIq[:, :, mask, :]                   # (B,H,T_c,D)
-                # Independent tensor — no .detach()/.clone() needed:
-                S_c = carry_S_L[l][c_val]                      # (B,H,D,d_v)
-                z_c = carry_z_L[l][c_val]                      # (B,H,D)
-                dn_c = coeff * torch.einsum('bhtd,bhdv->bhtv', PHIq_c, S_c)
-                dz_c = coeff * (PHIq_c * z_c.unsqueeze(2)).sum(-1)
-                dil_num = dil_num + dil_num.new_zeros(B, H, T, d_v).index_add(
-                    2, idx_T, dn_c)
-                dil_den = dil_den + dil_den.new_zeros(B, H, T).index_add(
-                    2, idx_T, dz_c)
+
+            if is_full and n_c <= C:
+                # Fast path: n_c divides C, base%n_c==0 always, so cls[t] = t%n_c.
+                # Group tokens by class via reshape+permute (zero-copy view):
+                # (B,H,C,D) → (B,H,C//n_c,n_c,D) → permute → (B,H,n_c,C//n_c,D)
+                C_nc   = C // n_c
+                PHIq_g = PHIq.reshape(B, H, C_nc, n_c, D).permute(0, 1, 3, 2, 4)
+                # ONE batched matmul per level (was n_c separate Python calls):
+                dn_g   = coeff * torch.matmul(PHIq_g, carry_S_L[l])   # (B,H,n_c,C//n_c,d_v)
+                dz_g   = coeff * (PHIq_g * carry_z_L[l].unsqueeze(-2)).sum(-1)  # (B,H,n_c,C//n_c)
+                # Inverse permute → original token order, no T-sized intermediate
+                dil_num = dil_num + dn_g.permute(0, 1, 3, 2, 4).reshape(B, H, T, d_v)
+                dil_den = dil_den + dz_g.permute(0, 1, 3, 2).reshape(B, H, T)
+            else:
+                # Slow path: partial chunk OR n_c > C (l_star > log2(C), test-only).
+                # Per-class loop — no T-sized intermediates.
+                # Partial last chunk: per-class fallback, no T-sized intermediates.
+                cls_l = (a_T % n_c).long()
+                for c_val in range(n_c):
+                    mask = (cls_l == c_val)
+                    if not mask.any(): continue
+                    idx_T  = mask.nonzero(as_tuple=False)[:, 0]
+                    PHIq_c = PHIq[:, :, mask, :]
+                    S_c    = carry_S_L[l][:, :, c_val, :, :]  # (B,H,D,d_v)
+                    z_c    = carry_z_L[l][:, :, c_val, :]     # (B,H,D)
+                    dn_c   = coeff * torch.einsum('bhtd,bhdv->bhtv', PHIq_c, S_c)
+                    dz_c   = coeff * (PHIq_c * z_c.unsqueeze(2)).sum(-1)
+                    dil_num = dil_num + dil_num.new_zeros(B, H, T, d_v).index_add(
+                        2, idx_T, dn_c)
+                    dil_den = dil_den + dil_den.new_zeros(B, H, T).index_add(
+                        2, idx_T, dz_c)
 
         num_cross = torch.einsum('bhcd,bhdv->bhcv', PHIq, carry_S_g) - lam * dil_num
         den_cross = torch.einsum('bhcd,bhd->bhc',   PHIq, carry_z_g) - lam * dil_den
@@ -355,7 +372,7 @@ def _chunked_forward(Q:           Tensor,
         out_c = num / (den.unsqueeze(-1) + eps)
         out_chunks.append(out_c)
 
-        # ── (C) Carry update — out-of-place, fully differentiable ─────────
+        # ── (C) Carry WRITE ───────────────────────────────────────────────
         PHIk = feature_map(Kc, c0, c1, c2, triu_rows, triu_cols, triu_w,
                            alpha=alpha)                         # (B,H,T,D)
 
@@ -365,16 +382,37 @@ def _chunked_forward(Q:           Tensor,
         for l in range(l_star):
             L   = l + 1
             n_c = 1 << L
-            cls = (a_T % n_c).long()
-            for c_val in range(n_c):
-                mask = (cls == c_val)
-                if not mask.any(): continue
-                PHIk_c = PHIk[:, :, mask, :]                   # (B,H,T_c,D)
-                Vc_c   = Vc[:, :, mask, :]                     # (B,H,T_c,d_v)
-                # Out-of-place + rebinds the list entry — no shared storage.
-                carry_S_L[l][c_val] = (carry_S_L[l][c_val] +
-                    torch.einsum('bhtd,bhtv->bhdv', PHIk_c, Vc_c))
-                carry_z_L[l][c_val] = carry_z_L[l][c_val] + PHIk_c.sum(dim=2)
+
+            if is_full and n_c <= C:
+                # Fast path: same grouping as READ — ONE batched matmul per level.
+                # delta_S is (B,H,n_c,D,d_v) — fixed state size, never T-sized.
+                C_nc    = C // n_c
+                PHIk_g  = PHIk.reshape(B, H, C_nc, n_c, D).permute(0, 1, 3, 2, 4)
+                Vc_g    = Vc.reshape(B, H, C_nc, n_c, d_v).permute(0, 1, 3, 2, 4)
+                # (B,H,n_c,D,C//n_c) @ (B,H,n_c,C//n_c,d_v) → (B,H,n_c,D,d_v)
+                delta_S = torch.matmul(PHIk_g.transpose(-2, -1), Vc_g)
+                delta_z = PHIk_g.sum(-2)                       # (B,H,n_c,D)
+                carry_S_L[l] = carry_S_L[l] + delta_S         # out-of-place ✓
+                carry_z_L[l] = carry_z_L[l] + delta_z
+            else:
+                # Slow path: partial chunk OR n_c > C.
+                # Partial chunk: index_add into state dim (n_c), NOT into T.
+                cls = (a_T % n_c).long()
+                for c_val in range(n_c):
+                    mask = (cls == c_val)
+                    if not mask.any(): continue
+                    PHIk_c    = PHIk[:, :, mask, :]
+                    Vc_c      = Vc[:, :, mask, :]
+                    delta_S_c = torch.einsum('bhtd,bhtv->bhdv', PHIk_c, Vc_c)
+                    delta_z_c = PHIk_c.sum(dim=2)
+                    idx_c     = torch.tensor([c_val], device=dev)
+                    # Scatter into (B,H,n_c,D,d_v) state — constant size.
+                    carry_S_L[l] = (carry_S_L[l] +
+                        carry_S_L[l].new_zeros(B, H, n_c, D, d_v).index_add(
+                            2, idx_c, delta_S_c.unsqueeze(2)))
+                    carry_z_L[l] = (carry_z_L[l] +
+                        carry_z_L[l].new_zeros(B, H, n_c, D).index_add(
+                            2, idx_c, delta_z_c.unsqueeze(2)))
 
     return torch.cat(out_chunks, dim=2)   # (B, H, N, d_v)
 
