@@ -33,6 +33,8 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
+import tetra_fastsat
+
 __all__ = [
     "TetraCloud",
     "regular_tetrahedron",
@@ -40,6 +42,7 @@ __all__ = [
     "TETRA_EDGES",
     "TETRA_FACES",
     "sat_overlap_depth",
+    "sat_disjoint",
     "build_honeycomb",
     "build_ceg_packing",
     "ceg_unit_cell",
@@ -56,6 +59,9 @@ __all__ = [
 ]
 
 LOGGER = logging.getLogger(__name__)
+
+#: Set False to force the array implementation of the overlap test.
+_USE_FAST_SAT: bool = True
 
 F64 = np.float64
 FloatArray = NDArray[np.float64]
@@ -201,47 +207,125 @@ class TetraCloud:
 # --------------------------------------------------------------------------- #
 # Exact overlap test (separating axis theorem)
 # --------------------------------------------------------------------------- #
-def _candidate_axes(a: FloatArray, b: FloatArray) -> FloatArray:
-    """Build SAT candidate axes for batched tetrahedron pairs.
+def _cross3(u: FloatArray, v: FloatArray) -> FloatArray:
+    """Cross product over the last axis, without ``np.cross``'s dispatch cost.
 
-    For two convex polytopes it is sufficient (and necessary) to test the face
-    normals of each body plus the cross products of every pair of edge
-    directions.  For tetrahedra that is ``4 + 4 + 36 = 44`` axes.
+    ``np.cross`` spends most of its time in ``moveaxis`` and axis normalisation,
+    which is pure overhead for fixed three-component vectors and showed up as
+    15% of the search's runtime.
+    """
+    out = np.empty(np.broadcast_shapes(u.shape, v.shape), dtype=F64)
+    out[..., 0] = u[..., 1] * v[..., 2] - u[..., 2] * v[..., 1]
+    out[..., 1] = u[..., 2] * v[..., 0] - u[..., 0] * v[..., 2]
+    out[..., 2] = u[..., 0] * v[..., 1] - u[..., 1] * v[..., 0]
+    return out
+
+
+def _face_axes(a: FloatArray, b: FloatArray) -> FloatArray:
+    """The eight face normals of a batched tetrahedron pair, shape ``(m, 8, 3)``."""
+    f = TETRA_FACES
+    parts = []
+    for t in (a, b):
+        p0, p1, p2 = t[:, f[:, 0], :], t[:, f[:, 1], :], t[:, f[:, 2], :]
+        parts.append(_cross3(p1 - p0, p2 - p0))
+    return np.concatenate(parts, axis=1)
+
+
+def _edge_axes(a: FloatArray, b: FloatArray) -> FloatArray:
+    """The 36 edge-pair cross products, shape ``(m, 36, 3)``."""
+    i, j = TETRA_EDGES[:, 0], TETRA_EDGES[:, 1]
+    ea = a[:, j, :] - a[:, i, :]
+    eb = b[:, j, :] - b[:, i, :]
+    return _cross3(ea[:, :, None, :], eb[:, None, :, :]).reshape(a.shape[0], 36, 3)
+
+
+def _min_projection_gap(axes: FloatArray, a: FloatArray, b: FloatArray) -> FloatArray:
+    """Smallest projection overlap over the given axes, ``(m,)``.
+
+    Degenerate axes -- parallel edges, zero-area faces -- carry no information
+    and are neutralised so they can never *declare* separation.
+    """
+    norms = np.sqrt(np.einsum("mkd,mkd->mk", axes, axes))
+    valid = norms > 1e-12
+    axes = axes / np.where(valid, norms, 1.0)[:, :, None]
+
+    proj_a = np.matmul(axes, a.transpose(0, 2, 1))  # (m, K, 4)
+    proj_b = np.matmul(axes, b.transpose(0, 2, 1))
+    overlap = np.minimum(proj_a.max(axis=2), proj_b.max(axis=2)) - np.maximum(
+        proj_a.min(axis=2), proj_b.min(axis=2)
+    )
+    return np.where(valid, overlap, np.inf).min(axis=1)
+
+
+def _has_separating_axis(
+    axes: FloatArray, a: FloatArray, b: FloatArray, tolerance: float
+) -> NDArray[np.bool_]:
+    """Whether any of ``axes`` separates each pair.
+
+    The axes are deliberately *not* normalised.  A normalised overlap is below
+    ``tolerance`` exactly when the raw overlap is below ``tolerance * ||axis||``,
+    so scaling the threshold instead of the axes gives the identical verdict
+    while skipping a division across the whole ``(m, K, 3)`` array.
+    """
+    square = np.einsum("mkd,mkd->mk", axes, axes)
+    valid = square > 1e-24
+
+    proj_a = np.matmul(axes, a.transpose(0, 2, 1))  # (m, K, 4)
+    proj_b = np.matmul(axes, b.transpose(0, 2, 1))
+    overlap = np.minimum(proj_a.max(axis=2), proj_b.max(axis=2)) - np.maximum(
+        proj_a.min(axis=2), proj_b.min(axis=2)
+    )
+    threshold = tolerance * np.sqrt(square) if tolerance else 0.0
+    return np.any(valid & (overlap <= threshold), axis=1)
+
+
+def sat_disjoint(a: FloatArray, b: FloatArray, tolerance: float = 1e-12) -> NDArray[np.bool_]:
+    """Whether each batched tetrahedron pair is disjoint, testing in two stages.
+
+    A separating axis proves disjointness, so the 8 face normals are tried
+    first and only the pairs that survive them need the 36 edge-pair crosses.
+    Most pairs separate on a face normal, so the expensive stage runs on a
+    small remainder.  The verdict is identical to thresholding
+    :func:`sat_overlap_depth`, since the minimum over all 44 axes is the
+    minimum of the two stages.
 
     Parameters
     ----------
     a, b:
-        ``(m, 4, 3)`` batches of tetrahedron vertices.
+        ``(m, 4, 3)`` float64 batches of tetrahedron vertices.
+    tolerance:
+        Overlap depths at or below this count as contact rather than overlap.
 
     Returns
     -------
-    ndarray, shape (m, 44, 3)
-        Un-normalised candidate separating axes.
+    ndarray of bool, shape (m,)
     """
-    m = a.shape[0]
+    a = np.ascontiguousarray(a, dtype=F64)
+    b = np.ascontiguousarray(b, dtype=F64)
+    if a.shape != b.shape or a.ndim != 3 or a.shape[1:] != (4, 3):
+        raise ValueError(
+            f"a and b must both have shape (m, 4, 3); got {a.shape} and {b.shape}"
+        )
+    if a.shape[0] == 0:
+        return np.zeros(0, dtype=bool)
 
-    def face_normals(t: FloatArray) -> FloatArray:
-        f = TETRA_FACES
-        p0 = t[:, f[:, 0], :]
-        p1 = t[:, f[:, 1], :]
-        p2 = t[:, f[:, 2], :]
-        return np.cross(p1 - p0, p2 - p0)
-
-    def edge_dirs(t: FloatArray) -> FloatArray:
-        i, j = TETRA_EDGES[:, 0], TETRA_EDGES[:, 1]
-        return t[:, j, :] - t[:, i, :]
-
-    ea = edge_dirs(a)  # (m, 6, 3)
-    eb = edge_dirs(b)  # (m, 6, 3)
-    cross = np.cross(ea[:, :, None, :], eb[:, None, :, :]).reshape(m, 36, 3)
-
-    return np.concatenate([face_normals(a), face_normals(b), cross], axis=1)
+    disjoint = _has_separating_axis(_face_axes(a, b), a, b, tolerance)
+    remaining = ~disjoint
+    if np.any(remaining):
+        left, right = a[remaining], b[remaining]
+        disjoint[remaining] = _has_separating_axis(
+            _edge_axes(left, right), left, right, tolerance
+        )
+    return disjoint
 
 
 def sat_overlap_depth(a: FloatArray, b: FloatArray) -> FloatArray:
     """Exact overlap depth for batched tetrahedron pairs.
 
-    Uses the separating axis theorem, which is exact for convex polytopes.
+    Uses the separating axis theorem, which is exact for convex polytopes: for
+    two convex bodies it suffices to test the face normals of each plus the
+    cross products of every pair of edge directions, so ``4 + 4 + 36 = 44``
+    axes for tetrahedra.
 
     Parameters
     ----------
@@ -255,6 +339,10 @@ def sat_overlap_depth(a: FloatArray, b: FloatArray) -> FloatArray:
         ``<= 0`` certifies that the pair is disjoint (a separating axis
         exists); a positive value is the penetration depth along the least
         overlapping axis.
+
+    See Also
+    --------
+    sat_disjoint : faster when only the yes/no verdict is needed.
     """
     a = np.ascontiguousarray(a, dtype=F64)
     b = np.ascontiguousarray(b, dtype=F64)
@@ -265,24 +353,8 @@ def sat_overlap_depth(a: FloatArray, b: FloatArray) -> FloatArray:
     if a.shape[0] == 0:
         return np.zeros(0, dtype=F64)
 
-    axes = _candidate_axes(a, b)  # (m, 44, 3)
-    norms = np.linalg.norm(axes, axis=2)
-
-    # Degenerate axes (parallel edges, zero-area faces) carry no information.
-    # Guard the division, then neutralise them so they can never *declare*
-    # separation -- only well-conditioned axes may do that.
-    valid = norms > 1e-12
-    safe = np.where(valid, norms, 1.0)
-    axes = axes / safe[:, :, None]
-
-    proj_a = np.einsum("mad,mvd->mav", axes, a)  # (m, 44, 4)
-    proj_b = np.einsum("mad,mvd->mav", axes, b)
-
-    overlap = np.minimum(proj_a.max(axis=2), proj_b.max(axis=2)) - np.maximum(
-        proj_a.min(axis=2), proj_b.min(axis=2)
-    )
-    overlap = np.where(valid, overlap, np.inf)
-    return np.asarray(overlap.min(axis=1), dtype=F64)
+    axes = np.concatenate([_face_axes(a, b), _edge_axes(a, b)], axis=1)
+    return np.asarray(_min_projection_gap(axes, a, b), dtype=F64)
 
 
 def find_overlapping_pairs(
@@ -836,6 +908,16 @@ def build_ceg_packing(
 #: Analytical density of the N = 3 phase, Table I of Chen, Engel & Glotzer.
 N3_TARGET_FRACTION: Fraction = Fraction(2, 3)
 
+#: The 120 degree rotation about z shared by every three-fold construction.
+_ROT120: FloatArray = np.array(
+    [
+        [math.cos(2.0 * math.pi / 3.0), -math.sin(2.0 * math.pi / 3.0), 0.0],
+        [math.sin(2.0 * math.pi / 3.0), math.cos(2.0 * math.pi / 3.0), 0.0],
+        [0.0, 0.0, 1.0],
+    ],
+    dtype=F64,
+)
+
 #: Screw indices: 0 gives the point group P3, 1 and 2 the screw groups P3_1
 #: and P3_2.  The generator rotates by 120 degrees about z and translates by
 #: ``index * c / 3`` along it, so its cube is always a lattice translation.
@@ -902,11 +984,7 @@ def p3_cell(
         dtype=F64,
     )
 
-    angle = 2.0 * math.pi / 3.0
-    cos_a, sin_a = math.cos(angle), math.sin(angle)
-    rotation = np.array(
-        [[cos_a, -sin_a, 0.0], [sin_a, cos_a, 0.0], [0.0, 0.0, 1.0]], dtype=F64
-    )
+    rotation = _ROT120
     translation = np.array([0.0, 0.0, screw * c / 3.0], dtype=F64)
 
     base = (_quat_to_matrix(np.asarray(quat, dtype=F64)[None])[0] @ regular_tetrahedron(1.0).T).T
@@ -961,11 +1039,7 @@ def trimer_motif(radius: float, quat: FloatArray) -> FloatArray:
     if radius < 0.0 or not math.isfinite(radius):
         raise ValueError(f"radius must be finite and non-negative, got {radius!r}")
 
-    angle = 2.0 * math.pi / 3.0
-    cos_a, sin_a = math.cos(angle), math.sin(angle)
-    rotation = np.array(
-        [[cos_a, -sin_a, 0.0], [sin_a, cos_a, 0.0], [0.0, 0.0, 1.0]], dtype=F64
-    )
+    rotation = _ROT120
     base = (_quat_to_matrix(np.asarray(quat, dtype=F64)[None])[0] @ regular_tetrahedron(1.0).T).T
     base = base + np.array([radius, 0.0, 0.0], dtype=F64)
 
@@ -1376,50 +1450,11 @@ def _quat_multiply(a: FloatArray, b: FloatArray) -> FloatArray:
     )
 
 
-def _lattice_widths(lattice: FloatArray) -> FloatArray:
-    """Perpendicular width of the cell along each lattice direction."""
-    volume = abs(float(np.linalg.det(lattice)))
-    widths = np.empty(3, dtype=F64)
-    for axis in range(3):
-        other = lattice[[i for i in range(3) if i != axis]]
-        area = np.linalg.norm(np.cross(other[0], other[1]))
-        widths[axis] = volume / max(area, 1e-300)
-    return widths
-
-
 #: Largest per-axis periodic image span the overlap test will enumerate.  A
 #: configuration needing more than this is rejected rather than under-tested.
+#: With per-pair image boxes the span depends only on the lattice, so only a
+#: genuinely degenerate cell can exceed it.
 MAX_IMAGE_SPAN: int = 6
-
-
-def _image_offsets(lattice: FloatArray, extent: float = 0.0) -> FloatArray | None:
-    """Integer lattice translations that can bring two tetrahedra into contact.
-
-    Two unit tetrahedra can only interact if their centroids lie within twice
-    the circumradius.  But the cell may hold several tetrahedra spread over a
-    distance ``extent``, and a pair separated by that much inside the cell comes
-    into contact only via an image many cells away -- so the reach that sets the
-    search range is ``2 * circumradius + extent``, not the circumradius alone.
-    Ignoring ``extent`` under-tests any cell whose contents are larger than a
-    single tetrahedron, which is every motif and every multi-particle cell.
-
-    Returns ``None`` when the required span exceeds :data:`MAX_IMAGE_SPAN`;
-    callers must treat that as "cannot certify" and reject the configuration.
-    """
-    reach = 2.0 * UNIT_TETRA_CIRCUMRADIUS + max(float(extent), 0.0)
-    widths = _lattice_widths(lattice)
-    if not np.all(np.isfinite(widths)) or np.any(widths <= 1e-12):
-        return None
-    # The +1 covers the fractional offset between two particles.  Centroid
-    # separations are (delta_f + n) @ lattice with delta_f in (-1, 1)^3, so the
-    # integer part n must be searched one cell further than the reach alone
-    # suggests.  Without this margin a pair can be in contact yet never tested.
-    spans = np.maximum(np.ceil(reach / widths), 1.0).astype(np.int64) + 1
-    if np.any(spans > MAX_IMAGE_SPAN):
-        return None
-    grids = [np.arange(-s, s + 1, dtype=np.int64) for s in spans]
-    a, b, c = np.meshgrid(*grids, indexing="ij")
-    return np.stack([a.ravel(), b.ravel(), c.ravel()], axis=1).astype(F64)
 
 
 def _cell_vertices(
@@ -1439,56 +1474,132 @@ def _cell_vertices(
     return (oriented + centres[:, None, None, :]).reshape(-1, 4, 3)
 
 
+_BOX_CACHE: dict[tuple[int, int, int], FloatArray] = {}
+
+
+def _integer_box(spans: tuple[int, int, int]) -> FloatArray:
+    """Cached ``(-s..s)^3`` integer grid; rebuilding it per call dominated cost."""
+    box = _BOX_CACHE.get(spans)
+    if box is None:
+        grids = [np.arange(-s, s + 1, dtype=np.int64) for s in spans]
+        i, j, k = np.meshgrid(*grids, indexing="ij")
+        box = np.stack([i.ravel(), j.ravel(), k.ravel()], axis=1).astype(F64)
+        _BOX_CACHE[spans] = box
+    return box
+
+
 def _configuration_is_valid(
     verts: FloatArray, lattice: FloatArray, tolerance: float = 1e-12
 ) -> bool:
-    """True when no particle overlaps another, including periodic images.
+    """True when no tetrahedron overlaps another, including periodic images.
 
-    The broad phase compares centroid separations against the circumsphere
-    diameter, which is a strict necessary condition for contact; only the
-    surviving candidates reach the exact SAT narrow phase.
+    Each *pair* gets its own image box, centred on the integer shift that
+    actually brings the two together, rather than one global box sized to cover
+    the whole cell.  Two consequences:
+
+    * the box depends only on the lattice, never on how far apart the cell's
+      contents are, so a cell holding widely separated tetrahedra is handled
+      correctly instead of needing an enormous global range;
+    * the candidate count collapses -- for three tetrahedra, from ~730 global
+      images times 9 ordered pairs down to 6 unordered pairs times ~125.
+
+    A pair can only touch if its centroids lie within twice the circumradius.
+    Writing the required shift as ``n``, the fractional offset obeys
+    ``|frac_k - n_k| <= reach * ||inv[:, k]||``, and since the box is centred on
+    ``round(frac)`` an extra half cell covers the rounding.
+
+    Dispatches to the compiled kernel in :mod:`tetra_fastsat` when numba is
+    installed, falling back to the array implementation otherwise.  The two are
+    tested to agree.
     """
-    centres = verts.mean(axis=1)  # (n, 3)
-    if centres.shape[0] > 1:
-        spread = float(
-            np.linalg.norm(centres[:, None, :] - centres[None, :, :], axis=2).max()
-        )
-    else:
-        spread = 0.0
-
-    offsets = _image_offsets(lattice, extent=spread)
-    if offsets is None:
+    setup = _periodic_setup(verts, lattice)
+    if setup is None:
         return False
+    inverse, spans, reach = setup
 
+    if _USE_FAST_SAT and tetra_fastsat.HAVE_NUMBA:
+        return tetra_fastsat.configuration_is_valid(
+            verts, lattice, inverse, spans, tolerance, reach
+        )
+    return _configuration_is_valid_numpy(verts, lattice, inverse, spans, reach, tolerance)
+
+
+def _periodic_setup(
+    verts: FloatArray, lattice: FloatArray
+) -> tuple[FloatArray, tuple[int, int, int], float] | None:
+    """Inverse lattice, per-axis image spans and contact reach, or ``None``.
+
+    ``None`` means the configuration cannot be certified -- a singular or
+    extremely thin cell -- and callers must treat that as a rejection rather
+    than as a pass.
+    """
+    if verts.shape[0] < 1:
+        return None
+    try:
+        inverse = np.linalg.inv(lattice)
+    except np.linalg.LinAlgError:
+        return None
+    if not np.all(np.isfinite(inverse)):
+        return None
+
+    reach = 2.0 * UNIT_TETRA_CIRCUMRADIUS
+    extent = reach * np.linalg.norm(inverse, axis=0) + 0.5
+    if not np.all(np.isfinite(extent)):
+        return None
+    spans = np.ceil(extent).astype(np.int64)
+    if np.any(spans > MAX_IMAGE_SPAN):
+        return None
+    return inverse, (int(spans[0]), int(spans[1]), int(spans[2])), reach
+
+
+_BOX_CACHE: dict[tuple[int, int, int], FloatArray] = {}
+
+
+def _integer_box(spans: tuple[int, int, int]) -> FloatArray:
+    """Cached ``(-s..s)^3`` integer grid; rebuilding it per call dominated cost."""
+    box = _BOX_CACHE.get(spans)
+    if box is None:
+        grids = [np.arange(-s, s + 1, dtype=np.int64) for s in spans]
+        i, j, k = np.meshgrid(*grids, indexing="ij")
+        box = np.stack([i.ravel(), j.ravel(), k.ravel()], axis=1).astype(F64)
+        _BOX_CACHE[spans] = box
+    return box
+
+
+def _configuration_is_valid_numpy(
+    verts: FloatArray,
+    lattice: FloatArray,
+    inverse: FloatArray,
+    spans: tuple[int, int, int],
+    reach: float,
+    tolerance: float,
+) -> bool:
+    """Array implementation of the periodic overlap test."""
+    box = _integer_box(spans)
     n = verts.shape[0]
-    shifts = offsets @ lattice  # (n_img, 3)
-    n_img = shifts.shape[0]
 
-    # The offset grid is symmetric, so image `k` and image `n_img - 1 - k` are
-    # negatives of one another.  Pair (i, j, k) therefore duplicates
-    # (j, i, n_img - 1 - k); keeping only the upper half of the image range
-    # (plus j > i within the identity image) visits each physical pair once,
-    # including a particle against its own periodic images.
-    identity = int(np.argmin(np.linalg.norm(shifts, axis=1)))
+    centres = verts.mean(axis=1)
+    rows, cols = np.triu_indices(n)
+    delta = centres[rows] - centres[cols]                             # (P, 3)
+    shifts = np.round(delta @ inverse)[:, None, :] + box[None, :, :]  # (P, B, 3)
+    separation = delta[:, None, :] - shifts @ lattice                 # (P, B, 3)
+    near = np.linalg.norm(separation, axis=2) < reach
 
-    img_idx = np.repeat(np.arange(n_img, dtype=np.int64), n * n)
-    i_idx = np.tile(np.repeat(np.arange(n, dtype=np.int64), n), n_img)
-    j_idx = np.tile(np.arange(n, dtype=np.int64), n_img * n)
-
-    keep = (img_idx > identity) | ((img_idx == identity) & (j_idx > i_idx))
-    img_idx, i_idx, j_idx = img_idx[keep], i_idx[keep], j_idx[keep]
-
-    separation = np.linalg.norm(
-        centres[i_idx] - (centres[j_idx] + shifts[img_idx]), axis=1
+    # A particle against its own images: n and -n describe the same pair, and
+    # the zero shift is the particle against itself.  Keep the lexicographically
+    # positive half.
+    first, second, third = shifts[..., 0], shifts[..., 1], shifts[..., 2]
+    positive = (first > 0) | (
+        (first == 0) & ((second > 0) | ((second == 0) & (third > 0)))
     )
-    near = separation < 2.0 * UNIT_TETRA_CIRCUMRADIUS
+    near &= np.where((rows == cols)[:, None], positive, True)
     if not np.any(near):
         return True
 
-    img_idx, i_idx, j_idx = img_idx[near], i_idx[near], j_idx[near]
-    shifted = verts[j_idx] + shifts[img_idx][:, None, :]
-    depth = sat_overlap_depth(verts[i_idx], shifted)
-    return bool(np.all(depth <= tolerance))
+    pair_idx, box_idx = np.nonzero(near)
+    left = verts[rows[pair_idx]]
+    right = verts[cols[pair_idx]] + (shifts[pair_idx, box_idx] @ lattice)[:, None, :]
+    return bool(np.all(sat_disjoint(left, right, tolerance)))
 
 
 class _AdaptiveStep:

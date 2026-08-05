@@ -172,8 +172,9 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `tetra_spectral.py` | Vertex merging, graph construction, Laplacian, eigensolver, degeneracy analysis |
 | `tetra_spectral_analysis.py` | CLI, reporting, export |
 | `explore_connectivity.py` | Family sweep: connectivity vs density, CSV + figure |
+| `tetra_fastsat.py` | Optional compiled (numba) periodic overlap kernel; NumPy fallback |
 | `tetra_lift.py` | Higher-dimensional lift obstructions: Z-module rank, root-system angles |
-| `test_tetra_spectral.py` | Test suite (199 tests) |
+| `test_tetra_spectral.py` | Test suite (201 tests) |
 
 ## Method notes
 
@@ -365,6 +366,35 @@ connectivity is simply **absent**, with no parameter region producing contacts a
 caveat is real, though — this is the packing the search found at φ = 0.537–0.594, not the
 φ = 2/3 phase, and the true one could behave differently.
 
+## The overlap test is the whole cost, so it got rebuilt
+
+Every Monte Carlo move calls the periodic overlap check once, so the search speed *is* the
+speed of that function. Profiling — not guessing — drove three changes worth **13.7×** end
+to end (`_p3_search(400)`: 4.59s → 0.33s; the test suite went 43s → 7.1s):
+
+| change | effect |
+| --- | --- |
+| per-pair image boxes | ~730 global images × 9 ordered pairs → 6 unordered pairs × ~125 |
+| staged SAT + fast cross/matmul | 8 face normals first; 36 edge crosses only for survivors |
+| compiled kernel (numba) | early exit, zero temporaries — the remaining 5× |
+
+The first change is a correctness improvement too. The old design sized **one global image
+box** to cover the whole cell, so it depended on how far apart the cell's contents were —
+which is what made a spread-out configuration either uncertifiable or, in the version before
+that, silently mis-certified. Centring each pair's box on the shift that pair actually needs
+removes the dependence completely: validity is now provably invariant under translating any
+particle by whole lattice vectors, and that invariance is tested at ±13 cells.
+
+Profiling also showed where *not* to optimise. After the first two changes, further
+vectorisation stopped paying — at 6 pairs × 125 candidates, NumPy's per-call dispatch
+overhead dominates the arithmetic outright. That is what the compiled kernel is for, and why
+it is worth a dependency.
+
+**numba is optional.** When it is absent, `HAVE_NUMBA` is `False` and the array
+implementation runs instead. The two are cross-checked on random configurations, and both
+were validated against a deliberately naive brute-force reference enumerating a 15³ image
+range — 0 disagreements over 119 configurations, with both verdicts exercised.
+
 ## Tests
 
 ```bash
@@ -388,3 +418,6 @@ Two groups exist specifically to keep the project honest:
 - `TestZModuleRank` includes a **positive control**: icosahedron vertices over `[1, φ]`
   must return rank 6. Without it, the lift test could only ever say no, and would pass
   even if it were broken.
+- `test_compiled_and_array_paths_agree` checks the numba kernel against the NumPy fallback
+  and asserts both verdicts actually occur, so it cannot pass by trivially agreeing on
+  "everything is valid".

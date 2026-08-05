@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 from scipy.sparse import csr_matrix
 
+import tetra_fastsat as tf
 import tetra_geometry as tg
 import tetra_lift as tl
 import tetra_spectral as ts
@@ -226,10 +227,10 @@ class TestDensePacking:
         with pytest.raises(ValueError):
             tg.build_dense_packing(32, seed=1, **kwargs)
 
-    def test_image_offsets_refuse_degenerate_cells(self) -> None:
-        """A cell too thin to certify must return None rather than under-test."""
+    def test_degenerate_cells_are_refused(self) -> None:
+        """A cell too thin to certify must be rejected rather than under-tested."""
         flat = np.diag([1.0, 1.0, 1e-4])
-        assert tg._image_offsets(flat) is None
+        assert tg._periodic_setup(tg.regular_tetrahedron()[None], flat) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -1002,12 +1003,12 @@ class TestPeriodicOverlapRegression:
         assert tg.find_overlapping_pairs(tiled).shape[0] == 0
 
     def test_image_range_covers_the_fractional_offset(self) -> None:
-        """Spans must exceed reach/width, since particles differ by up to one cell."""
+        """Spans must exceed reach/width, since the box is centred on a rounded shift."""
         lattice = np.eye(3) * 0.8
-        offsets = tg._image_offsets(lattice)
-        assert offsets is not None
-        reach = 2.0 * tg.UNIT_TETRA_CIRCUMRADIUS
-        assert int(np.abs(offsets).max()) >= math.ceil(reach / 0.8) + 1
+        setup = tg._periodic_setup(tg.regular_tetrahedron()[None], lattice)
+        assert setup is not None
+        _, spans, reach = setup
+        assert min(spans) >= math.ceil(reach / 0.8)
 
     def test_a_modest_lattice_shift_preserves_validity(self) -> None:
         """Translating by a lattice vector leaves the periodic packing identical."""
@@ -1018,33 +1019,52 @@ class TestPeriodicOverlapRegression:
         assert tg._configuration_is_valid(result.cell_tetrahedra, lattice)
         assert tg._configuration_is_valid(shifted, lattice)
 
-    def test_a_far_flung_configuration_is_refused_not_certified(self) -> None:
-        """Spread-out contents must be rejected, never silently under-tested.
+    @pytest.mark.parametrize("shift", [(1, 0, 0), (8, 0, -6), (-13, 7, 4)])
+    def test_validity_is_invariant_under_any_lattice_translation(self, shift) -> None:
+        """Moving a particle by whole lattice vectors is the same packing.
 
-        A particle several cells away is still the same periodic packing, but
-        certifying it would need an image range beyond MAX_IMAGE_SPAN.  The
-        checker declines instead, which is the safe direction: callers treat
-        False as "reject the move", so an uncertifiable state is never accepted.
+        Per-pair image boxes are centred on the shift each pair actually needs,
+        so validity no longer depends on how far apart the cell's contents are.
+        The earlier global-box design could not certify a spread-out cell at
+        all, and an earlier one silently mis-certified it: a trimer of radius 10
+        in a cell of size 0.7 reported phi = 0.99.
         """
         result = tg._asc_search(3, 200, seed=11, motif="single")
         lattice = result.lattice
         shifted = result.cell_tetrahedra.copy()
-        shifted[0] += lattice[0] * 8 - lattice[2] * 6
-        assert not tg._configuration_is_valid(shifted, lattice)
+        shifted[0] += shift[0] * lattice[0] + shift[1] * lattice[1] + shift[2] * lattice[2]
+        assert tg._configuration_is_valid(result.cell_tetrahedra, lattice)
+        assert tg._configuration_is_valid(shifted, lattice)
 
-    def test_image_range_grows_with_the_spread_of_the_cell(self) -> None:
-        """A cell holding widely separated tetrahedra needs a wider search.
-
-        Contacts between two tetrahedra that sit far apart *within* the cell
-        happen via images many cells away. Ignoring that spread is what let a
-        trimer of radius 10 in a cell of size 0.7 report phi = 0.99.
-        """
-        lattice = np.eye(3) * 1.5
-        compact = tg._image_offsets(lattice, extent=0.0)
-        spread = tg._image_offsets(lattice, extent=4.0)
-        assert compact is not None and spread is not None
-        assert int(np.abs(spread).max()) > int(np.abs(compact).max())
-        assert tg._image_offsets(lattice, extent=50.0) is None
+    def test_compiled_and_array_paths_agree(self) -> None:
+        """The numba kernel and the NumPy fallback must give identical verdicts."""
+        rng = np.random.default_rng(5)
+        checked = valid = 0
+        for _ in range(120):
+            n = int(rng.integers(1, 5))
+            lattice = np.eye(3) * float(rng.uniform(0.7, 2.4)) + rng.normal(scale=0.2, size=(3, 3))
+            if abs(np.linalg.det(lattice)) < 0.25:
+                continue
+            verts = tg._cell_vertices(
+                tg.build_motif("single"), lattice, rng.random((n, 3)),
+                tg._random_quaternions(rng, n),
+            )
+            setup = tg._periodic_setup(verts, lattice)
+            if setup is None:
+                continue
+            inverse, spans, reach = setup
+            array_path = tg._configuration_is_valid_numpy(
+                verts, lattice, inverse, spans, reach, 1e-12
+            )
+            if tf.HAVE_NUMBA:
+                compiled = tf.configuration_is_valid(
+                    verts, lattice, inverse, spans, 1e-12, reach
+                )
+                assert compiled == array_path
+            checked += 1
+            valid += int(array_path)
+        assert checked > 40
+        assert 0 < valid < checked  # both outcomes exercised
 
     def test_builder_rejects_an_overlapping_search_result(self, monkeypatch) -> None:
         """build_dense_packing must refuse to return a non-packing."""

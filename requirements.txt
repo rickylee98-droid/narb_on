@@ -7,5 +7,9 @@ pandas>=2.0
 # rather than relying on environment variables set before import.
 threadpoolctl>=3.1
 
+# Optional: compiles the periodic overlap kernel, worth ~5x on the Monte Carlo
+# search. Without it the tested NumPy fallback runs instead.
+numba>=0.59
+
 # Test suite only.
 pytest>=7.0
