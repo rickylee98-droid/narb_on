@@ -474,11 +474,20 @@ CEG_DIMER_VERTICES: dict[str, tuple[int, int, int]] = {
 #: ``torquato-jiao``
 #:     Densest point of the Torquato-Jiao two-parameter family (the plane
 #:     ``5u = -2v``), phi = 12250/14319.
+#: ``densest-connected``
+#:     The densest member whose unit-distance graph is *connected*, phi =
+#:     125/146.  Inter-dimer contacts exist only on the central plane ``u = 0``
+#:     -- exactly where the vertex-to-edge incidence condition ``H_{a-b}`` of
+#:     eq. (10) holds -- so maximising density subject to connectivity means
+#:     maximising ``|v|`` on that plane.  Adding the two binding constraints of
+#:     ``P''``, ``2v - w <= 33/320`` and ``v + w <= 3/64``, gives ``v <= 1/20``.
+#:     This point is the paper's C3+cen entry.
 CEG_FAMILY_PRESETS: dict[str, tuple[Fraction, Fraction, Fraction]] = {
     "optimal": (Fraction(3, 160), Fraction(3, 64), Fraction(0)),
     "optimal-mirror": (Fraction(-3, 160), Fraction(-3, 64), Fraction(0)),
     "kallus-elser-gravel": (Fraction(0), Fraction(0), Fraction(0)),
     "torquato-jiao": (Fraction(3, 140), Fraction(-3, 56), Fraction(-3, 448)),
+    "densest-connected": (Fraction(0), Fraction(1, 20), Fraction(-1, 320)),
 }
 
 #: Exact packing fraction at each preset, for cross-checking the construction.
@@ -487,6 +496,7 @@ CEG_PRESET_FRACTIONS: dict[str, Fraction] = {
     "optimal-mirror": Fraction(4000, 4671),
     "kallus-elser-gravel": Fraction(100, 117),
     "torquato-jiao": Fraction(12250, 14319),
+    "densest-connected": Fraction(125, 146),
 }
 
 

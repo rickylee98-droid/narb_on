@@ -27,6 +27,36 @@ Algebraic connectivity is exactly 0. Every degeneracy is *repetition of identica
 components*, not a hidden symmetry group. That is the honest answer for a maximum-density
 packing.
 
+### The connected set is exactly the plane u = 0
+
+Sweeping the family and counting *exact* inter-dimer unit contacts gives a sharp answer:
+they exist **only when u = 0**, for any v and any w, and vanish everywhere else. That is
+not a numerical accident — it reproduces the paper's own equation (10), where the
+vertex-to-edge incidence condition `H_{a−b}` holds precisely on `−u ≤ 0 ∧ +u ≤ 0`. The
+graph observation and their incidence geometry are the same fact, arrived at
+independently.
+
+So connectivity is a **codimension-1 condition**, and the "moment the Fiedler value
+drops" is a genuine discontinuity at u = 0, not a curve. Along the straight path from the
+KEG origin to the density optimum, the 156 inter-dimer contacts drift linearly,
+`|d − 1| = 0.0437 t`, so a run with edge tolerance `atol` appears to keep them until
+`t ≈ atol/0.0437` — **the apparent transition width is the tolerance, nothing else.**
+The figure shows it shifting a decade per decade of tolerance. The collapse itself has
+two stages: 24 components (largest 20 vertices) → 27 (largest 10) → 54 (one per dimer,
+largest 5), with λ₁⁺ going 0.517 → 0.586 → 3.
+
+Because connectivity only needs `u = 0`, density can still be maximised *within* that
+plane. On it, φ = 100/(117 − 80v²), so the problem is to maximise |v|; adding the two
+binding `P″` constraints `2v − w ≤ 33/320` and `v + w ≤ 3/64` gives **v ≤ 1/20**. The
+result is `(0, 1/20, −1/320)` with **φ = 125/146** — which turns out to be the paper's
+own `C3+cen` entry, derived here from the constraints rather than looked up. It is
+available as `--ceg-variant densest-connected`.
+
+That prices the trade-off exactly:
+
+> **Requiring a connected unit-distance graph costs 4000/4671 − 125/146 = 125/681966,
+> or 0.0214% of the optimal density.**
+
 ### Density trades off against connectivity, inside the family
 
 The paper's construction is a **three-parameter family** (eq. 6), and the whole family is
@@ -36,6 +66,7 @@ published densities exactly and all pass the separating-axis test:
 | `--ceg-variant` | φ | Components | Max degree | Structure |
 | --- | --- | --- | --- | --- |
 | `optimal` | **4000/4671** = 0.856348 | exactly 1 per dimer | 4 | bounded |
+| `densest-connected` | 125/146 = 0.856164 | 4 (of 128 dimers) | 6 | **extended** |
 | `torquato-jiao` | 12250/14319 = 0.855507 | exactly 1 per dimer | 4 | bounded |
 | `kallus-elser-gravel` | 100/117 = 0.854701 | **exactly 12(reps−1)** | **6** | **extended** |
 
@@ -106,8 +137,14 @@ python tetra_spectral_analysis.py --min-tetrahedra 1000 --num-eigenvalues 100
 # Ask for more eigenvalues than there are components to see past the kernel:
 python tetra_spectral_analysis.py --backend ceg --min-tetrahedra 1000 --num-eigenvalues 2800
 
+# The densest member whose graph is actually connected
+python tetra_spectral_analysis.py --backend ceg --ceg-variant densest-connected --num-eigenvalues 2800
+
 # A stochastic density search instead (slower; reaches ~0.5-0.75, never the optimum)
 python tetra_spectral_analysis.py --backend packing --asc-cycles 1500 --asc-restarts 4
+
+# Map connectivity across the family and render the figure
+python explore_connectivity.py --reps 3 --out connectivity
 
 # Export tables for downstream work
 python tetra_spectral_analysis.py --csv-prefix results/run --json-summary results/summary.json
@@ -131,7 +168,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `tetra_geometry.py` | Canonical tetrahedron, exact SAT overlap test, honeycomb / CEG / ASC generators |
 | `tetra_spectral.py` | Vertex merging, graph construction, Laplacian, eigensolver, degeneracy analysis |
 | `tetra_spectral_analysis.py` | CLI, reporting, export |
-| `test_tetra_spectral.py` | Test suite (120 tests) |
+| `explore_connectivity.py` | Family sweep: connectivity vs density, CSV + figure |
+| `test_tetra_spectral.py` | Test suite (157 tests) |
 
 ## Method notes
 

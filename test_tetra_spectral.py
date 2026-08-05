@@ -713,6 +713,27 @@ class TestCEGFamily:
         for w in (Fraction(-1, 32), Fraction(1, 64), Fraction(1, 32)):
             assert tg.ceg_packing_fraction(Fraction(3, 160), Fraction(3, 64), w) == base
 
+    def test_densest_connected_matches_the_papers_central_point(self) -> None:
+        """Maximising |v| on the connected plane u=0 lands on C3+cen, 125/146."""
+        u, v, w = tg.CEG_FAMILY_PRESETS["densest-connected"]
+        assert u == 0
+        assert v == Fraction(1, 20)
+        assert tg.ceg_packing_fraction(u, v, w) == Fraction(125, 146)
+        assert tg.ceg_in_restricted_space(u, v, w)
+
+    def test_v_cannot_exceed_one_twentieth_on_the_connected_plane(self) -> None:
+        """P'' constraints 2v - w <= 33/320 and v + w <= 3/64 cap v at 1/20."""
+        just_over = Fraction(1, 20) + Fraction(1, 1000)
+        assert not any(
+            tg.ceg_in_restricted_space(Fraction(0), just_over, Fraction(k, 3200))
+            for k in range(-400, 401)
+        )
+
+    def test_connectivity_costs_a_known_exact_amount(self) -> None:
+        deficit = Fraction(4000, 4671) - Fraction(125, 146)
+        assert deficit == Fraction(125, 681966)
+        assert float(deficit) == pytest.approx(1.8329e-4, rel=1e-3)
+
     def test_optimal_is_the_densest_preset(self) -> None:
         best = max(tg.CEG_PRESET_FRACTIONS.values())
         assert best == Fraction(4000, 4671)
@@ -732,6 +753,11 @@ class TestCEGFamily:
             tg.ceg_unit_cell(Fraction(0), Fraction(0))
 
 
+def _plane_w(v: Fraction) -> Fraction:
+    """A w keeping (0, v, w) inside P''; density is independent of it."""
+    return min(Fraction(0), Fraction(3, 64) - abs(v))
+
+
 class TestFamilyConnectivityContrast:
     """Density and graph connectivity are traded off within the family."""
 
@@ -741,6 +767,26 @@ class TestFamilyConnectivityContrast:
         assert cloud.provenance["replicas_per_axis"] == reps
         merged = ts.merge_vertices(cloud.raw_points, atol=1e-5)
         return cloud, merged, ts.build_unit_distance_graph(merged.points)
+
+    def test_inter_dimer_contacts_exist_only_on_the_plane_u_equals_zero(self) -> None:
+        """Rediscovers the paper's H_{a-b} condition (eq. 10) from the graph."""
+        from scipy.spatial import cKDTree
+
+        def inter_dimer_contacts(u, v, w) -> int:
+            cloud = tg.build_ceg_packing(32, u=u, v=v, w=w)
+            pts = cloud.raw_points
+            dimer = np.repeat(np.arange(cloud.n_tetrahedra // 2), 8)
+            pairs = cKDTree(pts).query_pairs(r=1.0 + 1e-12, output_type="ndarray")
+            d = np.linalg.norm(pts[pairs[:, 0]] - pts[pairs[:, 1]], axis=1)
+            unit = pairs[np.abs(d - 1.0) < 1e-12]
+            return int((dimer[unit[:, 0]] != dimer[unit[:, 1]]).sum())
+
+        # On the plane u = 0 the contacts are present for any v and any w.
+        for v in (Fraction(0), Fraction(1, 64), Fraction(1, 20)):
+            assert inter_dimer_contacts(Fraction(0), v, _plane_w(v)) > 0
+        # Off it, they vanish -- even a thousandth of the way to the optimum.
+        for u in (Fraction(3, 160000), Fraction(3, 1600), Fraction(3, 160)):
+            assert inter_dimer_contacts(u, Fraction(0), Fraction(0)) == 0
 
     @pytest.mark.parametrize("variant", ["optimal", "torquato-jiao"])
     @pytest.mark.parametrize("reps", [2, 3, 4])
