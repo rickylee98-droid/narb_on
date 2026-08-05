@@ -1009,14 +1009,42 @@ class TestPeriodicOverlapRegression:
         reach = 2.0 * tg.UNIT_TETRA_CIRCUMRADIUS
         assert int(np.abs(offsets).max()) >= math.ceil(reach / 0.8) + 1
 
-    def test_wrapping_a_particle_cannot_change_validity(self) -> None:
+    def test_a_modest_lattice_shift_preserves_validity(self) -> None:
         """Translating by a lattice vector leaves the periodic packing identical."""
         result = tg._asc_search(3, 200, seed=11, motif="single")
         lattice = result.lattice
         shifted = result.cell_tetrahedra.copy()
-        shifted[0] += lattice[0] * 3 - lattice[2] * 2
+        shifted[0] += lattice[0]
         assert tg._configuration_is_valid(result.cell_tetrahedra, lattice)
         assert tg._configuration_is_valid(shifted, lattice)
+
+    def test_a_far_flung_configuration_is_refused_not_certified(self) -> None:
+        """Spread-out contents must be rejected, never silently under-tested.
+
+        A particle several cells away is still the same periodic packing, but
+        certifying it would need an image range beyond MAX_IMAGE_SPAN.  The
+        checker declines instead, which is the safe direction: callers treat
+        False as "reject the move", so an uncertifiable state is never accepted.
+        """
+        result = tg._asc_search(3, 200, seed=11, motif="single")
+        lattice = result.lattice
+        shifted = result.cell_tetrahedra.copy()
+        shifted[0] += lattice[0] * 8 - lattice[2] * 6
+        assert not tg._configuration_is_valid(shifted, lattice)
+
+    def test_image_range_grows_with_the_spread_of_the_cell(self) -> None:
+        """A cell holding widely separated tetrahedra needs a wider search.
+
+        Contacts between two tetrahedra that sit far apart *within* the cell
+        happen via images many cells away. Ignoring that spread is what let a
+        trimer of radius 10 in a cell of size 0.7 report phi = 0.99.
+        """
+        lattice = np.eye(3) * 1.5
+        compact = tg._image_offsets(lattice, extent=0.0)
+        spread = tg._image_offsets(lattice, extent=4.0)
+        assert compact is not None and spread is not None
+        assert int(np.abs(spread).max()) > int(np.abs(compact).max())
+        assert tg._image_offsets(lattice, extent=50.0) is None
 
     def test_builder_rejects_an_overlapping_search_result(self, monkeypatch) -> None:
         """build_dense_packing must refuse to return a non-packing."""
@@ -1144,3 +1172,113 @@ class TestRootSystemObstruction:
         recovered = np.unique(np.round(exact, 9), axis=0)
         assert recovered.shape == built.shape
         np.testing.assert_allclose(recovered, built, atol=1e-9)
+
+
+# --------------------------------------------------------------------------- #
+# Three-fold screw-symmetric packings (the N = 3 phase)
+# --------------------------------------------------------------------------- #
+class TestP3Cell:
+    @staticmethod
+    def _quat() -> np.ndarray:
+        return tg._random_quaternions(np.random.default_rng(0), 1)[0]
+
+    def test_produces_three_regular_tetrahedra(self) -> None:
+        cell, _ = tg.p3_cell(3.0, 3.0, 0.3, 0.2, self._quat(), screw=1)
+        assert cell.shape == (3, 4, 3)
+        np.testing.assert_allclose(tg.edge_lengths(cell), 1.0, atol=1e-12)
+
+    def test_lattice_is_hexagonal(self) -> None:
+        _, lattice = tg.p3_cell(2.5, 4.0, 0.1, 0.1, self._quat(), screw=1)
+        a1, a2, a3 = lattice
+        assert np.linalg.norm(a1) == pytest.approx(np.linalg.norm(a2))
+        cosine = a1 @ a2 / (np.linalg.norm(a1) * np.linalg.norm(a2))
+        assert math.degrees(math.acos(cosine)) == pytest.approx(120.0)
+        assert a3 @ a1 == pytest.approx(0.0)
+        assert a3 @ a2 == pytest.approx(0.0)
+
+    @pytest.mark.parametrize("screw", tg.P3_SCREW_INDICES)
+    def test_screw_maps_each_tetrahedron_to_the_next(self, screw: int) -> None:
+        """S(T_k) must equal T_{k+1} up to a lattice translation."""
+        a, c = 3.0, 3.5
+        cell, lattice = tg.p3_cell(a, c, 0.3, 0.2, self._quat(), screw=screw)
+        angle = 2 * math.pi / 3
+        rot = np.array(
+            [[math.cos(angle), -math.sin(angle), 0], [math.sin(angle), math.cos(angle), 0], [0, 0, 1]]
+        )
+        shift = np.array([0.0, 0.0, screw * c / 3.0])
+        inverse = np.linalg.inv(lattice)
+        for k in range(3):
+            image = (rot @ cell[k].T).T + shift
+            delta = (image.mean(axis=0) - cell[(k + 1) % 3].mean(axis=0)) @ inverse
+            np.testing.assert_allclose(delta, np.round(delta), atol=1e-9)
+
+    def test_volume_and_density_formulas_agree(self) -> None:
+        a, c = 2.0, 3.0
+        _, lattice = tg.p3_cell(a, c, 0.2, 0.4, self._quat(), screw=2)
+        volume = abs(float(np.linalg.det(lattice)))
+        assert volume == pytest.approx(0.5 * math.sqrt(3) * a * a * c)
+        assert tg.p3_packing_fraction(a, c) == pytest.approx(
+            3 * tg.UNIT_TETRA_VOLUME / volume
+        )
+
+    def test_offsets_are_fractional_so_growing_the_cell_separates_them(self) -> None:
+        """Regression: with Cartesian offsets the tetrahedra stayed on the axis.
+
+        Their mutual separation is set by distance from the rotation axis, which
+        scales with ``a``.  A Cartesian offset left them overlapping no matter
+        how large the cell grew, so no valid initial configuration ever existed.
+        """
+        quat = self._quat()
+        small, _ = tg.p3_cell(0.35, 0.35, 0.3, 0.3, quat, screw=0)
+        big_cell, big_lattice = tg.p3_cell(12.0, 12.0, 0.3, 0.3, quat, screw=0)
+        assert not tg._configuration_is_valid(*tg.p3_cell(0.35, 0.35, 0.3, 0.3, quat, screw=0)[:2])
+        assert tg._configuration_is_valid(big_cell, big_lattice)
+
+    @pytest.mark.parametrize("kwargs", [{"a": 0.0}, {"a": -1.0}, {"c": 0.0}])
+    def test_rejects_nonpositive_cell(self, kwargs: dict) -> None:
+        params = {"a": 2.0, "c": 2.0, **kwargs}
+        with pytest.raises(ValueError):
+            tg.p3_cell(params["a"], params["c"], 0.1, 0.1, self._quat(), screw=1)
+
+    def test_rejects_bad_screw_index(self) -> None:
+        with pytest.raises(ValueError):
+            tg.p3_cell(2.0, 2.0, 0.1, 0.1, self._quat(), screw=3)
+
+
+class TestP3Search:
+    @pytest.mark.parametrize("screw", tg.P3_SCREW_INDICES)
+    def test_search_returns_a_valid_packing(self, screw: int) -> None:
+        result = tg._p3_search(300, seed=7, screw=screw)
+        cell, lattice = result.cell
+        np.testing.assert_allclose(tg.edge_lengths(cell), 1.0, atol=1e-12)
+        assert tg._configuration_is_valid(cell, lattice)
+        assert 0.0 < result.packing_fraction < 1.0
+
+    def test_search_preserves_the_screw_symmetry_throughout(self) -> None:
+        result = tg._p3_search(300, seed=7, screw=1)
+        cell, lattice = result.cell
+        # Three tetrahedra related by a rigid motion have identical volumes.
+        volumes = [tg.tetrahedron_volume(t) for t in cell]
+        np.testing.assert_allclose(volumes, tg.UNIT_TETRA_VOLUME, atol=1e-12)
+
+    def test_compression_is_monotone(self) -> None:
+        low = tg._p3_search(80, seed=5, screw=1)
+        high = tg._p3_search(400, seed=5, screw=1)
+        assert high.packing_fraction >= low.packing_fraction
+
+    def test_builder_survives_an_independent_tiling_check(self) -> None:
+        cloud = tg.build_p3_packing(81, screw=1, cycles=200, restarts=1, seed=3)
+        cloud.assert_regular(edge=1.0, atol=1e-9)
+        assert tg.find_overlapping_pairs(cloud.tetrahedra).shape[0] == 0
+        assert cloud.provenance["backend"] == "p3"
+        assert cloud.provenance["space_group"] == "P3_1"
+
+    def test_builder_reports_the_target_it_is_aiming_at(self) -> None:
+        cloud = tg.build_p3_packing(81, screw=0, cycles=120, restarts=1, seed=3)
+        assert cloud.provenance["target_packing_fraction"] == pytest.approx(2 / 3)
+        assert cloud.provenance["measured_packing_fraction"] < 1.0
+
+    @pytest.mark.parametrize("kwargs", [{"cycles": 0}, {"restarts": 0}])
+    def test_rejects_invalid_effort(self, kwargs: dict) -> None:
+        with pytest.raises(ValueError):
+            tg.build_p3_packing(27, screw=1, seed=1, **kwargs)

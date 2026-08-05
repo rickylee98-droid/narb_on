@@ -831,7 +831,473 @@ def build_ceg_packing(
 
 
 # --------------------------------------------------------------------------- #
-# Backend 3: dense packing via adaptive shrinking cell Monte Carlo
+# Backend 3: three-fold screw-symmetric packings (the N = 3 phase)
+# --------------------------------------------------------------------------- #
+#: Analytical density of the N = 3 phase, Table I of Chen, Engel & Glotzer.
+N3_TARGET_FRACTION: Fraction = Fraction(2, 3)
+
+#: Screw indices: 0 gives the point group P3, 1 and 2 the screw groups P3_1
+#: and P3_2.  The generator rotates by 120 degrees about z and translates by
+#: ``index * c / 3`` along it, so its cube is always a lattice translation.
+P3_SCREW_INDICES: tuple[int, ...] = (0, 1, 2)
+
+
+def p3_cell(
+    a: float,
+    c: float,
+    fx: float,
+    fy: float,
+    quat: FloatArray,
+    screw: int,
+) -> tuple[FloatArray, FloatArray]:
+    """Three tetrahedra related by a three-fold screw, and their lattice.
+
+    A three-fold rotation must map the lattice to itself, which forces a
+    hexagonal cell: two basal vectors of equal length ``a`` at 120 degrees, and
+    ``c`` along the rotation axis.  The generator is
+
+    ``S(p) = R_z(120 deg) p + (0, 0, screw * c / 3)``
+
+    so that ``S^3`` is translation by ``screw * c``, a lattice vector, and the
+    three tetrahedra of the cell are ``T, S(T), S^2(T)``.
+
+    This is Table I's N = 3 motif -- "3 monomers, three-fold symmetric" -- and
+    reduces the packing problem from four free rigid bodies to seven numbers:
+    ``a``, ``c``, the in-plane offset ``(x, y)``, and three orientation degrees
+    of freedom.  Translation along the axis is a gauge freedom (it can be
+    absorbed into the choice of screw origin) and is fixed to zero.
+
+    Parameters
+    ----------
+    a, c:
+        Hexagonal cell parameters.  Both must be positive.
+    fx, fy:
+        In-plane offset of the generating tetrahedron's centroid, in
+        *fractional* coordinates along the two basal vectors.  Fractional
+        rather than Cartesian because the three tetrahedra are separated by
+        their distance from the rotation axis, which scales with ``a``: with a
+        Cartesian offset, growing the cell would leave them overlapping on the
+        axis no matter how large it became.
+    quat:
+        Unit quaternion giving the generating tetrahedron's orientation.
+    screw:
+        0, 1 or 2, selecting P3, P3_1 or P3_2.
+
+    Returns
+    -------
+    (tetrahedra, lattice)
+        ``(3, 4, 3)`` vertex coordinates and the ``(3, 3)`` hexagonal lattice.
+    """
+    if not (a > 0.0 and c > 0.0):
+        raise ValueError(f"cell parameters must be positive, got a={a}, c={c}")
+    if screw not in P3_SCREW_INDICES:
+        raise ValueError(f"screw must be one of {P3_SCREW_INDICES}, got {screw}")
+
+    lattice = np.array(
+        [
+            [a, 0.0, 0.0],
+            [-0.5 * a, 0.5 * math.sqrt(3.0) * a, 0.0],
+            [0.0, 0.0, c],
+        ],
+        dtype=F64,
+    )
+
+    angle = 2.0 * math.pi / 3.0
+    cos_a, sin_a = math.cos(angle), math.sin(angle)
+    rotation = np.array(
+        [[cos_a, -sin_a, 0.0], [sin_a, cos_a, 0.0], [0.0, 0.0, 1.0]], dtype=F64
+    )
+    translation = np.array([0.0, 0.0, screw * c / 3.0], dtype=F64)
+
+    base = (_quat_to_matrix(np.asarray(quat, dtype=F64)[None])[0] @ regular_tetrahedron(1.0).T).T
+    base = base + fx * lattice[0] + fy * lattice[1]
+
+    tetrahedra = np.empty((3, 4, 3), dtype=F64)
+    current = base
+    for index in range(3):
+        tetrahedra[index] = current
+        current = (rotation @ current.T).T + translation
+
+    # Each image may be moved back by a whole lattice vector without changing
+    # the periodic packing; keeping every tetrahedron near the cell is what
+    # makes the periodic overlap test's image range valid.
+    inverse = np.linalg.inv(lattice)
+    centroids = tetrahedra.mean(axis=1)
+    tetrahedra = tetrahedra - (np.floor(centroids @ inverse) @ lattice)[:, None, :]
+    return np.ascontiguousarray(tetrahedra), np.ascontiguousarray(lattice)
+
+
+#: Largest cluster radius the trimer search will consider.  A trimer wider than
+#: this is not a compact motif, and its periodic images interleave so heavily
+#: that the configuration cannot be certified.
+MAX_TRIMER_RADIUS: float = 2.0
+
+
+def trimer_motif(radius: float, quat: FloatArray) -> FloatArray:
+    """A three-fold symmetric cluster of three tetrahedra, as a rigid body.
+
+    Three tetrahedra are related by a 120 degree rotation about the z axis, the
+    generating one sitting at distance ``radius`` from it.  Unlike
+    :func:`p3_cell` this imposes the symmetry on the *cluster* only, leaving the
+    lattice that packs it completely free.
+
+    That distinction matters.  A three-fold rotation of the whole crystal forces
+    the lattice to be hexagonal, since the rotation must map the lattice to
+    itself.  Table I's "3 monomers, three-fold symmetric" plausibly describes
+    the motif rather than the crystal, in which case demanding a hexagonal cell
+    is an extra constraint the true packing need not satisfy.
+
+    Parameters
+    ----------
+    radius:
+        Distance of the generating tetrahedron's centroid from the axis.
+    quat:
+        Unit quaternion giving its orientation.
+
+    Returns
+    -------
+    ndarray, shape (3, 4, 3)
+    """
+    if radius < 0.0 or not math.isfinite(radius):
+        raise ValueError(f"radius must be finite and non-negative, got {radius!r}")
+
+    angle = 2.0 * math.pi / 3.0
+    cos_a, sin_a = math.cos(angle), math.sin(angle)
+    rotation = np.array(
+        [[cos_a, -sin_a, 0.0], [sin_a, cos_a, 0.0], [0.0, 0.0, 1.0]], dtype=F64
+    )
+    base = (_quat_to_matrix(np.asarray(quat, dtype=F64)[None])[0] @ regular_tetrahedron(1.0).T).T
+    base = base + np.array([radius, 0.0, 0.0], dtype=F64)
+
+    motif = np.empty((3, 4, 3), dtype=F64)
+    current = base
+    for index in range(3):
+        motif[index] = current
+        current = (rotation @ current.T).T
+    return np.ascontiguousarray(motif)
+
+
+@dataclass(frozen=True)
+class TrimerResult:
+    """Outcome of a free-lattice three-fold trimer search."""
+
+    lattice: FloatArray
+    radius: float
+    quat: FloatArray
+    packing_fraction: float
+
+    @property
+    def cell(self) -> tuple[FloatArray, FloatArray]:
+        return trimer_motif(self.radius, self.quat), self.lattice
+
+
+def _trimer_search(
+    cycles: int,
+    seed: int,
+    *,
+    initial_fraction: float = 0.15,
+    compression: float = 0.004,
+) -> TrimerResult:
+    """Pack one three-fold symmetric trimer per cell on a free triclinic lattice.
+
+    Ten degrees of freedom: the cluster's radius and orientation, and the six
+    independent components of the lattice.  Every accepted state is checked for
+    overlaps, so the result is always a certified packing.
+    """
+    rng = np.random.default_rng(seed)
+
+    radius = 0.35 + 0.5 * float(rng.random())
+    quat = _random_quaternions(rng, 1)[0]
+
+    # The trimer's three tetrahedra can overlap *each other*, and that is
+    # governed by the radius alone -- no amount of lattice expansion separates
+    # them.  Resolve the cluster before worrying about its periodic images.
+    for _ in range(80):
+        motif = trimer_motif(radius, quat)
+        pairs = np.array([(0, 1), (0, 2), (1, 2)], dtype=np.int64)
+        if np.all(sat_overlap_depth(motif[pairs[:, 0]], motif[pairs[:, 1]]) <= 1e-12):
+            break
+        radius *= 1.15
+    else:
+        raise RuntimeError("failed to separate the three tetrahedra of the trimer")
+
+    lattice = _initial_lattice(3, initial_fraction, rng)
+    for _ in range(80):
+        if _configuration_is_valid(trimer_motif(radius, quat), lattice):
+            break
+        lattice = lattice * 1.12
+    else:
+        raise RuntimeError("failed to find a valid initial trimer configuration")
+
+    radius_step = _AdaptiveStep(0.05, bounds=(1e-7, 0.5))
+    rot_step = _AdaptiveStep(0.30, bounds=(1e-4, math.pi))
+    shear_step = _AdaptiveStep(0.02, bounds=(1e-6, 0.2))
+    identity3 = np.eye(3, dtype=F64)
+
+    for _ in range(cycles):
+        for _ in range(3):
+            old_radius, old_quat = radius, quat.copy()
+            if rng.random() < 0.5:
+                trial = _quat_multiply(_perturbation_quaternion(rng, rot_step.value), quat)
+                quat = trial / np.linalg.norm(trial)
+                step = rot_step
+            else:
+                # Cap the radius: beyond this the three tetrahedra are no
+                # longer a cluster in any meaningful sense, and the "three-fold
+                # motif" reading of Table I stops applying.
+                radius = min(
+                    abs(radius + float(rng.normal(scale=radius_step.value))),
+                    MAX_TRIMER_RADIUS,
+                )
+                step = radius_step
+            ok = _configuration_is_valid(trimer_motif(radius, quat), lattice)
+            if not ok:
+                radius, quat = old_radius, old_quat
+            step.record(ok)
+
+        for _ in range(3):
+            shear = rng.normal(scale=shear_step.value, size=(3, 3))
+            shear = 0.5 * (shear + shear.T)
+            shear -= (np.trace(shear) / 3.0) * identity3
+            candidate = lattice @ (identity3 + shear)
+            det_now = abs(float(np.linalg.det(lattice)))
+            det_try = abs(float(np.linalg.det(candidate)))
+            ok = False
+            if det_try > 1e-12 and det_now > 1e-12:
+                candidate = candidate * (
+                    det_now * (1.0 - compression) / det_try
+                ) ** (1.0 / 3.0)
+                ok = _configuration_is_valid(trimer_motif(radius, quat), candidate)
+            if ok:
+                lattice = candidate
+            shear_step.record(ok)
+
+    volume = abs(float(np.linalg.det(lattice)))
+    return TrimerResult(
+        lattice=lattice,
+        radius=radius,
+        quat=quat,
+        packing_fraction=3.0 * UNIT_TETRA_VOLUME / volume,
+    )
+
+
+@dataclass(frozen=True)
+class P3Result:
+    """Outcome of a three-fold screw-symmetric packing search."""
+
+    a: float
+    c: float
+    fx: float
+    fy: float
+    quat: FloatArray
+    screw: int
+    packing_fraction: float
+    accepted_moves: int
+    attempted_moves: int
+
+    @property
+    def cell(self) -> tuple[FloatArray, FloatArray]:
+        return p3_cell(self.a, self.c, self.fx, self.fy, self.quat, self.screw)
+
+
+def p3_packing_fraction(a: float, c: float) -> float:
+    """Density of a three-tetrahedron hexagonal cell of parameters ``a``, ``c``."""
+    volume = 0.5 * math.sqrt(3.0) * a * a * c
+    return 3.0 * UNIT_TETRA_VOLUME / volume
+
+
+def _p3_search(
+    cycles: int,
+    seed: int,
+    screw: int,
+    *,
+    initial_fraction: float = 0.15,
+    compression: float = 0.004,
+) -> P3Result:
+    """Adaptive shrinking cell Monte Carlo restricted to a three-fold screw.
+
+    The symmetry is imposed on the *parametrisation*, not enforced afterwards,
+    so every configuration visited is exactly three-fold symmetric and the
+    search explores seven numbers instead of a 4-body configuration space.  As
+    elsewhere, a move producing any overlap is rejected outright, so every
+    accepted state is a certified packing.
+    """
+    rng = np.random.default_rng(seed)
+
+    # Start dilute at the requested fraction, with a roughly isotropic cell.
+    volume = 3.0 * UNIT_TETRA_VOLUME / initial_fraction
+    a = (2.0 * volume / math.sqrt(3.0)) ** (1.0 / 3.0)
+    c = volume / (0.5 * math.sqrt(3.0) * a * a)
+    fx, fy = float(rng.random()), float(rng.random())
+    quat = _random_quaternions(rng, 1)[0]
+
+    for _ in range(80):
+        verts, lattice = p3_cell(a, c, fx, fy, quat, screw)
+        if _configuration_is_valid(verts, lattice):
+            break
+        a, c = a * 1.12, c * 1.12
+    else:
+        raise RuntimeError("failed to find a valid initial P3 configuration")
+
+    move_step = _AdaptiveStep(0.06, bounds=(1e-7, 0.5))
+    rot_step = _AdaptiveStep(0.30, bounds=(1e-4, math.pi))
+    cell_step = _AdaptiveStep(0.02, bounds=(1e-6, 0.2))
+
+    accepted = attempted = 0
+    for cycle in range(cycles):
+        for _ in range(3):
+            attempted += 1
+            old = (fx, fy, quat.copy())
+            if rng.random() < 0.5:
+                trial = _quat_multiply(_perturbation_quaternion(rng, rot_step.value), quat)
+                quat = trial / np.linalg.norm(trial)
+                step = rot_step
+            else:
+                fx = (fx + float(rng.normal(scale=move_step.value))) % 1.0
+                fy = (fy + float(rng.normal(scale=move_step.value))) % 1.0
+                step = move_step
+
+            verts, lattice = p3_cell(a, c, fx, fy, quat, screw)
+            ok = _configuration_is_valid(verts, lattice)
+            if ok:
+                accepted += 1
+            else:
+                fx, fy, quat = old
+            step.record(ok)
+
+        for _ in range(3):
+            attempted += 1
+            # Reshape the cell at fixed volume, then compress: as in the
+            # general search, every accepted cell move is strictly densifying.
+            ratio = math.exp(rng.normal(scale=cell_step.value))
+            shrink = (1.0 - compression) ** (1.0 / 3.0)
+            trial_a = a * ratio * shrink
+            trial_c = c * shrink**3 / ratio**2
+
+            ok = trial_a > 1e-6 and trial_c > 1e-6
+            if ok:
+                verts, lattice = p3_cell(trial_a, trial_c, fx, fy, quat, screw)
+                ok = _configuration_is_valid(verts, lattice)
+            if ok:
+                a, c = trial_a, trial_c
+                accepted += 1
+            cell_step.record(ok)
+
+        if cycle % max(cycles // 8, 1) == 0:
+            LOGGER.debug(
+                "P3(%d) cycle %d/%d: phi=%.4f a=%.4f c=%.4f",
+                screw, cycle, cycles, p3_packing_fraction(a, c), a, c,
+            )
+
+    return P3Result(
+        a=a, c=c, fx=fx, fy=fy, quat=quat, screw=screw,
+        packing_fraction=p3_packing_fraction(a, c),
+        accepted_moves=accepted, attempted_moves=attempted,
+    )
+
+
+def build_p3_packing(
+    min_tetrahedra: int = 1000,
+    *,
+    screw: int | None = None,
+    cycles: int = 3000,
+    restarts: int = 8,
+    seed: int = 20250805,
+    max_replicas: int = 40,
+) -> TetraCloud:
+    """Build the densest three-fold screw-symmetric packing the search finds.
+
+    Table I of Chen, Engel & Glotzer reports an N = 3 phase at an analytical
+    density of exactly 2/3, described as "3 monomers, three-fold symmetric".
+    The paper does not publish its coordinates, so this searches the symmetric
+    family directly rather than reproducing them.
+
+    Parameters
+    ----------
+    min_tetrahedra:
+        Minimum tetrahedron count in the returned cloud.
+    screw:
+        Screw index to search, or ``None`` to try all of P3, P3_1 and P3_2 and
+        keep the densest.
+    cycles, restarts, seed:
+        Monte Carlo effort and reproducible seeding.
+    max_replicas:
+        Safety bound on tiling repetitions per lattice direction.
+
+    Returns
+    -------
+    TetraCloud
+    """
+    if min_tetrahedra < 1:
+        raise ValueError("min_tetrahedra must be >= 1")
+    if cycles < 1 or restarts < 1:
+        raise ValueError("cycles and restarts must be >= 1")
+
+    indices = P3_SCREW_INDICES if screw is None else (screw,)
+    attempts: list[P3Result] = []
+    for index in indices:
+        for restart in range(restarts):
+            attempts.append(_p3_search(cycles, seed + 1000 * index + restart, index))
+    best = max(attempts, key=lambda r: r.packing_fraction)
+
+    by_screw = {
+        index: max(r.packing_fraction for r in attempts if r.screw == index)
+        for index in indices
+    }
+    LOGGER.info(
+        "P3 search: best phi=%.9f (target 2/3=%.9f, ratio %.4f); per screw index %s",
+        best.packing_fraction, 2 / 3, best.packing_fraction / (2 / 3),
+        {k: round(v, 6) for k, v in by_screw.items()},
+    )
+
+    cell, lattice = best.cell
+    per_cell = int(cell.shape[0])
+    reps = 1
+    while reps <= max_replicas and per_cell * reps**3 < min_tetrahedra:
+        reps += 1
+    if per_cell * reps**3 < min_tetrahedra:
+        raise RuntimeError(
+            f"cannot reach {min_tetrahedra} tetrahedra within max_replicas={max_replicas}"
+        )
+
+    grid = np.arange(reps, dtype=F64)
+    i, j, k = np.meshgrid(grid, grid, grid, indexing="ij")
+    translations = np.stack([i.ravel(), j.ravel(), k.ravel()], axis=1) @ lattice
+    tiled = (cell[None, :, :, :] + translations[:, None, None, :]).reshape(-1, 4, 3)
+
+    overlaps = find_overlapping_pairs(tiled)
+    if overlaps.shape[0]:
+        depth = float(sat_overlap_depth(tiled[overlaps[:, 0]], tiled[overlaps[:, 1]]).max())
+        raise AssertionError(
+            f"P3 search produced {overlaps.shape[0]} overlapping pairs "
+            f"(max penetration {depth:.6f}); the result is not a packing"
+        )
+
+    cloud = TetraCloud(
+        tetrahedra=tiled,
+        lattice=lattice,
+        tetra_per_cell=per_cell,
+        provenance={
+            "backend": "p3",
+            "target": "Chen, Engel & Glotzer Table I, N = 3 phase, phi = 2/3",
+            "measured_packing_fraction": best.packing_fraction,
+            "target_packing_fraction": float(N3_TARGET_FRACTION),
+            "screw_index": best.screw,
+            "space_group": {0: "P3", 1: "P3_1", 2: "P3_2"}[best.screw],
+            "cell_a": best.a,
+            "cell_c": best.c,
+            "best_by_screw_index": by_screw,
+            "asc_cycles": cycles,
+            "asc_restarts": restarts,
+            "replicas_per_axis": reps,
+        },
+    )
+    cloud.assert_regular(edge=1.0, atol=1e-9)
+    return cloud
+
+
+# --------------------------------------------------------------------------- #
+# Backend 4: dense packing via adaptive shrinking cell Monte Carlo
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class PackingResult:
@@ -926,21 +1392,21 @@ def _lattice_widths(lattice: FloatArray) -> FloatArray:
 MAX_IMAGE_SPAN: int = 6
 
 
-def _image_offsets(lattice: FloatArray) -> FloatArray | None:
+def _image_offsets(lattice: FloatArray, extent: float = 0.0) -> FloatArray | None:
     """Integer lattice translations that can bring two tetrahedra into contact.
 
     Two unit tetrahedra can only interact if their centroids lie within twice
-    the circumradius, so the search range along each lattice direction is set
-    by that reach divided by the cell's perpendicular width.  This is what
-    keeps the packing valid even after the cell shrinks below the particle
-    diameter, where a naive 3x3x3 minimum-image scheme silently misses
-    collisions.
+    the circumradius.  But the cell may hold several tetrahedra spread over a
+    distance ``extent``, and a pair separated by that much inside the cell comes
+    into contact only via an image many cells away -- so the reach that sets the
+    search range is ``2 * circumradius + extent``, not the circumradius alone.
+    Ignoring ``extent`` under-tests any cell whose contents are larger than a
+    single tetrahedron, which is every motif and every multi-particle cell.
 
-    Returns ``None`` when the cell is so anisotropic that the required span
-    exceeds :data:`MAX_IMAGE_SPAN`; callers must treat that as "cannot certify"
-    and reject the configuration.
+    Returns ``None`` when the required span exceeds :data:`MAX_IMAGE_SPAN`;
+    callers must treat that as "cannot certify" and reject the configuration.
     """
-    reach = 2.0 * UNIT_TETRA_CIRCUMRADIUS
+    reach = 2.0 * UNIT_TETRA_CIRCUMRADIUS + max(float(extent), 0.0)
     widths = _lattice_widths(lattice)
     if not np.all(np.isfinite(widths)) or np.any(widths <= 1e-12):
         return None
@@ -982,14 +1448,21 @@ def _configuration_is_valid(
     diameter, which is a strict necessary condition for contact; only the
     surviving candidates reach the exact SAT narrow phase.
     """
-    offsets = _image_offsets(lattice)
+    centres = verts.mean(axis=1)  # (n, 3)
+    if centres.shape[0] > 1:
+        spread = float(
+            np.linalg.norm(centres[:, None, :] - centres[None, :, :], axis=2).max()
+        )
+    else:
+        spread = 0.0
+
+    offsets = _image_offsets(lattice, extent=spread)
     if offsets is None:
         return False
 
     n = verts.shape[0]
     shifts = offsets @ lattice  # (n_img, 3)
     n_img = shifts.shape[0]
-    centres = verts.mean(axis=1)  # (n, 3)
 
     # The offset grid is symmetric, so image `k` and image `n_img - 1 - k` are
     # negatives of one another.  Pair (i, j, k) therefore duplicates

@@ -143,6 +143,9 @@ python tetra_spectral_analysis.py --backend ceg --ceg-variant densest-connected 
 # A stochastic density search instead (slower; reaches ~0.5-0.75, never the optimum)
 python tetra_spectral_analysis.py --backend packing --asc-cycles 1500 --asc-restarts 4
 
+# The three-fold screw family (Table I's N = 3 motif); omit --p3-screw to try all
+python tetra_spectral_analysis.py --backend p3 --p3-screw 2 --asc-cycles 3000 --verify-packing
+
 # Map connectivity across the family and render the figure
 python explore_connectivity.py --reps 3 --out connectivity
 
@@ -170,7 +173,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `tetra_spectral_analysis.py` | CLI, reporting, export |
 | `explore_connectivity.py` | Family sweep: connectivity vs density, CSV + figure |
 | `tetra_lift.py` | Higher-dimensional lift obstructions: Z-module rank, root-system angles |
-| `test_tetra_spectral.py` | Test suite (177 tests) |
+| `test_tetra_spectral.py` | Test suite (199 tests) |
 
 ## Method notes
 
@@ -306,19 +309,61 @@ The Laplacian multiplicities tell the same story: `{4: 122, 24: 1, 128: 1}` — 
 divisible by 4, the number of identical components. They are component repetition, not
 irrep dimensions. `E₈`'s smallest non-trivial irrep is 248-dimensional.
 
-## The N = 3 phase is not reachable here
+## The N = 3 phase: the P3 route
 
-Table I lists N = 3 at **φ = 2/3** ("3 monomers, three-fold symmetric", 21% success rate),
-but the paper does **not publish its coordinates** — they are in ref. [26], an external
-data file, and ref. [27] Appendix D. Unlike the dimer family there is no analytic
-parameter form to implement, so the question of whether N = 3 shows a smooth or
-discontinuous connectivity curve **cannot be answered without those coordinates**.
+Table I lists N = 3 at **φ = 2/3** ("3 monomers, three-fold symmetric"), but the paper does
+**not publish its coordinates** — they are in ref. [26], an external data file, and ref.
+[27] Appendix D. An unconstrained search is hopeless: the paper uses 7 × 10⁶ Monte Carlo
+moves per particle at a 21% success rate, and an unconstrained run here reaches only 0.47.
 
-Reaching it by search is out of range: the paper uses **7 × 10⁶ Monte Carlo moves per
-particle** with a 21% success rate, while a 2500-cycle run here is 2.5 × 10³ moves per
-particle — about 2800× short, which in pure NumPy is days of compute. The search plateaus
-near 0.47 for N = 3, well below 2/3. The infrastructure is in place (`--asc-particles 3`)
-and every result is overlap-certified; what is missing is the published geometry.
+So the symmetry is imposed on the *parametrisation* instead. A three-fold rotation must map
+the lattice to itself, forcing a hexagonal cell, and the generator
+`S(p) = R_z(120°)·p + (0, 0, screw·c/3)` reduces the problem from four free rigid bodies to
+**seven numbers**: `a`, `c`, a fractional in-plane offset, and three orientation degrees of
+freedom. `S³` is always a lattice translation, so screw index 0, 1, 2 gives P3, P3₁, P3₂.
+
+| search space | parameters | best φ | vs 2/3 |
+| --- | --- | --- | --- |
+| **P3₂** (hexagonal, screw) | 7 | **0.5943** | **89.1%** |
+| P3₁ (hexagonal, screw) | 7 | 0.5920 | 88.8% |
+| free-lattice trimer | 10 | 0.5242 | 78.6% |
+| P3 (hexagonal, pure rotation) | 7 | 0.4803 | 72.0% |
+| unconstrained N = 3 | 24 | 0.4674 | 70.1% |
+
+Two things this settles:
+
+- **The screw matters.** Pure three-fold rotation reaches only 0.48; adding the screw
+  translation gains 11 points. The N = 3 phase is a helical structure, not a rotationally
+  symmetric one.
+- **The hexagonal constraint is not the limiter.** The obvious suspicion was that "three-fold
+  symmetric" describes the *motif* rather than the crystal, in which case demanding a
+  hexagonal lattice would be an extra constraint the true packing need not obey. So the
+  free-lattice trimer was implemented to test exactly that — a three-fold symmetric cluster
+  on an unconstrained triclinic lattice, 10 parameters. It reaches **0.5242, worse**. The
+  hypothesis is refuted: constraining the lattice helps the search rather than hindering it.
+
+At 89% of target the true N = 3 phase has **not** been found, and nothing here should be read
+as reproducing it.
+
+### What its graph looks like
+
+The best P3₂ packing has **no vertex sharing at all**: 648 tetrahedra give 2592 raw vertices
+and 2592 distinct ones, a compression ratio of exactly 1.0. The graph is 648 disjoint `K₄`,
+every degree 3, spectrum `{0, 4, 4, 4}` repeated, λ₁⁺ = 4.
+
+That places the three families on a clean ladder of decreasing connectivity:
+
+| structure | sharing | components | λ₁⁺ |
+| --- | --- | --- | --- |
+| FCC honeycomb | vertices *and* edges | 1 (connected) | 0.3066 |
+| CEG dimers, u = 0 | faces, plus inter-dimer contacts | extended networks | 0.033–0.28 |
+| CEG dimers, u ≠ 0 | faces only | 1 per dimer (`K₅−e`) | 3 |
+| **P3 screw packings** | **none** | **1 per tetrahedron (`K₄`)** | **4** |
+
+So for the three-fold family the answer to "smooth curve or codimension-1 lock" is *neither*:
+connectivity is simply **absent**, with no parameter region producing contacts at all. The
+caveat is real, though — this is the packing the search found at φ = 0.537–0.594, not the
+φ = 2/3 phase, and the true one could behave differently.
 
 ## Tests
 

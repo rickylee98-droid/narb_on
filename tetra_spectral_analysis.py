@@ -151,6 +151,14 @@ def build_cloud(args: argparse.Namespace) -> tg.TetraCloud:
         return tg.build_honeycomb(args.min_tetrahedra)
     if args.backend == "ceg":
         return tg.build_ceg_packing(args.min_tetrahedra, variant=args.ceg_variant)
+    if args.backend == "p3":
+        return tg.build_p3_packing(
+            args.min_tetrahedra,
+            screw=args.p3_screw,
+            cycles=args.asc_cycles,
+            restarts=args.asc_restarts,
+            seed=args.seed,
+        )
     return tg.build_dense_packing(
         args.min_tetrahedra,
         n_particles=args.asc_particles,
@@ -583,12 +591,13 @@ def build_parser() -> argparse.ArgumentParser:
     geom = parser.add_argument_group("geometry")
     geom.add_argument(
         "--backend",
-        choices=("honeycomb", "ceg", "packing"),
+        choices=("honeycomb", "ceg", "p3", "packing"),
         default="honeycomb",
         help=(
             "cluster construction: 'honeycomb' interlocking FCC honeycomb "
             "(default), 'ceg' the exact Chen-Engel-Glotzer optimum at phi = "
-            "4000/4671, 'packing' a stochastic adaptive-shrinking-cell search"
+            "4000/4671, 'p3' a three-fold screw-symmetric search for the N = 3 "
+            "phase, 'packing' a general stochastic adaptive-shrinking-cell search"
         ),
     )
     geom.add_argument(
@@ -612,6 +621,16 @@ def build_parser() -> argparse.ArgumentParser:
             "'optimal' phi=4000/4671 (default), 'optimal-mirror' the same density "
             "via the mirror point, 'kallus-elser-gravel' phi=100/117, "
             "'torquato-jiao' phi=12250/14319"
+        ),
+    )
+    geom.add_argument(
+        "--p3-screw",
+        type=int,
+        choices=tg.P3_SCREW_INDICES,
+        default=None,
+        help=(
+            "screw index for the p3 backend: 0 = P3, 1 = P3_1, 2 = P3_2 "
+            "(default: search all three and keep the densest)"
         ),
     )
     geom.add_argument(
