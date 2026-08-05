@@ -325,26 +325,34 @@ freedom. `S³` is always a lattice translation, so screw index 0, 1, 2 gives P3,
 
 | search space | parameters | best φ | vs 2/3 |
 | --- | --- | --- | --- |
-| **P3₂** (hexagonal, screw) | 7 | **0.5943** | **89.1%** |
-| P3₁ (hexagonal, screw) | 7 | 0.5920 | 88.8% |
+| **P3₁** (hexagonal, screw) | 7 | **0.5956** | **89.3%** |
+| P3₂ (hexagonal, screw) | 7 | 0.5939 | 89.1% |
+| unconstrained N = 3 | 24 | 0.5386 | 80.8% |
 | free-lattice trimer | 10 | 0.5242 | 78.6% |
-| P3 (hexagonal, pure rotation) | 7 | 0.4803 | 72.0% |
-| unconstrained N = 3 | 24 | 0.4674 | 70.1% |
+| P3 (hexagonal, pure rotation) | 7 | 0.4806 | 72.1% |
+
+All at 40–48 restarts × 12 000 cycles, every result overlap-certified.
 
 Two things this settles:
 
 - **The screw matters.** Pure three-fold rotation reaches only 0.48; adding the screw
-  translation gains 11 points. The N = 3 phase is a helical structure, not a rotationally
-  symmetric one.
-- **The hexagonal constraint is not the limiter.** The obvious suspicion was that "three-fold
-  symmetric" describes the *motif* rather than the crystal, in which case demanding a
-  hexagonal lattice would be an extra constraint the true packing need not obey. So the
-  free-lattice trimer was implemented to test exactly that — a three-fold symmetric cluster
-  on an unconstrained triclinic lattice, 10 parameters. It reaches **0.5242, worse**. The
-  hypothesis is refuted: constraining the lattice helps the search rather than hindering it.
+  translation gains 11 points. Whatever the N = 3 phase is, it is helical rather than
+  rotationally symmetric.
+- **Constraining helps; it does not hurt.** Two ways of relaxing the symmetry were tried
+  precisely because they might have been the limiter, and both are *worse*: a three-fold
+  cluster on a free triclinic lattice (the reading where "three-fold symmetric" describes the
+  motif rather than the crystal) reaches 0.5242, and dropping symmetry altogether reaches
+  0.5386. Imposing the symmetry on the parametrisation is what makes the search tractable.
+- **The search is converged, not effort-starved.** Raising the budget tenfold — 12 restarts ×
+  4000 cycles to 40 × 12 000 — moved the best result by **+0.2%** (0.5943 → 0.5956), and P3
+  by +0.0003. The top six seeds land in a tight band (0.5956 … 0.5873). That is what a
+  genuine family optimum looks like, not a search that ran out of time.
 
-At 89% of target the true N = 3 phase has **not** been found, and nothing here should be read
-as reproducing it.
+So the conclusion is a negative one, and it is the interesting part: **φ = 2/3 does not live
+in the three-fold-symmetric family as parametrised here.** Its own optimum is ≈ 0.5956. The
+true N = 3 phase must differ structurally — the three tetrahedra are presumably not a single
+symmetry orbit — and finding it needs either the published coordinates or a different ansatz,
+not more compute.
 
 ### What its graph looks like
 
