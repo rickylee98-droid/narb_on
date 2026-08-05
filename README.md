@@ -177,7 +177,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `explore_connectivity.py` | Family sweep: connectivity vs density, CSV + figure |
 | `tetra_fastsat.py` | Optional compiled (numba) periodic overlap kernel; NumPy fallback |
 | `tetra_lift.py` | Higher-dimensional lift obstructions: Z-module rank, root-system angles |
-| `test_tetra_spectral.py` | Test suite (219 tests) |
+| `test_tetra_spectral.py` | Test suite (230 tests) |
 
 ## Method notes
 
@@ -374,9 +374,45 @@ The N = 3 phase is the only dense packing here with genuinely rich connectivity:
 | λ₁⁺ | **0.2203** | 3 | 4 |
 
 So the answer to "smooth connectivity curve or codimension-1 lock" is a third thing again:
-the N = 3 phase is *natively* well connected, with 40 tetrahedra per component and multiplicities
-{2, 4, 8, 16} across 585 distinct levels. Its vertex sharing does not depend on tuning a
+the N = 3 phase is *natively* well connected. Its vertex sharing does not depend on tuning a
 parameter to a measure-zero set, which is exactly what the dimer family's u = 0 plane required.
+
+### The N = 3 phase's algebraic fingerprint is C₃
+
+The connectivity turns out to be structured, not merely abundant. The unit-distance graph
+splits into **exactly 16 components at every system size** — 90 vertices or 3360, always 16,
+each growing with the block, and all 16 reaching the deep interior of an 8³ tiling. They are
+not boundary fragments: they are **sixteen interpenetrating infinite networks**.
+
+Reading their symmetry needs the same care the honeycomb did. A rectangular block in
+hexagonal coordinates destroys the three-fold symmetry, and so does a cut that selects whole
+*cells* — rotation carries the 1b monomer of cell `(0,0)` into cell `(-1,-1)`, so an
+invariant set of cell *positions* is still not an invariant set of tetrahedra. Selecting
+individual tetrahedra by distance from the axis is exactly invariant, and that is what
+`build_n3_cluster` does. Cutting a symmetric structure with an asymmetric boundary destroys
+precisely the degeneracies you are looking for.
+
+With a genuinely C₃-invariant cluster, the decomposition is exact:
+
+| network type | count | multiplicities |
+| --- | --- | --- |
+| **fixed by C₃** | 4 | **{1, 2} only** — exactly C₃'s real irrep dimensions |
+| in a 3-orbit | 12 (4 orbits) | **{1} only** — no internal symmetry; the orbit supplies ×3 |
+
+C₃ acts on the sixteen networks with orbit structure **4 × (fixed) + 4 × (size 3) = 16**, and
+the whole spectrum is the sum of those pieces: multiplicities {1, 2, 3, 6}, nothing else. A
+network the rotation *moves* cannot be symmetric, and its spectrum is correspondingly simple;
+a network it *fixes* carries C₃ and shows singlets and doublets, which over the reals is the
+complete list of C₃ irrep dimensions.
+
+So the fingerprint is real but modest: **C₃, cyclic of order 3**. Set against the honeycomb's
+`O_h` of order 48 with dimensions {1, 1, 2, 3, 3}, this is a much smaller group — and, as
+there, a *finite* one. Nothing in either structure supports a continuous symmetry.
+
+One artefact worth naming, since the script would otherwise report it as signal: with an
+**even** number of layers the sixteen networks pair into isomorphic partners and every
+multiplicity doubles, giving {2, 4, 6}. That is a property of the finite cluster, not the
+crystal. Use an odd `layers`.
 
 ## The P3 orbit family (the ansatz that did not work)
 

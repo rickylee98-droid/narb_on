@@ -46,6 +46,7 @@ __all__ = [
     "build_honeycomb",
     "build_ceg_packing",
     "build_n3_packing",
+    "build_n3_cluster",
     "n3_unit_cell",
     "N3_PACKING_FRACTION",
     "ceg_unit_cell",
@@ -1337,6 +1338,81 @@ def build_n3_packing(min_tetrahedra: int = 1000, *, max_replicas: int = 40) -> T
         "N=3 packing: phi=%.15f (2/3), %d tetrahedra from %d^3 cells",
         phi, cloud.n_tetrahedra, reps,
     )
+    return cloud
+
+
+def build_n3_cluster(
+    radius: float = 4.0, layers: int = 5, *, max_cells: int = 40
+) -> TetraCloud:
+    """A cluster of the N = 3 phase that keeps its three-fold symmetry.
+
+    Selection is by each *tetrahedron's* distance from the Wyckoff 1a axis, not
+    by whole unit cells.  That distinction matters: rotation carries the 1b
+    monomer of cell ``(0, 0)`` into cell ``(-1, -1)``, so a cell-based cut is
+    not invariant even though the cell *positions* are.  Filtering individual
+    tetrahedra radially is exactly invariant, because the rotation preserves
+    distance from its own axis.
+
+    This is the analogue of the spherical cut used for the FCC honeycomb, where
+    a ball is invariant under :math:`O_h`.  Cutting a symmetric structure with
+    an asymmetric boundary destroys precisely the degeneracies one is looking
+    for.
+
+    An odd ``layers`` is preferable: with an even count the sixteen networks
+    pair up into isomorphic partners and every multiplicity doubles, which is a
+    property of the finite cluster rather than of the crystal.
+
+    Parameters
+    ----------
+    radius:
+        Basal cut-off from the three-fold axis.
+    layers:
+        Number of cells stacked along the axis.
+    max_cells:
+        Safety bound on the basal cell range searched.
+
+    Returns
+    -------
+    TetraCloud
+    """
+    if radius <= 0.0:
+        raise ValueError(f"radius must be positive, got {radius!r}")
+    if layers < 1:
+        raise ValueError(f"layers must be >= 1, got {layers!r}")
+
+    cell, lattice = n3_unit_cell()
+    span = min(int(math.ceil(radius / min(N3_CELL_A, N3_CELL_C))) + 2, max_cells)
+
+    grid = [
+        (i, j, k)
+        for i in range(-span, span + 1)
+        for j in range(-span, span + 1)
+        for k in range(layers)
+    ]
+    translations = np.array(grid, dtype=F64) @ lattice
+    tiled = (cell[None, :, :, :] + translations[:, None, None, :]).reshape(-1, 4, 3)
+
+    centroids = tiled.mean(axis=1)
+    keep = np.hypot(centroids[:, 0], centroids[:, 1]) <= radius + 1e-9
+    tetrahedra = tiled[keep]
+    if tetrahedra.shape[0] == 0:
+        raise ValueError(f"radius {radius} selects no tetrahedra")
+
+    cloud = TetraCloud(
+        tetrahedra=tetrahedra,
+        lattice=lattice,
+        tetra_per_cell=int(cell.shape[0]),
+        provenance={
+            "backend": "n3-cluster",
+            "packing_fraction_exact": "2/3",
+            "cut": "tetrahedra within `radius` of the Wyckoff 1a three-fold axis",
+            "point_group": "C3",
+            "radius": float(radius),
+            "layers": int(layers),
+            "layer_parity": "odd" if layers % 2 else "even (multiplicities double)",
+        },
+    )
+    cloud.assert_regular(edge=1.0, atol=1e-12)
     return cloud
 
 

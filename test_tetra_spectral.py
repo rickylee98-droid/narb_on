@@ -1413,3 +1413,135 @@ class TestN3Phase:
     def test_rejects_nonsense_size(self) -> None:
         with pytest.raises(ValueError):
             tg.build_n3_packing(0)
+
+
+# --------------------------------------------------------------------------- #
+# The N = 3 phase's symmetry fingerprint
+# --------------------------------------------------------------------------- #
+@pytest.fixture(scope="module")
+def n3_cluster():
+    """C3-invariant cluster of the N = 3 phase, with its graph and group action."""
+    from scipy.spatial import cKDTree
+
+    cloud = tg.build_n3_cluster(radius=4.0, layers=5)
+    merged = ts.merge_vertices(cloud.raw_points, atol=1e-5)
+    bundle = ts.build_unit_distance_graph(merged.points)
+    rotated = (tg._ROT120 @ merged.points.T).T
+    distance, index = cKDTree(merged.points).query(rotated)
+    return cloud, merged, bundle, distance.max(), index
+
+
+class TestN3Fingerprint:
+    """The N = 3 phase decomposes into 16 networks permuted by C3."""
+
+    def test_cluster_is_exactly_c3_invariant(self, n3_cluster) -> None:
+        _, _, _, max_distance, _ = n3_cluster
+        assert max_distance < 1e-9
+
+    def test_cell_based_cut_would_not_be_invariant(self) -> None:
+        """Rotation moves the 1b monomer of cell (0,0) into cell (-1,-1)."""
+        from scipy.spatial import cKDTree
+
+        cell, lattice = tg.n3_unit_cell()
+        grid = [(i, j, k) for i in range(-2, 3) for j in range(-2, 3) for k in range(3)]
+        translations = np.array(grid, dtype=float) @ lattice
+        tiled = (cell[None] + translations[:, None, None, :]).reshape(-1, 4, 3)
+        centroids = tiled.mean(axis=1)
+        # Keep whole cells inside a basal disc -- invariant as positions, but not
+        # as a selection of tetrahedra.
+        cell_pos = translations[:, :2]
+        keep_cell = np.hypot(cell_pos[:, 0], cell_pos[:, 1]) <= 2.0 + 1e-9
+        selected = tiled.reshape(len(grid), 3, 4, 3)[keep_cell].reshape(-1, 4, 3)
+        points = np.unique(np.round(selected.reshape(-1, 3), 9), axis=0)
+        rotated = (tg._ROT120 @ points.T).T
+        assert cKDTree(points).query(rotated)[0].max() > 1e-6
+
+    def test_graph_splits_into_sixteen_networks(self, n3_cluster) -> None:
+        _, _, bundle, _, _ = n3_cluster
+        assert bundle.n_components == 16
+
+    @pytest.mark.parametrize("reps", [3, 4, 5, 6])
+    def test_network_count_is_size_independent(self, reps: int) -> None:
+        """16 at every size, each growing with the block: interpenetrating, not fragments."""
+        cell, lattice = tg.n3_unit_cell()
+        grid = np.arange(reps, dtype=float)
+        i, j, k = np.meshgrid(grid, grid, grid, indexing="ij")
+        translations = np.stack([i.ravel(), j.ravel(), k.ravel()], axis=1) @ lattice
+        tiled = (cell[None] + translations[:, None, None, :]).reshape(-1, 4, 3)
+        merged = ts.merge_vertices(tiled.reshape(-1, 3), atol=1e-5)
+        bundle = ts.build_unit_distance_graph(merged.points)
+        assert bundle.n_components == 16
+
+    def test_c3_orbits_are_four_fixed_and_four_triples(self, n3_cluster) -> None:
+        _, _, bundle, _, index = n3_cluster
+        image = {}
+        for source, target in zip(bundle.component_labels, bundle.component_labels[index]):
+            image.setdefault(int(source), set()).add(int(target))
+        mapping = {k: v.pop() for k, v in image.items() if len(v) == 1}
+        assert len(mapping) == 16
+
+        fixed = [k for k, v in mapping.items() if v == k]
+        assert len(fixed) == 4
+
+        seen, orbits = set(), []
+        for start in mapping:
+            if start in seen:
+                continue
+            orbit, node = [start], start
+            seen.add(start)
+            while mapping[node] not in seen:
+                node = mapping[node]
+                orbit.append(node)
+                seen.add(node)
+            orbits.append(len(orbit))
+        assert sorted(orbits) == [1, 1, 1, 1, 3, 3, 3, 3]
+
+    @staticmethod
+    def _component_multiplicities(bundle, label: int) -> dict[int, int]:
+        laplacian = ts.graph_laplacian(bundle.adjacency)
+        selected = np.nonzero(bundle.component_labels == label)[0]
+        block = laplacian[selected][:, selected]
+        values = np.linalg.eigvalsh(np.asarray(block.todense()))
+        return ts.analyse_degeneracies(values).multiplicity_histogram
+
+    def test_fixed_networks_show_only_c3_irrep_dimensions(self, n3_cluster) -> None:
+        """C3 has real irreps of dimension 1 and 2. Nothing else may appear."""
+        _, _, bundle, _, index = n3_cluster
+        image = {}
+        for source, target in zip(bundle.component_labels, bundle.component_labels[index]):
+            image.setdefault(int(source), set()).add(int(target))
+        mapping = {k: v.pop() for k, v in image.items() if len(v) == 1}
+        fixed = [k for k, v in mapping.items() if v == k]
+
+        for label in fixed:
+            multiplicities = set(self._component_multiplicities(bundle, label))
+            assert multiplicities <= {1, 2}, f"component {label}: {multiplicities}"
+
+    def test_orbit_networks_have_no_internal_symmetry(self, n3_cluster) -> None:
+        """A network C3 moves is not itself symmetric, so its spectrum is simple."""
+        _, _, bundle, _, index = n3_cluster
+        image = {}
+        for source, target in zip(bundle.component_labels, bundle.component_labels[index]):
+            image.setdefault(int(source), set()).add(int(target))
+        mapping = {k: v.pop() for k, v in image.items() if len(v) == 1}
+        moved = [k for k, v in mapping.items() if v != k]
+
+        for label in moved[:4]:
+            assert set(self._component_multiplicities(bundle, label)) == {1}
+
+    def test_odd_layer_counts_avoid_the_pairing_artefact(self) -> None:
+        """Even layer counts pair the networks up and double every multiplicity."""
+        def multiplicities(layers: int) -> set[int]:
+            cloud = tg.build_n3_cluster(radius=3.0, layers=layers)
+            merged = ts.merge_vertices(cloud.raw_points, atol=1e-5)
+            bundle = ts.build_unit_distance_graph(merged.points)
+            spectrum = ts.smallest_eigenvalues(
+                ts.graph_laplacian(bundle.adjacency), k=merged.n_unique,
+                n_components=bundle.n_components,
+                component_labels=bundle.component_labels,
+            )
+            report = ts.analyse_degeneracies(spectrum.eigenvalues)
+            return {m for m, c in report.multiplicity_histogram.items() if c > 5}
+
+        assert 1 in multiplicities(5)      # odd: singlets survive
+        assert 1 not in multiplicities(4)  # even: everything doubles
