@@ -1,0 +1,11 @@
+numpy>=1.24
+scipy>=1.10
+networkx>=3.0
+pandas>=2.0
+
+# Optional but recommended: lets the CLI retune BLAS thread counts at runtime
+# rather than relying on environment variables set before import.
+threadpoolctl>=3.1
+
+# Test suite only.
+pytest>=7.0
