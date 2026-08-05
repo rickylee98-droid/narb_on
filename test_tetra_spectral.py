@@ -1545,3 +1545,119 @@ class TestN3Fingerprint:
 
         assert 1 in multiplicities(5)      # odd: singlets survive
         assert 1 not in multiplicities(4)  # even: everything doubles
+
+
+# --------------------------------------------------------------------------- #
+# The N = 2 phase: a monomer double lattice
+# --------------------------------------------------------------------------- #
+class TestDoubleLattice:
+    """Table I's N = 2 phase, phi_2 = 9/(139 - 40 sqrt 10), "2 monomers, transitive"."""
+
+    def test_target_density_matches_the_published_value(self) -> None:
+        assert tg.N2_PACKING_FRACTION == pytest.approx(0.719486, abs=3e-6)
+
+    def test_cell_holds_two_regular_tetrahedra(self) -> None:
+        cell, _ = tg.double_lattice_cell(np.eye(3) * 3.0, np.array([1.4, 0.3, 0.2]))
+        assert cell.shape == (2, 4, 3)
+        np.testing.assert_allclose(tg.edge_lengths(cell), 1.0, atol=1e-12)
+
+    def test_the_pair_is_related_by_a_point_inversion(self) -> None:
+        """Inversion through d/2 exchanges them, which is what makes it transitive."""
+        from scipy.spatial import cKDTree
+
+        offset = np.array([1.4, 0.3, 0.2])
+        cell, _ = tg.double_lattice_cell(np.eye(3) * 3.0, offset)
+        centre = cell.mean(axis=(0, 1))
+        image = 2 * centre - cell[0]
+        assert cKDTree(cell[1]).query(image)[0].max() < 1e-9
+
+    def test_the_pair_is_not_a_plain_lattice_packing(self) -> None:
+        """Identical orientations would be an N=1 lattice packing, capped at 18/49."""
+        from scipy.spatial import cKDTree
+
+        cell, _ = tg.double_lattice_cell(np.eye(3) * 3.0, np.array([1.4, 0.3, 0.2]))
+        centred = [t - t.mean(axis=0) for t in cell]
+        assert cKDTree(centred[1]).query(centred[0])[0].max() > 0.1
+
+    def test_search_returns_a_certified_packing(self) -> None:
+        result = tg._double_lattice_search(400, seed=3)
+        cell, lattice = result.cell
+        np.testing.assert_allclose(tg.edge_lengths(cell), 1.0, atol=1e-12)
+        assert tg._configuration_is_valid(cell, lattice)
+        assert 0.0 < result.packing_fraction < tg.N2_PACKING_FRACTION + 1e-9
+
+    def test_compression_is_monotone(self) -> None:
+        low = tg._double_lattice_search(100, seed=5)
+        high = tg._double_lattice_search(600, seed=5)
+        assert high.packing_fraction >= low.packing_fraction
+
+    def test_search_never_exceeds_the_published_optimum(self) -> None:
+        """Beating phi_2 would mean the overlap test is wrong, not a discovery."""
+        for seed in (11, 23, 37):
+            result = tg._double_lattice_search(1500, seed=seed)
+            assert result.packing_fraction < tg.N2_PACKING_FRACTION + 1e-9
+
+
+# --------------------------------------------------------------------------- #
+# The dodecagonal quasicrystal: a positive control for the lift test
+# --------------------------------------------------------------------------- #
+@pytest.fixture(scope="module")
+def quasilattice():
+    """A dodecagonal cut-and-project set, in float and exact coefficient form."""
+    return tl.dodecagonal_quasilattice(window_radius=1.6, index_range=5, layers=3)
+
+
+class TestDodecagonalQuasicrystal:
+    """Where a higher-dimensional lift is genuinely real, unlike the crystals."""
+
+    def test_in_plane_module_has_rank_four(self, quasilattice) -> None:
+        """Z[zeta_12] has rank 4: the minimal polynomial x^4 - x^2 + 1 is degree 4."""
+        _, coefficients = quasilattice
+        planar = [[c[0], c[1]] for c in coefficients]
+        assert tl.zmodule_rank(planar).rank == 4
+
+    def test_stacked_structure_has_rank_five(self, quasilattice) -> None:
+        """Four in-plane plus one periodic axis: a projection from five dimensions."""
+        _, coefficients = quasilattice
+        result = tl.zmodule_rank(coefficients)
+        assert result.rank == 5
+        assert result.ambient_dimension == 3
+        assert result.admits_projection_lift
+
+    def test_is_twelve_fold_symmetric_in_the_core(self, quasilattice) -> None:
+        from scipy.spatial import cKDTree
+
+        points, _ = quasilattice
+        planar = points[np.isclose(points[:, 2], 0.0)][:, :2]
+        angle = math.pi / 6
+        rotation = np.array(
+            [[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]]
+        )
+        distance, _ = cKDTree(planar).query(planar @ rotation.T)
+        radius = np.linalg.norm(planar, axis=1)
+        core = radius < radius.max() * 0.55
+        assert distance[core].max() < 1e-9
+
+    def test_is_a_discrete_point_set_not_a_dense_module(self, quasilattice) -> None:
+        """The acceptance window is what makes it a quasicrystal rather than dense."""
+        from scipy.spatial import cKDTree
+
+        points, _ = quasilattice
+        planar = points[np.isclose(points[:, 2], 0.0)][:, :2]
+        distance, _ = cKDTree(planar).query(planar, k=2)
+        assert distance[:, 1].min() > 0.2
+
+    def test_the_crystals_do_not_admit_a_lift(self) -> None:
+        """The same test that returns 5 here returns 3 for every packing in the repo."""
+        for variant in ("optimal", "kallus-elser-gravel", "densest-connected"):
+            u, v, w = tg.CEG_FAMILY_PRESETS[variant]
+            exact = tg.ceg_exact_vertices(u, v, w, reps=2)
+            result = tl.zmodule_rank(tl.rational_coefficients(exact))
+            assert result.rank == 3
+            assert not result.admits_projection_lift
+
+    def test_rejects_bad_parameters(self) -> None:
+        with pytest.raises(ValueError):
+            tl.dodecagonal_quasilattice(window_radius=0.0)
+        with pytest.raises(ValueError):
+            tl.dodecagonal_quasilattice(index_range=0)

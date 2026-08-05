@@ -43,6 +43,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 __all__ = [
+    "dodecagonal_quasilattice",
     "ZModuleResult",
     "AngleSpectrum",
     "LiftReport",
@@ -110,6 +111,105 @@ def rational_coefficients(
 ) -> list[list[list[Fraction]]]:
     """Wrap purely rational coordinates as coefficients over the basis ``[1]``."""
     return [[[component] for component in point] for point in points]
+
+
+#: In-plane star vectors of the dodecagonal module, as exact coefficients over
+#: the basis ``[1, sqrt(3)]``.  These are ``(cos(2 pi k / 12), sin(2 pi k / 12))``
+#: for ``k = 0, 1, 2, 3``, which generate ``Z[zeta_12]`` as a rank-4 Z-module --
+#: the minimal polynomial of ``zeta_12`` is ``x^4 - x^2 + 1``, of degree 4.
+_DODECAGONAL_STAR: tuple[tuple[tuple[Fraction, Fraction], ...], ...] = (
+    ((Fraction(1), Fraction(0)), (Fraction(0), Fraction(0))),                 # k=0
+    ((Fraction(0), Fraction(1, 2)), (Fraction(1, 2), Fraction(0))),           # k=1
+    ((Fraction(1, 2), Fraction(0)), (Fraction(0), Fraction(1, 2))),           # k=2
+    ((Fraction(0), Fraction(0)), (Fraction(1), Fraction(0))),                 # k=3
+)
+
+
+def dodecagonal_quasilattice(
+    window_radius: float = 1.6,
+    index_range: int = 6,
+    layers: int = 3,
+    layer_spacing: Fraction = Fraction(1),
+) -> tuple[FloatArray, list[list[list[Fraction]]]]:
+    """A genuine dodecagonal cut-and-project quasicrystal, in float and exact form.
+
+    Dodecagonal quasicrystals -- the symmetry class of the tetrahedron
+    quasicrystal approximant of Haji-Akbari et al. -- are projections from five
+    dimensions: four for the in-plane module ``Z[zeta_12]`` and one for the
+    periodic stacking axis.  A point ``n`` in ``Z^4`` is accepted when its image
+    under the *conjugate* star (Galois conjugation ``sqrt(3) -> -sqrt(3)``) falls
+    inside the acceptance window, and the accepted points are projected by the
+    physical star.
+
+    This exists as a **positive control**.  The rank test in this module returns
+    3 for every crystal here, which is a negative result; a test that can only
+    ever return a negative is worthless.  Feeding it a structure whose lift is
+    real and whose rank is known independently -- 5 -- shows the machinery is
+    able to detect one.
+
+    Parameters
+    ----------
+    window_radius:
+        Radius of the circular acceptance window in perpendicular space.
+    index_range:
+        Integer range searched in each of the four module directions.
+    layers:
+        Number of periodic layers stacked along z.
+    layer_spacing:
+        Rational spacing between layers.
+
+    Returns
+    -------
+    (points, coefficients)
+        ``(n, 3)`` float coordinates, and the same points as exact coefficient
+        vectors over the basis ``[1, sqrt(3)]`` suitable for :func:`zmodule_rank`.
+    """
+    if window_radius <= 0.0:
+        raise ValueError("window_radius must be positive")
+    if index_range < 1 or layers < 1:
+        raise ValueError("index_range and layers must be >= 1")
+
+    root3 = math.sqrt(3.0)
+    physical: list[tuple[float, float]] = []
+    exact: list[tuple[tuple[Fraction, Fraction], tuple[Fraction, Fraction]]] = []
+
+    span = range(-index_range, index_range + 1)
+    for n0 in span:
+        for n1 in span:
+            for n2 in span:
+                for n3 in span:
+                    counts = (n0, n1, n2, n3)
+                    x_rat = sum(c * s[0][0] for c, s in zip(counts, _DODECAGONAL_STAR))
+                    x_r3 = sum(c * s[0][1] for c, s in zip(counts, _DODECAGONAL_STAR))
+                    y_rat = sum(c * s[1][0] for c, s in zip(counts, _DODECAGONAL_STAR))
+                    y_r3 = sum(c * s[1][1] for c, s in zip(counts, _DODECAGONAL_STAR))
+
+                    # Conjugate (perpendicular) image: sqrt(3) -> -sqrt(3).
+                    perp_x = float(x_rat) - root3 * float(x_r3)
+                    perp_y = float(y_rat) - root3 * float(y_r3)
+                    if perp_x * perp_x + perp_y * perp_y > window_radius * window_radius:
+                        continue
+
+                    physical.append(
+                        (
+                            float(x_rat) + root3 * float(x_r3),
+                            float(y_rat) + root3 * float(y_r3),
+                        )
+                    )
+                    exact.append(((x_rat, x_r3), (y_rat, y_r3)))
+
+    if not physical:
+        raise ValueError("acceptance window selected no points; widen window_radius")
+
+    points: list[list[float]] = []
+    coefficients: list[list[list[Fraction]]] = []
+    for layer in range(layers):
+        height = layer_spacing * layer
+        for (px, py), ((xr, x3), (yr, y3)) in zip(physical, exact):
+            points.append([px, py, float(height)])
+            coefficients.append([[xr, x3], [yr, y3], [height, Fraction(0)]])
+
+    return np.ascontiguousarray(points, dtype=F64), coefficients
 
 
 def zmodule_rank(

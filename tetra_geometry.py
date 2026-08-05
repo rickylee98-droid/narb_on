@@ -47,6 +47,8 @@ __all__ = [
     "build_ceg_packing",
     "build_n3_packing",
     "build_n3_cluster",
+    "double_lattice_cell",
+    "N2_PACKING_FRACTION",
     "n3_unit_cell",
     "N3_PACKING_FRACTION",
     "ceg_unit_cell",
@@ -1414,6 +1416,136 @@ def build_n3_cluster(
     )
     cloud.assert_regular(edge=1.0, atol=1e-12)
     return cloud
+
+
+#: Analytical density of the N = 2 phase, Chen, Engel & Glotzer Table I:
+#: ``phi_2 = 9 / (139 - 40 sqrt(10))``.
+N2_PACKING_FRACTION: float = 9.0 / (139.0 - 40.0 * math.sqrt(10.0))
+
+
+def double_lattice_cell(
+    lattice: FloatArray, offset: FloatArray
+) -> tuple[FloatArray, FloatArray]:
+    """Two tetrahedra related by a point inversion, on a free lattice.
+
+    Kuperberg's *double lattice*: the packing is the union of ``T + L`` and
+    ``-T + d + L``.  Inversion through ``d/2`` exchanges the two, so the space
+    group acts transitively on the tetrahedra -- which is exactly how Table I
+    describes the N = 2 phase, "2 monomers, transitive".
+
+    The generating tetrahedron is held in its canonical orientation; a general
+    ``3 x 3`` lattice can present any orientation relative to it, so nothing is
+    lost and three redundant rotational degrees of freedom are avoided.
+
+    Parameters
+    ----------
+    lattice:
+        ``(3, 3)`` lattice with vectors as rows.
+    offset:
+        ``(3,)`` translation applied to the inverted copy.
+
+    Returns
+    -------
+    (tetrahedra, lattice)
+        ``(2, 4, 3)`` vertex coordinates and the lattice, unchanged.
+    """
+    base = regular_tetrahedron(1.0)
+    shift = np.asarray(offset, dtype=F64)
+    cell = np.stack([base, -base + shift])
+
+    inverse = np.linalg.inv(lattice)
+    centroids = cell.mean(axis=1)
+    cell = cell - (np.floor(centroids @ inverse) @ lattice)[:, None, :]
+    return np.ascontiguousarray(cell), np.ascontiguousarray(lattice, dtype=F64)
+
+
+@dataclass(frozen=True)
+class DoubleLatticeResult:
+    """Outcome of a monomer double-lattice search."""
+
+    lattice: FloatArray
+    offset: FloatArray
+    packing_fraction: float
+
+    @property
+    def cell(self) -> tuple[FloatArray, FloatArray]:
+        return double_lattice_cell(self.lattice, self.offset)
+
+
+def _double_lattice_search(
+    cycles: int,
+    seed: int,
+    *,
+    initial_fraction: float = 0.15,
+    compression: float = 0.004,
+) -> DoubleLatticeResult:
+    """Monte Carlo over the twelve numbers of the monomer double lattice."""
+    rng = np.random.default_rng(seed)
+
+    # The offset is a structural parameter, not a fraction of the cell: if the
+    # two tetrahedra overlap each other, no amount of lattice expansion
+    # separates them.  Resolve the pair first, then the periodic images.
+    offset = rng.normal(scale=0.5, size=3).astype(F64)
+    if np.linalg.norm(offset) < 1e-6:
+        offset = np.array([1.0, 0.0, 0.0], dtype=F64)
+    base = regular_tetrahedron(1.0)
+    for _ in range(80):
+        pair = np.stack([base, -base + offset])
+        if sat_overlap_depth(pair[0:1], pair[1:2])[0] <= 1e-12:
+            break
+        offset = offset * 1.15
+    else:
+        raise RuntimeError("failed to separate the two tetrahedra of the double lattice")
+
+    lattice = _initial_lattice(2, initial_fraction, rng)
+    for _ in range(80):
+        if _configuration_is_valid(*double_lattice_cell(lattice, offset)):
+            break
+        lattice = lattice * 1.12
+    else:
+        raise RuntimeError("failed to find a valid initial double-lattice configuration")
+
+    offset_step = _AdaptiveStep(0.06, bounds=(1e-9, 1.0))
+    shear_step = _AdaptiveStep(0.02, bounds=(1e-9, 0.2))
+    # The compression magnitude must adapt too.  Held fixed, a 0.4% volume drop
+    # per accepted move is far coarser than the remaining slack once the packing
+    # approaches jamming, and the search stalls well short of the optimum.
+    squeeze_step = _AdaptiveStep(compression, bounds=(1e-10, 0.05))
+    identity3 = np.eye(3, dtype=F64)
+
+    for _ in range(cycles):
+        for _ in range(3):
+            old = offset.copy()
+            offset = offset + rng.normal(scale=offset_step.value, size=3)
+            ok = _configuration_is_valid(*double_lattice_cell(lattice, offset))
+            if not ok:
+                offset = old
+            offset_step.record(ok)
+
+        for _ in range(3):
+            shear = rng.normal(scale=shear_step.value, size=(3, 3))
+            shear = 0.5 * (shear + shear.T)
+            shear -= (np.trace(shear) / 3.0) * identity3
+            candidate = lattice @ (identity3 + shear)
+            det_now = abs(float(np.linalg.det(lattice)))
+            det_try = abs(float(np.linalg.det(candidate)))
+            ok = False
+            if det_try > 1e-12 and det_now > 1e-12:
+                candidate = candidate * (
+                    det_now * (1.0 - squeeze_step.value) / det_try
+                ) ** (1.0 / 3.0)
+                ok = _configuration_is_valid(*double_lattice_cell(candidate, offset))
+            if ok:
+                lattice = candidate
+            shear_step.record(ok)
+            squeeze_step.record(ok)
+
+    volume = abs(float(np.linalg.det(lattice)))
+    return DoubleLatticeResult(
+        lattice=lattice,
+        offset=offset,
+        packing_fraction=2.0 * UNIT_TETRA_VOLUME / volume,
+    )
 
 
 def trimer_motif(radius: float, quat: FloatArray) -> FloatArray:

@@ -177,7 +177,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `explore_connectivity.py` | Family sweep: connectivity vs density, CSV + figure |
 | `tetra_fastsat.py` | Optional compiled (numba) periodic overlap kernel; NumPy fallback |
 | `tetra_lift.py` | Higher-dimensional lift obstructions: Z-module rank, root-system angles |
-| `test_tetra_spectral.py` | Test suite (230 tests) |
+| `test_tetra_spectral.py` | Test suite (243 tests) |
 
 ## Method notes
 
@@ -281,7 +281,37 @@ than under-tested.
 for that, use `--backend ceg`, which is exact. Every density it reports is measured, and
 `--verify-packing` runs an exact separating-axis check.
 
-## No higher-dimensional lift exists
+## Where a higher-dimensional lift *does* exist
+
+The rank test above returns 3 for every crystal in this repo, which is a negative result —
+and a test that can only ever return a negative is worth very little. So it was pointed at a
+structure whose lift is real.
+
+The paper's largest entry is a **dodecagonal quasicrystal approximant** (N = 8×82,
+φ = 0.850267), and dodecagonal quasicrystals are cut-and-project sets from **five
+dimensions**: four for the in-plane module `Z[ζ₁₂]` — whose minimal polynomial `x⁴ − x² + 1`
+has degree 4 — plus one for the periodic stacking axis. `tetra_lift.dodecagonal_quasilattice`
+builds one: integer points of `Z⁴` accepted when their image under the *conjugate* star
+(Galois conjugation √3 → −√3) lands in the acceptance window, then projected by the physical
+star.
+
+| structure | Z-module rank | lift? |
+| --- | --- | --- |
+| **dodecagonal quasicrystal** | **5** (in-plane 4 = `Z[ζ₁₂]`) | **yes** |
+| CEG optimal / KEG / densest-connected | 3 | no |
+| N = 3 phase | 3 | no |
+
+The machinery detects it, and the resulting point set is verified 12-fold symmetric in its
+core and genuinely discrete (nearest-neighbour spacing bounded away from zero — the
+acceptance window is what makes it a quasicrystal rather than a dense module).
+
+**So the original higher-dimensional intuition was not wrong — it was aimed at the wrong
+phase.** The dimer crystals are rational and three-dimensional, and no amount of searching
+will find a lift in them. The quasicrystal in the same paper genuinely is a shadow of a
+five-dimensional lattice. This is the symmetry *class*, not a reconstruction of the
+82-tetrahedron approximant, whose coordinates are in the same dead data file as the rest.
+
+## No higher-dimensional lift exists in the crystals
 
 `tetra_lift.py` tests whether these structures could be 3D shadows of something more
 symmetric — a cut-and-project quasicrystal, or a graph drawn from a root system such as
@@ -312,6 +342,30 @@ that stops tetrahedra from tiling space.
 The Laplacian multiplicities tell the same story: `{4: 122, 24: 1, 128: 1}` — every value
 divisible by 4, the number of identical components. They are component repetition, not
 irrep dimensions. `E₈`'s smallest non-trivial irrep is 248-dimensional.
+
+## The N = 2 phase: identified, not solved
+
+Table I gives N = 2 at φ₂ = 9/(139 − 40√10) ≈ 0.719488, "2 monomers, transitive". Its
+determinant is worth writing out:
+
+> |det A| = √2(139 − 40√10)/54 = **(139√2 − 80√5)/54**
+
+Two independent quadratic irrationals — so unlike CEG (rational) and N = 3 (where
+det = 3√2/8), this lattice cannot be rational.
+
+The structure was identified. "Transitive" points at Kuperberg's **double lattice**: the
+packing is `T + L` together with `−T + d + L`, with inversion through `d/2` exchanging the
+two. Checking the best unconstrained N = 2 result confirms it — the two orientations are
+inversion-related to within 2.6e-4, and are definitively *not* identical (which would make it
+an N = 1 lattice packing, capped at 18/49).
+
+The density was not. Best achieved is **0.715488 = 99.44%** of φ₂, from a refinement seeded
+on the unconstrained optimum. Fixing a real limitation on the way — `_double_lattice_search`
+held its compression rate fixed, where `_asc_search` adapts it, and near jamming a 0.4%
+volume drop per accepted move is far coarser than the remaining slack; making it adaptive
+moved the cold-start best from 0.7037 to 0.7145. Even so, no exact closed form emerged the
+way `a = √3/2, c = √(2/3)` did for N = 3, so **the N = 2 coordinates remain unrecovered** and
+the rank test cannot be run on them — that needs exact values, not a 99.4% approximation.
 
 ## Recovering the N = 3 phase, φ = 2/3
 
