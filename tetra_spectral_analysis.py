@@ -151,6 +151,8 @@ def build_cloud(args: argparse.Namespace) -> tg.TetraCloud:
         return tg.build_honeycomb(args.min_tetrahedra)
     if args.backend == "ceg":
         return tg.build_ceg_packing(args.min_tetrahedra, variant=args.ceg_variant)
+    if args.backend == "n3":
+        return tg.build_n3_packing(args.min_tetrahedra)
     if args.backend == "p3":
         return tg.build_p3_packing(
             args.min_tetrahedra,
@@ -591,12 +593,13 @@ def build_parser() -> argparse.ArgumentParser:
     geom = parser.add_argument_group("geometry")
     geom.add_argument(
         "--backend",
-        choices=("honeycomb", "ceg", "p3", "packing"),
+        choices=("honeycomb", "ceg", "n3", "p3", "packing"),
         default="honeycomb",
         help=(
             "cluster construction: 'honeycomb' interlocking FCC honeycomb "
             "(default), 'ceg' the exact Chen-Engel-Glotzer optimum at phi = "
-            "4000/4671, 'p3' a three-fold screw-symmetric search for the N = 3 "
+            "4000/4671, 'n3' the N = 3 phase at exactly 2/3, 'p3' a three-fold "
+            "screw-symmetric search for the N = 3 "
             "phase, 'packing' a general stochastic adaptive-shrinking-cell search"
         ),
     )

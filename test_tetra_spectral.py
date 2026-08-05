@@ -1302,3 +1302,114 @@ class TestP3Search:
     def test_rejects_invalid_effort(self, kwargs: dict) -> None:
         with pytest.raises(ValueError):
             tg.build_p3_packing(27, screw=1, seed=1, **kwargs)
+
+
+# --------------------------------------------------------------------------- #
+# The N = 3 phase, recovered from Table I's description
+# --------------------------------------------------------------------------- #
+class TestC3AlignedTetrahedron:
+    def test_is_regular_with_unit_edges(self) -> None:
+        t = tg.c3_aligned_tetrahedron(0.37, +1)
+        np.testing.assert_allclose(tg.edge_lengths(t[None]), 1.0, atol=1e-12)
+
+    def test_centroid_is_the_origin(self) -> None:
+        np.testing.assert_allclose(
+            tg.c3_aligned_tetrahedron(1.1, -1).mean(axis=0), 0.0, atol=1e-12
+        )
+
+    @pytest.mark.parametrize("sign", [1, -1])
+    def test_is_invariant_under_the_three_fold_rotation(self, sign: int) -> None:
+        """This is the property the whole ansatz rests on."""
+        t = tg.c3_aligned_tetrahedron(0.83, sign)
+        image = (tg._ROT120 @ t.T).T
+        distance = np.linalg.norm(image[:, None, :] - t[None, :, :], axis=2)
+        np.testing.assert_allclose(distance.min(axis=1), 0.0, atol=1e-12)
+
+    def test_height_and_base_radius_match_closed_forms(self) -> None:
+        assert tg.C3_TETRA_HEIGHT == pytest.approx(math.sqrt(2 / 3))
+        assert tg.C3_TETRA_BASE_RADIUS == pytest.approx(1 / math.sqrt(3))
+
+    def test_rejects_bad_sign(self) -> None:
+        with pytest.raises(ValueError):
+            tg.c3_aligned_tetrahedron(0.0, 0)
+
+
+class TestN3Phase:
+    """Table I's N = 3 phase: 3 monomers, three-fold symmetric, phi = 2/3."""
+
+    def test_cell_parameters_are_the_closed_forms(self) -> None:
+        assert tg.N3_CELL_A == pytest.approx(math.sqrt(3) / 2)
+        assert tg.N3_CELL_C == pytest.approx(math.sqrt(2 / 3))
+        # c is exactly the tetrahedron's own height along its three-fold axis.
+        assert tg.N3_CELL_C == pytest.approx(tg.C3_TETRA_HEIGHT)
+
+    def test_density_is_exactly_two_thirds(self) -> None:
+        _, lattice = tg.n3_unit_cell()
+        volume = abs(float(np.linalg.det(lattice)))
+        assert volume == pytest.approx(3 * math.sqrt(2) / 8, abs=1e-15)
+        assert 3 * tg.UNIT_TETRA_VOLUME / volume == pytest.approx(2 / 3, abs=1e-15)
+
+    def test_unit_cell_holds_three_regular_tetrahedra(self) -> None:
+        cell, _ = tg.n3_unit_cell()
+        assert cell.shape == (3, 4, 3)
+        np.testing.assert_allclose(tg.edge_lengths(cell), 1.0, atol=1e-12)
+
+    def test_unit_cell_is_overlap_free_under_periodicity(self) -> None:
+        cell, lattice = tg.n3_unit_cell()
+        assert tg._configuration_is_valid(cell, lattice, tolerance=1e-9)
+
+    def test_tiled_packing_has_no_overlaps(self) -> None:
+        cloud = tg.build_n3_packing(200)
+        assert tg.find_overlapping_pairs(cloud.tetrahedra, tolerance=1e-9).shape[0] == 0
+
+    def test_each_monomer_sits_on_its_own_three_fold_axis(self) -> None:
+        """The rotation maps every tetrahedron to itself, not to another."""
+        cell, lattice = tg.n3_unit_cell()
+        inverse = np.linalg.inv(lattice)
+        for k in range(3):
+            image = (tg._ROT120 @ cell[k].T).T
+            delta = (image.mean(axis=0) - cell[k].mean(axis=0)) @ inverse
+            np.testing.assert_allclose(delta, np.round(delta), atol=1e-9)
+
+    def test_monomers_occupy_the_three_distinct_wyckoff_axes(self) -> None:
+        cell, lattice = tg.n3_unit_cell()
+        fractional = (cell.mean(axis=1) @ np.linalg.inv(lattice))[:, :2] % 1.0
+        expected = np.array([[float(x), float(y)] for x, y in tg.P3_AXIS_SITES])
+        for site in expected:
+            assert np.any(np.all(np.isclose(fractional, site, atol=1e-9), axis=1))
+
+    def test_apex_directions_are_mixed(self) -> None:
+        """All three pointing the same way collapses the density to ~0.43."""
+        assert len(set(tg.N3_SIGNS)) == 2
+
+    def test_is_reproducible(self) -> None:
+        np.testing.assert_array_equal(
+            tg.build_n3_packing(200).tetrahedra, tg.build_n3_packing(200).tetrahedra
+        )
+
+    def test_beats_every_searched_family(self) -> None:
+        """2/3 exceeds the converged optimum of the single-orbit P3 family."""
+        cloud = tg.build_n3_packing(200)
+        assert cloud.provenance["packing_fraction"] > 0.60
+
+    def test_graph_is_far_more_connected_than_the_dimer_packings(self) -> None:
+        """Unlike CEG, the N = 3 phase shares vertices between distinct monomers."""
+        cloud = tg.build_n3_packing(500)
+        merged = ts.merge_vertices(cloud.raw_points, atol=1e-5)
+        bundle = ts.build_unit_distance_graph(merged.points)
+
+        assert merged.n_unique < merged.n_raw          # genuine vertex sharing
+        assert bundle.n_components < cloud.n_tetrahedra // 8
+        assert bundle.degrees.max() >= 8               # CEG never exceeds 4
+        spectrum = ts.smallest_eigenvalues(
+            ts.graph_laplacian(bundle.adjacency),
+            k=merged.n_unique,
+            n_components=bundle.n_components,
+            component_labels=bundle.component_labels,
+        )
+        assert spectrum.zero_multiplicity == bundle.n_components
+        assert 0.0 < spectrum.first_positive < 1.0     # CEG gives exactly 3
+
+    def test_rejects_nonsense_size(self) -> None:
+        with pytest.raises(ValueError):
+            tg.build_n3_packing(0)

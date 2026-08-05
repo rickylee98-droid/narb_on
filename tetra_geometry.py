@@ -45,6 +45,9 @@ __all__ = [
     "sat_disjoint",
     "build_honeycomb",
     "build_ceg_packing",
+    "build_n3_packing",
+    "n3_unit_cell",
+    "N3_PACKING_FRACTION",
     "ceg_unit_cell",
     "ceg_family_vectors",
     "ceg_packing_fraction",
@@ -1009,6 +1012,332 @@ def p3_cell(
 #: this is not a compact motif, and its periodic images interleave so heavily
 #: that the configuration cannot be certified.
 MAX_TRIMER_RADIUS: float = 2.0
+
+
+#: Height of a unit tetrahedron measured along its own three-fold axis.
+C3_TETRA_HEIGHT: float = math.sqrt(2.0 / 3.0)
+
+#: Circumradius of the base triangle when the three-fold axis is vertical.
+C3_TETRA_BASE_RADIUS: float = 1.0 / math.sqrt(3.0)
+
+#: Fractional positions of the three distinct three-fold axes of a hexagonal
+#: cell -- Wyckoff sites 1a, 1b and 1c of space group P3.
+P3_AXIS_SITES: tuple[tuple[Fraction, Fraction], ...] = (
+    (Fraction(0), Fraction(0)),
+    (Fraction(1, 3), Fraction(2, 3)),
+    (Fraction(2, 3), Fraction(1, 3)),
+)
+
+
+def c3_aligned_tetrahedron(azimuth: float, sign: int) -> FloatArray:
+    """A unit tetrahedron whose own three-fold axis is the z axis.
+
+    Such a tetrahedron is mapped to *itself* by a 120 degree rotation about z,
+    which is what lets three separate monomers each sit on their own axis and
+    still leave the crystal three-fold symmetric.
+
+    Parameters
+    ----------
+    azimuth:
+        Rotation about the axis.  The body has C3 symmetry, so only the range
+        ``[0, 2*pi/3)`` is distinct.
+    sign:
+        ``+1`` points the apex along ``+z``, ``-1`` along ``-z``.
+
+    Returns
+    -------
+    ndarray, shape (4, 3)
+        Vertices, centroid at the origin.
+    """
+    if sign not in (1, -1):
+        raise ValueError(f"sign must be +1 or -1, got {sign!r}")
+
+    height, radius = C3_TETRA_HEIGHT, C3_TETRA_BASE_RADIUS
+    vertices = np.empty((4, 3), dtype=F64)
+    vertices[0] = (0.0, 0.0, 0.75 * height)
+    for k in range(3):
+        angle = azimuth + 2.0 * math.pi * k / 3.0
+        vertices[k + 1] = (
+            radius * math.cos(angle),
+            radius * math.sin(angle),
+            -0.25 * height,
+        )
+    vertices[:, 2] *= sign
+    return vertices
+
+
+def p3_columns_cell(
+    a: float,
+    c: float,
+    heights: FloatArray,
+    azimuths: FloatArray,
+    signs: tuple[int, int, int],
+) -> tuple[FloatArray, FloatArray]:
+    """Three monomers, one on each three-fold axis of a hexagonal cell.
+
+    This is the reading of Table I's "3 monomers, three-fold symmetric" in which
+    the three-fold rotation maps every tetrahedron to *itself* rather than
+    permuting them.  It is disjoint from :func:`p3_cell`, where the three form a
+    single orbit, and it is the only remaining possibility once two others are
+    ruled out by volume arithmetic: all three monomers on one shared axis needs
+    a cell too narrow for the columns to clear each other, and a rhombohedral
+    R-centred cell reduces to a lattice packing, capped at 18/49.
+
+    Parameters
+    ----------
+    a, c:
+        Hexagonal cell parameters.
+    heights:
+        Axial offset of each monomer, in fractions of ``c``.  A common shift is
+        a global translation, so the first is conventionally held at zero.
+    azimuths:
+        Rotation of each monomer about its own axis.
+    signs:
+        Apex direction of each monomer, ``+1`` or ``-1``.
+
+    Returns
+    -------
+    (tetrahedra, lattice)
+        ``(3, 4, 3)`` vertex coordinates and the ``(3, 3)`` hexagonal lattice.
+    """
+    if not (a > 0.0 and c > 0.0):
+        raise ValueError(f"cell parameters must be positive, got a={a}, c={c}")
+
+    lattice = np.array(
+        [
+            [a, 0.0, 0.0],
+            [-0.5 * a, 0.5 * math.sqrt(3.0) * a, 0.0],
+            [0.0, 0.0, c],
+        ],
+        dtype=F64,
+    )
+
+    tetrahedra = np.empty((3, 4, 3), dtype=F64)
+    for index, (fx, fy) in enumerate(P3_AXIS_SITES):
+        body = c3_aligned_tetrahedron(float(azimuths[index]), signs[index])
+        origin = float(fx) * lattice[0] + float(fy) * lattice[1]
+        origin = origin + float(heights[index]) * lattice[2]
+        tetrahedra[index] = body + origin
+
+    inverse = np.linalg.inv(lattice)
+    centroids = tetrahedra.mean(axis=1)
+    tetrahedra = tetrahedra - (np.floor(centroids @ inverse) @ lattice)[:, None, :]
+    return np.ascontiguousarray(tetrahedra), np.ascontiguousarray(lattice)
+
+
+@dataclass(frozen=True)
+class P3ColumnsResult:
+    """Outcome of a three-axis monomer search."""
+
+    a: float
+    c: float
+    heights: FloatArray
+    azimuths: FloatArray
+    signs: tuple[int, int, int]
+    packing_fraction: float
+
+    @property
+    def cell(self) -> tuple[FloatArray, FloatArray]:
+        return p3_columns_cell(self.a, self.c, self.heights, self.azimuths, self.signs)
+
+
+def _p3_columns_search(
+    cycles: int,
+    seed: int,
+    signs: tuple[int, int, int],
+    *,
+    initial_fraction: float = 0.15,
+    compression: float = 0.004,
+) -> P3ColumnsResult:
+    """Monte Carlo over the seven free numbers of the three-axis ansatz.
+
+    Free: the cell ``(a, c)``, two relative axial offsets (the third is a global
+    translation), and three azimuths.  The apex directions are discrete and
+    enumerated by the caller.
+    """
+    rng = np.random.default_rng(seed)
+
+    volume = 3.0 * UNIT_TETRA_VOLUME / initial_fraction
+    a = (2.0 * volume / math.sqrt(3.0)) ** (1.0 / 3.0)
+    c = volume / (0.5 * math.sqrt(3.0) * a * a)
+    heights = np.array([0.0, rng.random(), rng.random()], dtype=F64)
+    azimuths = rng.random(3).astype(F64) * (2.0 * math.pi / 3.0)
+
+    for _ in range(80):
+        verts, lattice = p3_columns_cell(a, c, heights, azimuths, signs)
+        if _configuration_is_valid(verts, lattice):
+            break
+        a, c = a * 1.12, c * 1.12
+    else:
+        raise RuntimeError("failed to find a valid initial three-axis configuration")
+
+    height_step = _AdaptiveStep(0.05, bounds=(1e-7, 0.5))
+    azimuth_step = _AdaptiveStep(0.2, bounds=(1e-6, 2.0 * math.pi / 3.0))
+    cell_step = _AdaptiveStep(0.02, bounds=(1e-6, 0.2))
+
+    for _ in range(cycles):
+        for _ in range(3):
+            index = int(rng.integers(3))
+            old_h, old_az = heights[index], azimuths[index]
+            if rng.random() < 0.5 and index > 0:
+                heights[index] = (old_h + float(rng.normal(scale=height_step.value))) % 1.0
+                step = height_step
+            else:
+                azimuths[index] = old_az + float(rng.normal(scale=azimuth_step.value))
+                step = azimuth_step
+            verts, lattice = p3_columns_cell(a, c, heights, azimuths, signs)
+            ok = _configuration_is_valid(verts, lattice)
+            if not ok:
+                heights[index], azimuths[index] = old_h, old_az
+            step.record(ok)
+
+        for _ in range(3):
+            ratio = math.exp(rng.normal(scale=cell_step.value))
+            shrink = (1.0 - compression) ** (1.0 / 3.0)
+            trial_a = a * ratio * shrink
+            trial_c = c * shrink**3 / ratio**2
+            ok = trial_a > 1e-6 and trial_c > 1e-6
+            if ok:
+                verts, lattice = p3_columns_cell(trial_a, trial_c, heights, azimuths, signs)
+                ok = _configuration_is_valid(verts, lattice)
+            if ok:
+                a, c = trial_a, trial_c
+            cell_step.record(ok)
+
+    return P3ColumnsResult(
+        a=a, c=c, heights=heights.copy(), azimuths=azimuths.copy(), signs=signs,
+        packing_fraction=p3_packing_fraction(a, c),
+    )
+
+
+#: Exact density of the N = 3 phase, Chen, Engel & Glotzer Table I.
+N3_PACKING_FRACTION: Fraction = Fraction(2, 3)
+
+#: Exact hexagonal cell of the N = 3 phase.  ``c`` is the tetrahedron's own
+#: height along its three-fold axis, so each column is exactly one tetrahedron
+#: tall; ``a`` is the height of a unit equilateral triangle.  Together they give
+#: ``V = (sqrt3/2) a^2 c = 3 sqrt2 / 8``, and ``phi = 3 V_tet / V = 2/3`` exactly.
+N3_CELL_A: float = math.sqrt(3.0) / 2.0
+N3_CELL_C: float = math.sqrt(2.0 / 3.0)
+
+#: Axial offsets, azimuths and apex directions of the three monomers.  One of
+#: 24 symmetry-equivalent solutions; the others differ by relabelling the axes,
+#: shifting z, or reflecting.
+N3_HEIGHTS: tuple[Fraction, Fraction, Fraction] = (
+    Fraction(0), Fraction(1, 2), Fraction(0),
+)
+N3_AZIMUTH_THIRDS: tuple[int, int, int] = (0, 1, 1)  # multiples of pi/3
+N3_SIGNS: tuple[int, int, int] = (1, 1, -1)
+
+
+def n3_unit_cell() -> tuple[FloatArray, FloatArray]:
+    """The three tetrahedra and lattice of the N = 3 phase, ``phi = 2/3``.
+
+    Table I of Chen, Engel & Glotzer records an N = 3 phase at an analytical
+    density of exactly 2/3, described as "3 monomers, three-fold symmetric", but
+    does not publish its coordinates and the referenced data file is no longer
+    online.  This is that structure, recovered by searching the ansatz in which
+    the three-fold rotation maps each monomer to *itself*: one tetrahedron on
+    each of the hexagonal cell's three distinct three-fold axes, its own C3 axis
+    aligned with the crystal's.
+
+    Two other readings are excluded by volume arithmetic alone.  All three
+    monomers on a single shared axis needs ``c >= 3 * 0.8165``, forcing
+    ``a <= 0.5`` and putting the columns 0.29 apart against a base radius of
+    0.577.  A rhombohedral R-centred cell puts one tetrahedron in the primitive
+    cell, which is a lattice packing and capped at 18/49.
+
+    Returns
+    -------
+    (tetrahedra, lattice)
+        ``(3, 4, 3)`` vertex coordinates and the ``(3, 3)`` hexagonal lattice.
+    """
+    heights = np.array([float(h) for h in N3_HEIGHTS], dtype=F64)
+    azimuths = np.array(
+        [k * math.pi / 3.0 for k in N3_AZIMUTH_THIRDS], dtype=F64
+    )
+    return p3_columns_cell(N3_CELL_A, N3_CELL_C, heights, azimuths, N3_SIGNS)
+
+
+def build_n3_packing(min_tetrahedra: int = 1000, *, max_replicas: int = 40) -> TetraCloud:
+    """Build the N = 3 phase at exactly ``phi = 2/3`` and certify it.
+
+    The cell is verified on construction rather than trusted: the tetrahedra are
+    checked regular with unit edge, the density is checked against 2/3 exactly,
+    and the separating-axis test is run over all periodic images.
+
+    Parameters
+    ----------
+    min_tetrahedra:
+        Minimum tetrahedron count in the returned cloud.
+    max_replicas:
+        Safety bound on tiling repetitions per lattice direction.
+
+    Returns
+    -------
+    TetraCloud
+    """
+    if min_tetrahedra < 1:
+        raise ValueError("min_tetrahedra must be >= 1")
+
+    cell, lattice = n3_unit_cell()
+    per_cell = int(cell.shape[0])
+
+    volume = abs(float(np.linalg.det(lattice)))
+    phi = per_cell * UNIT_TETRA_VOLUME / volume
+    if abs(phi - float(N3_PACKING_FRACTION)) > 1e-14:
+        raise AssertionError(f"N=3 cell gives phi={phi:.15f}, expected 2/3")
+    if not _configuration_is_valid(cell, lattice, tolerance=1e-9):
+        raise AssertionError("N=3 unit cell failed the separating-axis overlap test")
+
+    reps = 1
+    while reps <= max_replicas and per_cell * reps**3 < min_tetrahedra:
+        reps += 1
+    if per_cell * reps**3 < min_tetrahedra:
+        raise RuntimeError(
+            f"cannot reach {min_tetrahedra} tetrahedra within max_replicas={max_replicas}"
+        )
+
+    grid = np.arange(reps, dtype=F64)
+    i, j, k = np.meshgrid(grid, grid, grid, indexing="ij")
+    translations = np.stack([i.ravel(), j.ravel(), k.ravel()], axis=1) @ lattice
+    tiled = (cell[None, :, :, :] + translations[:, None, None, :]).reshape(-1, 4, 3)
+
+    overlaps = find_overlapping_pairs(tiled, tolerance=1e-9)
+    if overlaps.shape[0]:
+        raise AssertionError(
+            f"N=3 packing has {overlaps.shape[0]} overlapping pairs after tiling"
+        )
+
+    cloud = TetraCloud(
+        tetrahedra=tiled,
+        lattice=lattice,
+        tetra_per_cell=per_cell,
+        provenance={
+            "backend": "n3",
+            "target": "Chen, Engel & Glotzer Table I, N = 3 phase",
+            "packing_fraction": phi,
+            "packing_fraction_exact": "2/3",
+            "cell_a": "sqrt(3)/2",
+            "cell_c": "sqrt(2/3)  (the tetrahedron's own height)",
+            "unit_cell_volume": volume,
+            "structure": (
+                "3 monomers, one on each three-fold axis (Wyckoff 1a/1b/1c); "
+                "each mapped to itself by the rotation"
+            ),
+            "space_group": "P3",
+            "tetrahedra_per_cell": per_cell,
+            "replicas_per_axis": reps,
+            "overlap_certified": True,
+            "note": "recovered by search; the published coordinates are unavailable",
+        },
+    )
+    cloud.assert_regular(edge=1.0, atol=1e-12)
+    LOGGER.info(
+        "N=3 packing: phi=%.15f (2/3), %d tetrahedra from %d^3 cells",
+        phi, cloud.n_tetrahedra, reps,
+    )
+    return cloud
 
 
 def trimer_motif(radius: float, quat: FloatArray) -> FloatArray:

@@ -143,7 +143,10 @@ python tetra_spectral_analysis.py --backend ceg --ceg-variant densest-connected 
 # A stochastic density search instead (slower; reaches ~0.5-0.75, never the optimum)
 python tetra_spectral_analysis.py --backend packing --asc-cycles 1500 --asc-restarts 4
 
-# The three-fold screw family (Table I's N = 3 motif); omit --p3-screw to try all
+# The N = 3 phase at exactly 2/3, reconstructed
+python tetra_spectral_analysis.py --backend n3 --min-tetrahedra 500 --num-eigenvalues 2200 --verify-packing
+
+# The three-fold screw family (the orbit reading, which caps at 0.5956)
 python tetra_spectral_analysis.py --backend p3 --p3-screw 2 --asc-cycles 3000 --verify-packing
 
 # Map connectivity across the family and render the figure
@@ -174,7 +177,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `explore_connectivity.py` | Family sweep: connectivity vs density, CSV + figure |
 | `tetra_fastsat.py` | Optional compiled (numba) periodic overlap kernel; NumPy fallback |
 | `tetra_lift.py` | Higher-dimensional lift obstructions: Z-module rank, root-system angles |
-| `test_tetra_spectral.py` | Test suite (201 tests) |
+| `test_tetra_spectral.py` | Test suite (219 tests) |
 
 ## Method notes
 
@@ -310,51 +313,72 @@ The Laplacian multiplicities tell the same story: `{4: 122, 24: 1, 128: 1}` — 
 divisible by 4, the number of identical components. They are component repetition, not
 irrep dimensions. `E₈`'s smallest non-trivial irrep is 248-dimensional.
 
-## The N = 3 phase: the P3 route
+## Recovering the N = 3 phase, φ = 2/3
 
-Table I lists N = 3 at **φ = 2/3** ("3 monomers, three-fold symmetric"), but the paper does
-**not publish its coordinates** — they are in ref. [26], an external data file, and ref.
-[27] Appendix D. An unconstrained search is hopeless: the paper uses 7 × 10⁶ Monte Carlo
-moves per particle at a 21% success rate, and an unconstrained run here reaches only 0.47.
+Table I lists an N = 3 phase at **exactly φ = 2/3**, "3 monomers, three-fold symmetric".
+Its coordinates are not in the paper: ref. [26] is an external data file that is **no longer
+online** (the Glotzer group URL 404s), and ref. [27] Appendix D is likewise out of reach. So
+the structure was reconstructed instead — and the reconstruction succeeded.
 
-So the symmetry is imposed on the *parametrisation* instead. A three-fold rotation must map
-the lattice to itself, forcing a hexagonal cell, and the generator
-`S(p) = R_z(120°)·p + (0, 0, screw·c/3)` reduces the problem from four free rigid bodies to
-**seven numbers**: `a`, `c`, a fractional in-plane offset, and three orientation degrees of
-freedom. `S³` is always a lattice translation, so screw index 0, 1, 2 gives P3, P3₁, P3₂.
+### The ansatz that worked
 
-| search space | parameters | best φ | vs 2/3 |
+"Three-fold symmetric" admits more than one reading, and the first one tried was wrong. The
+natural guess is that the rotation *permutes* the three monomers — one orbit of a screw axis.
+That family was implemented (`--backend p3`), searched to convergence, and **caps at 0.5956**,
+89% of target. Raising the budget tenfold moved it +0.2%, so it was converged, not starved.
+
+The right reading is the other one: the rotation maps each monomer **to itself**. A hexagonal
+cell has *three distinct* three-fold axes — Wyckoff sites 1a, 1b, 1c at `(0,0,z)`, `(1/3,2/3,z)`,
+`(2/3,1/3,z)` — and a regular tetrahedron has its own C₃ axis. Put one monomer on each,
+C₃ axis aligned, and the crystal is three-fold symmetric with three monomers and no orbit at all.
+
+Two further readings were eliminated by arithmetic before any code was written:
+
+- all three monomers on one shared axis needs `c ≥ 3 × 0.8165`, forcing `a ≤ 0.5` and putting
+  columns 0.29 apart against a base radius of 0.577 — impossible;
+- a rhombohedral R-centred cell puts one tetrahedron in the primitive cell, making it a
+  *lattice* packing, capped at 18/49 = 0.367 (Hoylman) — Table I's own N = 1 entry.
+
+### The structure
+
+The search hit 0.6658 (99.87% of 2/3) with `a ≈ 0.8665`, `c ≈ 0.8167`, heights ≈ [0, 0, ½].
+Those are recognisable, and the closed forms are exact:
+
+| | |
+| --- | --- |
+| **a = √3/2** | the height of a unit equilateral triangle |
+| **c = √(2/3)** | *the tetrahedron's own height* — each column is exactly one tetrahedron tall |
+| V = (√3/2)a²c | = **3√2/8** |
+| φ = 3·V_tet / V | = **2/3, exactly** |
+
+Monomers sit at axial offsets {0, ½}c with azimuths from {0, π/3} and **mixed** apex
+directions — all three aligned collapses the density to 0.43. Twenty-four symmetry-equivalent
+configurations pack; `--backend n3` builds one, verified on construction: unit edges to 1e-15,
+density against 2/3 to 1e-14, and zero overlaps under the separating-axis test both
+periodically and across a tiled 648-tetrahedron block.
+
+This matches Table I's description and density exactly. Without the authors' coordinates it
+cannot be *proved* identical to theirs, but the agreement is not loose: an exact rational
+density, the stated motif, and the stated symmetry.
+
+### Its graph answers the original question
+
+The N = 3 phase is the only dense packing here with genuinely rich connectivity:
+
+| | N = 3 phase | CEG optimum | P3 search |
 | --- | --- | --- | --- |
-| **P3₁** (hexagonal, screw) | 7 | **0.5956** | **89.3%** |
-| P3₂ (hexagonal, screw) | 7 | 0.5939 | 89.1% |
-| unconstrained N = 3 | 24 | 0.5386 | 80.8% |
-| free-lattice trimer | 10 | 0.5242 | 78.6% |
-| P3 (hexagonal, pure rotation) | 7 | 0.4806 | 72.1% |
+| φ | 2/3 | 4000/4671 | 0.5956 |
+| raw → distinct vertices | 2592 → **2142** | no sharing between dimers | no sharing at all |
+| components (648 tetrahedra) | **16** | 324 | 648 |
+| degrees | **3–10**, mean 6.44 | 3–4 | 3 |
+| λ₁⁺ | **0.2203** | 3 | 4 |
 
-All at 40–48 restarts × 12 000 cycles, every result overlap-certified.
+So the answer to "smooth connectivity curve or codimension-1 lock" is a third thing again:
+the N = 3 phase is *natively* well connected, with 40 tetrahedra per component and multiplicities
+{2, 4, 8, 16} across 585 distinct levels. Its vertex sharing does not depend on tuning a
+parameter to a measure-zero set, which is exactly what the dimer family's u = 0 plane required.
 
-Two things this settles:
-
-- **The screw matters.** Pure three-fold rotation reaches only 0.48; adding the screw
-  translation gains 11 points. Whatever the N = 3 phase is, it is helical rather than
-  rotationally symmetric.
-- **Constraining helps; it does not hurt.** Two ways of relaxing the symmetry were tried
-  precisely because they might have been the limiter, and both are *worse*: a three-fold
-  cluster on a free triclinic lattice (the reading where "three-fold symmetric" describes the
-  motif rather than the crystal) reaches 0.5242, and dropping symmetry altogether reaches
-  0.5386. Imposing the symmetry on the parametrisation is what makes the search tractable.
-- **The search is converged, not effort-starved.** Raising the budget tenfold — 12 restarts ×
-  4000 cycles to 40 × 12 000 — moved the best result by **+0.2%** (0.5943 → 0.5956), and P3
-  by +0.0003. The top six seeds land in a tight band (0.5956 … 0.5873). That is what a
-  genuine family optimum looks like, not a search that ran out of time.
-
-So the conclusion is a negative one, and it is the interesting part: **φ = 2/3 does not live
-in the three-fold-symmetric family as parametrised here.** Its own optimum is ≈ 0.5956. The
-true N = 3 phase must differ structurally — the three tetrahedra are presumably not a single
-symmetry orbit — and finding it needs either the published coordinates or a different ansatz,
-not more compute.
-
-### What its graph looks like
+## The P3 orbit family (the ansatz that did not work)
 
 The best P3₂ packing has **no vertex sharing at all**: 648 tetrahedra give 2592 raw vertices
 and 2592 distinct ones, a compression ratio of exactly 1.0. The graph is 648 disjoint `K₄`,
