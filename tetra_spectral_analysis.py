@@ -6,7 +6,7 @@ vertices, forms the unit-distance graph, assembles the sparse combinatorial
 Laplacian ``L = D - A``, and extracts the low end of its spectrum to hunt for
 degeneracies and spectral gaps.
 
-Two geometry backends are available, and the distinction matters:
+Three geometry backends are available, and the distinction matters:
 
 ``honeycomb`` (default)
     The tetrahedral-octahedral honeycomb on the FCC lattice.  Tetrahedra
@@ -17,16 +17,27 @@ Two geometry backends are available, and the distinction matters:
     dimensions of the irreducible representations of :math:`O_h` (1, 1, 2, 3,
     3).  Tetrahedra occupy exactly 1/3 of space here.
 
+``ceg``
+    The densest known packing of regular tetrahedra, ``phi = 4000/4671 ~
+    0.856347``, taken as exact rationals from Chen, Engel & Glotzer (2010) and
+    certified here by the separating-axis test rather than trusted.  Its
+    spectral answer is complete and exact: the packing is built from *dimers*
+    (two tetrahedra sharing a face), and that face contact is genuine vertex
+    sharing, so each dimer contributes a 5-vertex component -- the triangular
+    dipyramid, ``K5`` minus an edge -- while distinct dimers share nothing.
+    The Laplacian spectrum of the whole packing is therefore exactly
+    ``{0, 3, 5, 5, 5}`` repeated once per dimer.  The algebraic connectivity is
+    exactly 0, every degeneracy is mere repetition of identical components, and
+    there is no hidden symmetry group to find.  Maximising density and building
+    a richly connected graph are simply different objectives.
+
 ``packing``
-    A genuine maximum-density-seeking packing found by adaptive-shrinking-cell
-    Monte Carlo, with the achieved packing fraction measured and reported.
-    Tetrahedra in a dense packing sit in *generic* position: they touch on
-    faces at incommensurate offsets and essentially never share a vertex or
-    land at unit separation.  The unit-distance graph therefore shatters into
-    one disjoint ``K4`` per tetrahedron, giving a Laplacian whose spectrum is
-    ``{0, 4, 4, 4}`` repeated, an algebraic connectivity of exactly 0, and no
-    fingerprint whatsoever.  That outcome is a real property of dense packings,
-    not a defect of this script, and running this backend demonstrates it.
+    A stochastic adaptive-shrinking-cell search, kept for exploring the
+    density landscape; the achieved packing fraction is measured, never
+    assumed, and reaches roughly 0.5-0.75 rather than the optimum.  With the
+    default ``single`` motif the tetrahedra land in fully generic position and
+    share no vertices at all, so the graph shatters further than the CEG case
+    does -- into one disjoint ``K4`` per tetrahedron, spectrum ``{0, 4, 4, 4}``.
 
 Examples
 --------
@@ -138,9 +149,12 @@ def build_cloud(args: argparse.Namespace) -> tg.TetraCloud:
     """Construct the tetrahedron cloud selected on the command line."""
     if args.backend == "honeycomb":
         return tg.build_honeycomb(args.min_tetrahedra)
+    if args.backend == "ceg":
+        return tg.build_ceg_packing(args.min_tetrahedra)
     return tg.build_dense_packing(
         args.min_tetrahedra,
         n_particles=args.asc_particles,
+        motif=args.motif,
         cycles=args.asc_cycles,
         restarts=args.asc_restarts,
         seed=args.seed,
@@ -190,6 +204,7 @@ def run_pipeline(args: argparse.Namespace) -> AnalysisResult:
         tol=args.arpack_tol,
         maxiter=args.arpack_maxiter,
         n_components=bundle.n_components,
+        component_labels=bundle.component_labels,
     )
     timings["eigensolve"] = time.perf_counter() - start
 
@@ -510,6 +525,7 @@ def summary_dict(result: AnalysisResult, args: argparse.Namespace) -> dict[str, 
             "degeneracy_rtol": args.degeneracy_rtol,
             "degeneracy_atol": args.degeneracy_atol,
             "seed": args.seed,
+            "motif": args.motif,
         },
         "geometry": {
             "n_tetrahedra": result.cloud.n_tetrahedra,
@@ -566,9 +582,13 @@ def build_parser() -> argparse.ArgumentParser:
     geom = parser.add_argument_group("geometry")
     geom.add_argument(
         "--backend",
-        choices=("honeycomb", "packing"),
+        choices=("honeycomb", "ceg", "packing"),
         default="honeycomb",
-        help="cluster construction: interlocking honeycomb (default) or dense packing",
+        help=(
+            "cluster construction: 'honeycomb' interlocking FCC honeycomb "
+            "(default), 'ceg' the exact Chen-Engel-Glotzer optimum at phi = "
+            "4000/4671, 'packing' a stochastic adaptive-shrinking-cell search"
+        ),
     )
     geom.add_argument(
         "--min-tetrahedra",
@@ -583,6 +603,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Monte Carlo cycles for the packing backend (default: 1500)",
     )
     geom.add_argument(
+        "--motif",
+        choices=tg.MOTIF_NAMES,
+        default="dimer",
+        help=(
+            "rigid body the packing search moves: 'dimer' packs face-fused "
+            "triangular dipyramids (the motif of every known optimum), 'single' "
+            "packs free tetrahedra (default: dimer)"
+        ),
+    )
+    geom.add_argument(
         "--asc-restarts",
         type=int,
         default=4,
@@ -591,8 +621,11 @@ def build_parser() -> argparse.ArgumentParser:
     geom.add_argument(
         "--asc-particles",
         type=int,
-        default=4,
-        help="tetrahedra per periodic cell for the packing backend (default: 4)",
+        default=2,
+        help=(
+            "rigid motifs per periodic cell for the packing backend; with the "
+            "default dimer motif this is 2 motifs = 4 tetrahedra (default: 2)"
+        ),
     )
     geom.add_argument(
         "--seed", type=int, default=20250805, help="random seed (default: 20250805)"

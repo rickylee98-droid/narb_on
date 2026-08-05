@@ -7,21 +7,34 @@ structure, and spectral gaps.
 
 ## The central finding
 
-**A maximum-density tetrahedron packing and a vertex-sharing graph are mutually
-exclusive, and this is what determines whether a spectral fingerprint exists at all.**
+**Maximising packing density and building a richly connected graph are different
+objectives, and which one you pick decides whether a spectral fingerprint exists.**
 
-In a dense packing, tetrahedra sit in *generic* position: they touch face-to-face at
-incommensurate offsets and essentially never share a vertex or land at unit separation.
-Merging at `atol=1e-5` and connecting at distance exactly 1 therefore produces one
-disjoint `K4` per tetrahedron. The pipeline confirms this directly — 1372 tetrahedra
-give **1372 components, all of size 4**, every vertex of degree 3, algebraic
-connectivity exactly 0, and a spectrum that is nothing but the kernel. There is no
-fingerprint to find, and that is a property of dense packings rather than a defect of
-the method.
+The densest known packing of regular tetrahedra — Chen–Engel–Glotzer at
+φ = 4000/4671 ≈ 0.856347 — is implemented exactly (`--backend ceg`) from the paper's
+own rationals, and certified here by separating-axis test rather than trusted. Its
+spectral answer is **complete and exact**, and it is not the one you might expect.
+
+CEG is a *dimer* crystal: two tetrahedra sharing a face. That face contact is genuine
+vertex sharing (8 vertices → 5), so each dimer forms one 5-vertex component — the
+triangular dipyramid, `K₅` minus an edge — while **distinct dimers share nothing**. For
+1372 tetrahedra the pipeline finds 3430 distinct vertices, **686 components of size 5**,
+6174 edges, degrees only 3 and 4. The entire Laplacian spectrum is therefore
+
+> **{0, 3, 5, 5, 5} repeated once per dimer** — here exactly 686 zeros, 686 threes, 1428 fives.
+
+Algebraic connectivity is exactly 0. Every degeneracy is *repetition of identical
+components*, not a hidden symmetry group. That is the honest answer for a maximum-density
+packing.
 
 The rich, degenerate spectrum lives instead in the **interlocking** structure: the
 tetrahedral–octahedral honeycomb on the FCC lattice, where tetrahedra genuinely share
-vertices and edges. Both geometries are implemented, so the contrast is reproducible.
+vertices and edges. All three geometries are implemented, so the contrast is reproducible.
+
+*(An earlier version of this README claimed a dense packing gives one disjoint `K₄` per
+tetrahedron. That is true only of the stochastic `packing` backend, whose tetrahedra land
+in fully generic position; the real CEG optimum shares faces within dimers and is one
+step richer.)*
 
 ### Honeycomb result (1136 tetrahedra, 767 distinct vertices)
 
@@ -66,7 +79,11 @@ pip install -r requirements.txt
 # Default: honeycomb backend, the configuration with a fingerprint
 python tetra_spectral_analysis.py --min-tetrahedra 1000 --num-eigenvalues 100
 
-# The contrast case: a genuine dense packing (slower; runs a Monte Carlo search)
+# The densest known packing, phi = 4000/4671, exact and certified.
+# Ask for more eigenvalues than there are components to see past the kernel:
+python tetra_spectral_analysis.py --backend ceg --min-tetrahedra 1000 --num-eigenvalues 2800
+
+# A stochastic density search instead (slower; reaches ~0.5-0.75, never the optimum)
 python tetra_spectral_analysis.py --backend packing --asc-cycles 1500 --asc-restarts 4
 
 # Export tables for downstream work
@@ -88,10 +105,10 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 
 | File | Contents |
 | --- | --- |
-| `tetra_geometry.py` | Canonical tetrahedron, exact SAT overlap test, honeycomb and packing generators |
+| `tetra_geometry.py` | Canonical tetrahedron, exact SAT overlap test, honeycomb / CEG / ASC generators |
 | `tetra_spectral.py` | Vertex merging, graph construction, Laplacian, eigensolver, degeneracy analysis |
 | `tetra_spectral_analysis.py` | CLI, reporting, export |
-| `test_tetra_spectral.py` | Test suite (95 tests) |
+| `test_tetra_spectral.py` | Test suite (120 tests) |
 
 ## Method notes
 
@@ -105,17 +122,40 @@ chain, so the largest cluster radius is measured and a warning is emitted if it 
 10× the tolerance. In the honeycomb, coincident vertices are bitwise identical, so the
 observed radius is < 1e-15 and no chaining occurs.
 
-**Eigensolver** tries three paths in order and reports which was used: dense LAPACK when
-the matrix is small enough to be exact and cheap; ARPACK shift-invert at a small
-*negative* sigma (a shift of exactly zero would factorise the singular `L`); then direct
-ARPACK in `which="SA"` mode. A partial ARPACK result is preferred over raising — if
-convergence stalls, the converged subset is returned and the method is reported as
-`arpack-partial`. Sparse and dense paths are tested to agree to 1e-8.
+**The CEG optimum** is stored as the exact rationals of Chen, Engel & Glotzer (2010),
+Appendix C entry `C3+_opt` — lattice vectors `a, b, c` and offset `d` at the optimal
+point `u = +3/160`. The packing places positive dimers on the even sublattice
+`L⁺ = ⟨a+b, b+c, c+a⟩` and negative (inverted) dimers on the coset `L⁻ = L⁺ + (d+a)`,
+giving 4 tetrahedra per cell. Coordinates are rescaled from the paper's edge length of
+3√2 to unit edge. Construction *verifies* rather than asserts: it reproduces
+V = 42039/1000, checks φ against 4000/4671 to 1e-12, and runs the separating-axis test
+over all periodic images before returning.
+
+**Eigensolver.** When the graph is disconnected the Laplacian is block diagonal and the
+spectrum is assembled from the blocks. This is a correctness requirement, not an
+optimisation: a graph with 686 components has a 686-fold degenerate kernel, and no
+Krylov method can resolve a degeneracy of that order — ARPACK converges to an arbitrary
+subset of the invariant subspace and silently returns eigenvalues that are *not* the
+smallest. On the CEG packing, whole-matrix shift-invert reported 53 zeros and 7 threes
+where the true answer is 60 zeros. The block path returns it exactly. The mismatch
+between kernel dimension and component count is what exposed the bug, and that check is
+still printed on every run.
+
+Within a single block the solver tries dense LAPACK when the block is small enough to be
+exact and cheap; then ARPACK shift-invert at a small *negative* sigma (a shift of exactly
+zero would factorise the singular `L`); then direct ARPACK in `which="SA"` mode. A
+partial ARPACK result is preferred over raising. Sparse and dense paths are tested to
+agree to 1e-8, and the block path against dense on the full spectrum to 1e-10.
 
 The kernel dimension equals the component count, but that can only be *checked* when the
 computed window reaches past the kernel; when `k` is smaller than the number of
 components the report says the kernel is unresolved rather than flagging a false
 mismatch.
+
+**Statistics are suppressed when undersampled.** The mean adjacent-gap ratio is reported
+only from at least 8 ratios. On the CEG packing there are 3 distinct levels and hence 2
+spacings; quoting ⟨r⟩ = 0.667 there and calling it "near GOE" would be reading a symmetry
+class out of noise.
 
 **Packing search** is adaptive-shrinking-cell Monte Carlo on hard particles. Three
 design points matter, and each was established by measurement rather than assumption:
@@ -127,23 +167,23 @@ design points matter, and each was established by measurement rather than assump
    densifying is what gives monotone convergence.
 2. Periodic reheating of the step sizes is required. Without it the search fully stalls
    (0.5573 → 0.5579 for 2.7× more cycles); with it, 0.5573 → 0.5932.
-3. Dimer seeding is available (`seed_dimers=True`) but **defaults to off because it
-   measurably does not help**: 0.42–0.52 across three seeds versus 0.49–0.72 for random
-   initialisation, since reheating disassembles the seeded pairs well before jamming.
-   Seed variance dominates, which is why the builder restarts and keeps the densest.
+3. Neither dimer idea helped the stochastic search, and both were kept only because the
+   measurements say so. *Seeding* random tetrahedra as dimer pairs gave 0.42–0.52 across
+   three seeds versus 0.49–0.72 for random initialisation, because reheating disassembles
+   the pairs before jamming. Making the dimer a *rigid* motif (`--motif dimer`, halving
+   the degrees of freedom) did no better: best-of-four 0.5325 versus 0.7238 for free
+   tetrahedra. Seed variance dominates either way, which is why the builder restarts and
+   keeps the densest. The exact optimum comes from `--backend ceg`, not from this search.
 
 Periodic image ranges are computed from the cell's perpendicular widths rather than
 assuming a 3×3×3 minimum-image scheme, which silently misses collisions once the cell
 shrinks below the particle diameter — as it must at high density. A cell too anisotropic
 to certify is rejected rather than under-tested.
 
-**On the achieved density.** The search reaches roughly 0.6–0.75 at default settings,
-against the best packing known in the literature — the Chen–Engel–Glotzer dimer double
-lattice at 4000/4671 ≈ 0.856347. This script does **not** reproduce that optimum and
-makes no claim to; approaching it needs far longer runs and larger cells than a
-demonstration default should impose. Every density reported is one that was measured,
-and `--verify-packing` runs an exact separating-axis check that no tetrahedra
-interpenetrate.
+**On the achieved density.** The stochastic search reaches roughly 0.5–0.75 depending on
+seed, and makes no claim to reach the optimum — for that, use `--backend ceg`, which is
+exact. Every density reported by the search is one that was measured, and
+`--verify-packing` runs an exact separating-axis check that no tetrahedra interpenetrate.
 
 ## Tests
 
@@ -152,7 +192,9 @@ python -m pytest test_tetra_spectral.py -v
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
-tetrahedron volume and circumradius), the FCC kissing number, sparse/dense solver
+tetrahedron volume and circumradius), the FCC kissing number, sparse/dense/block solver
 agreement, kernel dimension versus component count, monotonicity of the packing search,
-rejection of degenerate periodic cells, and the `O_h` degeneracy claim itself — that no
-multiplicity exceeds 3 and that triplets dominate.
+rejection of degenerate periodic cells, and the two structural claims themselves: that
+the honeycomb's multiplicities never exceed 3 with triplets dominating (`O_h`), and that
+the CEG packing's spectrum is exactly {0, 3, 5, 5, 5} per dimer with V, φ and
+non-overlap all matching the paper.

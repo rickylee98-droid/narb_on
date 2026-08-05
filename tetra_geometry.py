@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
+from fractions import Fraction
 
 import numpy as np
 from numpy.typing import NDArray
@@ -40,7 +41,12 @@ __all__ = [
     "TETRA_FACES",
     "sat_overlap_depth",
     "build_honeycomb",
+    "build_ceg_packing",
+    "ceg_unit_cell",
     "build_dense_packing",
+    "build_motif",
+    "MOTIF_NAMES",
+    "CEG_PACKING_FRACTION",
     "PackingResult",
 ]
 
@@ -436,23 +442,189 @@ def build_honeycomb(min_tetrahedra: int = 1000, *, max_radius: float = 40.0) -> 
 
 
 # --------------------------------------------------------------------------- #
-# Backend 2: dense packing via adaptive shrinking cell Monte Carlo
+# Backend 2: the Chen-Engel-Glotzer optimal packing (exact, analytic)
+# --------------------------------------------------------------------------- #
+#: Densest known packing fraction of regular tetrahedra, 4000/4671.
+CEG_PACKING_FRACTION: float = 4000.0 / 4671.0
+
+#: Lattice and offset vectors of the CEG optimum, from Chen, Engel & Glotzer,
+#: "Dense crystalline dimer packings of regular tetrahedra", Discrete Comput.
+#: Geom. 44, 253 (2010), Appendix C, entry ``C3+_opt`` (the point u = +3/160 on
+#: the optimal line of the three-parameter double-dimer family).  Exact
+#: rationals in the paper's own coordinates, where the tetrahedron edge is
+#: 3*sqrt(2).
+CEG_A: tuple[Fraction, Fraction, Fraction] = (
+    Fraction(87, 32), Fraction(321, 320), Fraction(-21, 320),
+)
+CEG_B: tuple[Fraction, Fraction, Fraction] = (
+    Fraction(-51, 160), Fraction(831, 320), Fraction(81, 64),
+)
+CEG_C: tuple[Fraction, Fraction, Fraction] = (
+    Fraction(141, 160), Fraction(-249, 320), Fraction(741, 320),
+)
+CEG_D: tuple[Fraction, Fraction, Fraction] = (
+    Fraction(19, 160), Fraction(1, 64), Fraction(-5, 64),
+)
+
+#: Vertices of the positive dimer +F2 in the paper's coordinates (Definition 1).
+#: ``p, q, r`` span the face shared by the two tetrahedra.
+CEG_DIMER_VERTICES: dict[str, tuple[int, int, int]] = {
+    "o": (2, 2, 2),
+    "p": (2, -1, -1),
+    "q": (-1, 2, -1),
+    "r": (-1, -1, 2),
+    "s": (-2, -2, -2),
+}
+
+
+def _as_vector(values: tuple[Fraction, ...]) -> FloatArray:
+    return np.array([float(v) for v in values], dtype=F64)
+
+
+def ceg_unit_cell() -> tuple[FloatArray, FloatArray]:
+    """Return the four tetrahedra and lattice of the CEG optimal packing.
+
+    The construction follows Chen, Engel & Glotzer exactly.  A *dimer* is two
+    regular tetrahedra sharing a face, forming a triangular dipyramid; the
+    positive dimer ``+F2`` has vertices ``o, p, q, r, s`` with ``p, q, r``
+    spanning the shared face, and the negative dimer ``-F2`` is its inversion.
+    The packing places positive dimers on the even sublattice
+
+    ``L+ = {n_a a + n_b b + n_c c : n_a + n_b + n_c = 0 mod 2}``
+
+    which is spanned by ``a + b``, ``b + c``, ``c + a``, and negative dimers on
+    the odd coset ``L- = L+ + (d + a)``.  One unit cell therefore holds one
+    positive and one negative dimer: four tetrahedra of total volume ``2U``,
+    giving ``phi = 2U/V = 36/V``.
+
+    Coordinates are rescaled from the paper's edge length of ``3*sqrt(2)`` to
+    the unit edge used throughout this module.
+
+    Returns
+    -------
+    (tetrahedra, lattice)
+        ``(4, 4, 3)`` vertex coordinates and the ``(3, 3)`` lattice whose rows
+        span ``L+``.
+    """
+    a, b, c, d = (_as_vector(v) for v in (CEG_A, CEG_B, CEG_C, CEG_D))
+    v = {name: np.array(coords, dtype=F64) for name, coords in CEG_DIMER_VERTICES.items()}
+
+    positive = np.array(
+        [
+            [v["o"], v["p"], v["q"], v["r"]],
+            [v["s"], v["p"], v["q"], v["r"]],
+        ],
+        dtype=F64,
+    )
+    negative = -positive + (d + a)
+
+    scale = 1.0 / (3.0 * math.sqrt(2.0))
+    tetrahedra = np.concatenate([positive, negative]) * scale
+    lattice = np.array([a + b, b + c, c + a], dtype=F64) * scale
+    return np.ascontiguousarray(tetrahedra), np.ascontiguousarray(lattice)
+
+
+def build_ceg_packing(min_tetrahedra: int = 1000, *, max_replicas: int = 40) -> TetraCloud:
+    """Build the densest known packing of regular tetrahedra, phi = 4000/4671.
+
+    This is the exact analytic optimum of Chen, Engel & Glotzer -- not a
+    stochastic search result.  The unit cell is verified on construction: the
+    tetrahedra are checked to be regular with unit edge, the packing fraction
+    is checked against 4000/4671, and the separating-axis test is run over all
+    periodic images to certify that nothing interpenetrates.  A tiled copy is
+    then returned.
+
+    Parameters
+    ----------
+    min_tetrahedra:
+        Minimum tetrahedron count in the returned cloud.
+    max_replicas:
+        Safety bound on tiling repetitions per lattice direction.
+
+    Returns
+    -------
+    TetraCloud
+    """
+    if min_tetrahedra < 1:
+        raise ValueError("min_tetrahedra must be >= 1")
+
+    cell, lattice = ceg_unit_cell()
+    per_cell = int(cell.shape[0])
+
+    volume = abs(float(np.linalg.det(lattice)))
+    phi = per_cell * UNIT_TETRA_VOLUME / volume
+    if abs(phi - CEG_PACKING_FRACTION) > 1e-12:
+        raise AssertionError(
+            f"CEG cell reproduces phi={phi:.15f}, expected {CEG_PACKING_FRACTION:.15f}"
+        )
+    if not _configuration_is_valid(cell, lattice):
+        raise AssertionError("CEG unit cell failed the separating-axis overlap test")
+
+    reps = 1
+    while reps <= max_replicas and per_cell * reps**3 < min_tetrahedra:
+        reps += 1
+    if per_cell * reps**3 < min_tetrahedra:
+        raise RuntimeError(
+            f"cannot reach {min_tetrahedra} tetrahedra within max_replicas={max_replicas}"
+        )
+
+    grid = np.arange(reps, dtype=F64)
+    i, j, k = np.meshgrid(grid, grid, grid, indexing="ij")
+    translations = np.stack([i.ravel(), j.ravel(), k.ravel()], axis=1) @ lattice
+    tiled = (cell[None, :, :, :] + translations[:, None, None, :]).reshape(-1, 4, 3)
+
+    cloud = TetraCloud(
+        tetrahedra=tiled,
+        lattice=lattice,
+        tetra_per_cell=per_cell,
+        provenance={
+            "backend": "ceg",
+            "source": (
+                "Chen, Engel & Glotzer, Discrete Comput. Geom. 44, 253 (2010), "
+                "Appendix C, entry C3+_opt"
+            ),
+            "packing_fraction": phi,
+            "packing_fraction_exact": "4000/4671",
+            "unit_cell_volume": volume,
+            "structure": "double dimer lattice, 1 positive + 1 negative dimer per cell",
+            "space_group": "P-1",
+            "tetrahedra_per_cell": per_cell,
+            "replicas_per_axis": reps,
+            "overlap_certified": True,
+        },
+    )
+    cloud.assert_regular(edge=1.0, atol=1e-12)
+    LOGGER.info(
+        "CEG packing: phi=%.12f (4000/4671), %d tetrahedra from %d^3 cells",
+        phi,
+        cloud.n_tetrahedra,
+        reps,
+    )
+    return cloud
+
+
+# --------------------------------------------------------------------------- #
+# Backend 3: dense packing via adaptive shrinking cell Monte Carlo
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class PackingResult:
     """Outcome of an adaptive-shrinking-cell packing search."""
 
     lattice: FloatArray
-    centres: FloatArray
-    rotations: FloatArray
+    cell_tetrahedra: FloatArray
     packing_fraction: float
     accepted_moves: int
     attempted_moves: int
     n_particles: int
+    motif: str
 
     @property
     def acceptance_ratio(self) -> float:
         return self.accepted_moves / max(self.attempted_moves, 1)
+
+    @property
+    def n_tetrahedra_per_cell(self) -> int:
+        return int(self.cell_tetrahedra.shape[0])
 
 
 def _quat_to_matrix(q: FloatArray) -> FloatArray:
@@ -554,13 +726,20 @@ def _image_offsets(lattice: FloatArray) -> FloatArray | None:
 
 
 def _cell_vertices(
-    base: FloatArray, lattice: FloatArray, fractional: FloatArray, quats: FloatArray
+    motif: FloatArray, lattice: FloatArray, fractional: FloatArray, quats: FloatArray
 ) -> FloatArray:
-    """Vertices ``(n, 4, 3)`` of every particle in the fundamental cell."""
-    rot = _quat_to_matrix(quats)  # (n, 3, 3)
-    oriented = np.einsum("nij,vj->nvi", rot, base)
-    centres = fractional @ lattice
-    return oriented + centres[:, None, :]
+    """Vertices of every tetrahedron in the fundamental cell.
+
+    Each of the ``n_particles`` rigid bodies carries the whole motif, so the
+    returned array holds ``n_particles * motif_size`` tetrahedra.  Collision
+    detection then treats them all as independent convex bodies; tetrahedra
+    belonging to the same motif touch face-to-face at zero depth and so pass
+    the overlap test unchanged.
+    """
+    rot = _quat_to_matrix(quats)  # (P, 3, 3)
+    oriented = np.einsum("pij,mvj->pmvi", rot, motif)  # (P, M, 4, 3)
+    centres = fractional @ lattice  # (P, 3)
+    return (oriented + centres[:, None, None, :]).reshape(-1, 4, 3)
 
 
 def _configuration_is_valid(
@@ -735,41 +914,46 @@ def _dimer_partner() -> tuple[FloatArray, FloatArray]:
     return _matrix_to_quaternion(rotation), np.ascontiguousarray(offset, dtype=F64)
 
 
-def _seed_dimers(
-    n_particles: int, lattice: FloatArray, rng: np.random.Generator
-) -> tuple[FloatArray, FloatArray]:
-    """Initial fractional centres and orientations built from dimer pairs.
+#: Rigid bodies the packing search can move as a unit.
+MOTIF_NAMES: tuple[str, ...] = ("single", "dimer")
 
-    Tetrahedra are placed as face-sharing pairs at random positions and
-    orientations.  An odd ``n_particles`` leaves one unpaired tetrahedron.
+
+def build_motif(name: str) -> FloatArray:
+    """Return the tetrahedra of a rigid packing motif in its own body frame.
+
+    ``"single"``
+        One free tetrahedron -- the unconstrained search.
+    ``"dimer"``
+        Two tetrahedra fused face-to-face into a triangular dipyramid, moved
+        and rotated as one rigid body.  Every known high-density packing of
+        regular tetrahedra is a *dimer* crystal, so constraining the search
+        unit this way halves the degrees of freedom while keeping the known
+        optima inside the search space: four free tetrahedra per cell become
+        two rigid dimers.
+
+    The motif is centred on its own centroid so that orientation moves rotate
+    it about its centre rather than swinging it through space.
+
+    Returns
+    -------
+    ndarray, shape (n_tetrahedra_in_motif, 4, 3)
     """
-    partner_q, partner_offset = _dimer_partner()
-    inverse = np.linalg.inv(lattice)
-
-    fractional = np.empty((n_particles, 3), dtype=F64)
-    quats = np.empty((n_particles, 4), dtype=F64)
-
-    for start in range(0, n_particles, 2):
-        anchor_f = rng.random(3).astype(F64)
-        anchor_q = _random_quaternions(rng, 1)[0]
-        fractional[start] = anchor_f
-        quats[start] = anchor_q
-
-        if start + 1 < n_particles:
-            rot = _quat_to_matrix(anchor_q[None])[0]
-            shift = rot @ partner_offset
-            fractional[start + 1] = anchor_f + shift @ inverse
-            combined = _quat_multiply(anchor_q, partner_q)
-            quats[start + 1] = combined / np.linalg.norm(combined)
-
-    return fractional, quats
+    base = regular_tetrahedron(1.0)
+    if name == "single":
+        return np.ascontiguousarray(base[None], dtype=F64)
+    if name == "dimer":
+        quat, offset = _dimer_partner()
+        partner = (_quat_to_matrix(quat[None])[0] @ base.T).T + offset
+        motif = np.stack([base, partner])
+        return np.ascontiguousarray(motif - motif.reshape(-1, 3).mean(axis=0), dtype=F64)
+    raise ValueError(f"unknown motif {name!r}; expected one of {MOTIF_NAMES}")
 
 
 def _initial_lattice(
-    n_particles: int, target_fraction: float, rng: np.random.Generator
+    n_tetrahedra: int, target_fraction: float, rng: np.random.Generator
 ) -> FloatArray:
-    """A near-cubic cell sized to hold ``n_particles`` at ``target_fraction``."""
-    volume = n_particles * UNIT_TETRA_VOLUME / target_fraction
+    """A near-cubic cell sized to hold ``n_tetrahedra`` at ``target_fraction``."""
+    volume = n_tetrahedra * UNIT_TETRA_VOLUME / target_fraction
     side = volume ** (1.0 / 3.0)
     jitter = np.eye(3, dtype=F64) + rng.normal(scale=0.02, size=(3, 3))
     return np.ascontiguousarray(side * jitter, dtype=F64)
@@ -784,7 +968,7 @@ def _asc_search(
     lattice_moves_per_cycle: int = 4,
     compression_bias: float = 0.004,
     reheat_interval: int = 250,
-    seed_dimers: bool = False,
+    motif: str = "dimer",
 ) -> PackingResult:
     """Adaptive shrinking cell Monte Carlo for hard regular tetrahedra.
 
@@ -795,25 +979,24 @@ def _asc_search(
     packing.  Step sizes self-tune toward ~30% acceptance.  The achieved
     packing fraction is *measured*, never assumed.
 
-    ``seed_dimers`` initialises the cell with face-sharing tetrahedron pairs,
-    the motif underlying the known optima.  It defaults to off because it
-    measurably does *not* help here: across three seeds it reached 0.42-0.52
-    versus 0.49-0.72 for random initialisation, since reheating disassembles
-    the seeded pairs long before the cell approaches jamming.  Run-to-run seed
-    variance dominates, which is why :func:`build_dense_packing` restarts.
+    ``motif`` selects the rigid body being packed.  Merely *seeding* random
+    tetrahedra as dimer pairs does not help -- measured across three seeds it
+    reached 0.42-0.52 versus 0.49-0.72 for random initialisation, because
+    reheating disassembles the pairs long before jamming.  Making the dimer a
+    genuine rigid constraint is a different matter: it halves the degrees of
+    freedom and keeps the search inside the family containing the known optima.
     """
     rng = np.random.default_rng(seed)
-    base = regular_tetrahedron(1.0)
+    shape = build_motif(motif)
+    motif_size = int(shape.shape[0])
+    n_tetrahedra = n_particles * motif_size
 
-    lattice = _initial_lattice(n_particles, initial_fraction, rng)
-    if seed_dimers:
-        fractional, quats = _seed_dimers(n_particles, lattice, rng)
-    else:
-        fractional = rng.random((n_particles, 3)).astype(F64)
-        quats = _random_quaternions(rng, n_particles)
+    lattice = _initial_lattice(n_tetrahedra, initial_fraction, rng)
+    fractional = rng.random((n_particles, 3)).astype(F64)
+    quats = _random_quaternions(rng, n_particles)
 
     for _ in range(60):
-        if _configuration_is_valid(_cell_vertices(base, lattice, fractional, quats), lattice):
+        if _configuration_is_valid(_cell_vertices(shape, lattice, fractional, quats), lattice):
             break
         lattice = lattice * 1.15
     else:
@@ -859,7 +1042,7 @@ def _asc_search(
                 fractional[idx] = old_f + rng.normal(scale=trans_step.value, size=3)
 
             ok = _configuration_is_valid(
-                _cell_vertices(base, lattice, fractional, quats), lattice
+                _cell_vertices(shape, lattice, fractional, quats), lattice
             )
             if ok:
                 accepted += 1
@@ -886,7 +1069,7 @@ def _asc_search(
                 target = det_now * (1.0 - squeeze_step.value)
                 candidate = candidate * (target / det_try) ** (1.0 / 3.0)
                 ok = _configuration_is_valid(
-                    _cell_vertices(base, candidate, fractional, quats), candidate
+                    _cell_vertices(shape, candidate, fractional, quats), candidate
                 )
             if ok:
                 lattice = candidate
@@ -895,7 +1078,7 @@ def _asc_search(
             squeeze_step.record(ok)
 
         if cycle % log_every == 0:
-            phi = n_particles * UNIT_TETRA_VOLUME / abs(float(np.linalg.det(lattice)))
+            phi = n_tetrahedra * UNIT_TETRA_VOLUME / abs(float(np.linalg.det(lattice)))
             LOGGER.debug(
                 "ASC cycle %d/%d: phi=%.4f trans=%.4f rot=%.4f shear=%.5f squeeze=%.6f",
                 cycle,
@@ -910,19 +1093,20 @@ def _asc_search(
     volume = abs(float(np.linalg.det(lattice)))
     return PackingResult(
         lattice=lattice,
-        centres=fractional @ lattice,
-        rotations=_quat_to_matrix(quats),
-        packing_fraction=n_particles * UNIT_TETRA_VOLUME / volume,
+        cell_tetrahedra=_cell_vertices(shape, lattice, fractional, quats),
+        packing_fraction=n_tetrahedra * UNIT_TETRA_VOLUME / volume,
         accepted_moves=accepted,
         attempted_moves=attempted,
         n_particles=n_particles,
+        motif=motif,
     )
 
 
 def build_dense_packing(
     min_tetrahedra: int = 1000,
     *,
-    n_particles: int = 4,
+    n_particles: int = 2,
+    motif: str = "dimer",
     cycles: int = 1500,
     restarts: int = 4,
     seed: int = 20250805,
@@ -980,7 +1164,7 @@ def build_dense_packing(
 
     attempts: list[PackingResult] = []
     for index in range(restarts):
-        attempt = _asc_search(n_particles, cycles, seed + index)
+        attempt = _asc_search(n_particles, cycles, seed + index, motif=motif)
         attempts.append(attempt)
         LOGGER.info(
             "ASC restart %d/%d: packing fraction %.6f (acceptance %.3f)",
@@ -1002,16 +1186,16 @@ def build_dense_packing(
         fractions.max(),
     )
 
+    per_cell = result.n_tetrahedra_per_cell
     reps = 1
-    while reps <= max_replicas and n_particles * reps**3 < min_tetrahedra:
+    while reps <= max_replicas and per_cell * reps**3 < min_tetrahedra:
         reps += 1
-    if n_particles * reps**3 < min_tetrahedra:
+    if per_cell * reps**3 < min_tetrahedra:
         raise RuntimeError(
             f"cannot reach {min_tetrahedra} tetrahedra within max_replicas={max_replicas}"
         )
 
-    base = regular_tetrahedron(1.0)
-    oriented = np.einsum("nij,vj->nvi", result.rotations, base) + result.centres[:, None, :]
+    oriented = result.cell_tetrahedra
 
     grid = np.arange(reps, dtype=F64)
     a, b, c = np.meshgrid(grid, grid, grid, indexing="ij")
@@ -1024,7 +1208,7 @@ def build_dense_packing(
     cloud = TetraCloud(
         tetrahedra=tiled,
         lattice=result.lattice,
-        tetra_per_cell=n_particles,
+        tetra_per_cell=per_cell,
         provenance={
             "backend": "dense_packing",
             "method": "adaptive shrinking cell Monte Carlo (hard particles)",
@@ -1035,7 +1219,9 @@ def build_dense_packing(
             "asc_restart_spread": (float(fractions.min()), float(fractions.max())),
             "asc_seed": seed,
             "asc_acceptance_ratio": result.acceptance_ratio,
+            "motif": motif,
             "particles_per_cell": n_particles,
+            "tetrahedra_per_cell": per_cell,
             "replicas_per_axis": reps,
         },
     )

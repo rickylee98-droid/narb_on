@@ -319,7 +319,9 @@ class Spectrum:
 
     eigenvalues: FloatArray
     k_requested: int
-    method: Literal["shift-invert", "arpack-sa", "dense", "arpack-partial"]
+    method: Literal[
+        "shift-invert", "arpack-sa", "dense", "arpack-partial", "block-diagonal"
+    ]
     matrix_dimension: int
     n_components: int
     zero_tolerance: float
@@ -371,88 +373,79 @@ def _zero_tolerance(laplacian: csr_matrix) -> float:
     return max(1e-9, 1e-10 * max(2.0 * max_degree, 1.0) * laplacian.shape[0] ** 0.5)
 
 
-def smallest_eigenvalues(
+def _block_diagonal_spectrum(
     laplacian: csr_matrix,
-    k: int = 50,
+    k: int,
+    component_labels: IntArray,
+    n_components: int,
+    solve_block,
+) -> FloatArray:
+    """Smallest ``k`` eigenvalues of a Laplacian with several components.
+
+    A disconnected graph has a block-diagonal Laplacian, so its spectrum is the
+    union of the blocks' spectra.  Solving block by block is both exact and far
+    more reliable than aiming ARPACK at the whole matrix: the kernel of a graph
+    with many components is massively degenerate, and Krylov methods cannot
+    resolve a degeneracy of that order -- they converge to an arbitrary subset
+    of the invariant subspace and silently return eigenvalues that are not the
+    smallest.
+
+    The matrix is permuted once so components occupy contiguous index ranges,
+    after which each block is a cheap slice.
+    """
+    order = np.argsort(component_labels, kind="stable")
+    permuted = laplacian[order][:, order]
+    sorted_labels = component_labels[order]
+    starts = np.searchsorted(sorted_labels, np.arange(n_components + 1))
+
+    collected: list[FloatArray] = []
+    for index in range(n_components):
+        lo, hi = int(starts[index]), int(starts[index + 1])
+        size = hi - lo
+        if size <= 0:
+            continue
+        block = permuted[lo:hi, lo:hi].tocsr()
+        collected.append(solve_block(block, min(k, size)))
+
+    return np.sort(np.concatenate(collected))[:k]
+
+
+def _single_block_eigenvalues(
+    laplacian: csr_matrix,
+    k_eff: int,
     *,
-    dense_threshold: int = 2000,
-    tol: float = 0.0,
-    maxiter: int | None = None,
-    n_components: int | None = None,
-) -> Spectrum:
-    """Compute the ``k`` algebraically smallest eigenvalues of ``L``.
+    dense_threshold: int,
+    tol: float,
+    maxiter: int | None,
+) -> tuple[FloatArray, str]:
+    """Smallest ``k_eff`` eigenvalues of one Laplacian block, and the path used.
 
     Strategy, in order of preference:
 
-    1. **Shift-invert ARPACK** at ``sigma`` slightly below zero.  ``L`` is
+    1. **Dense LAPACK** when the block is small enough that ``O(n^3)`` is
+       affordable -- exact and unconditionally reliable.
+    2. **Shift-invert ARPACK** at ``sigma`` slightly below zero.  ``L`` is
        singular by construction, so a shift of exactly zero would factorise a
        singular matrix; shifting just below the kernel keeps the factorisation
        well posed while still targeting the low end.
-    2. **Direct ARPACK** in ``which="SA"`` mode, which needs no factorisation
+    3. **Direct ARPACK** in ``which="SA"`` mode, which needs no factorisation
        but converges slowly on clustered low-end spectra.
-    3. **Dense LAPACK**, exact and unconditionally reliable, used when the
-       matrix is small enough that ``O(n^3)`` is affordable.
 
     A partial ARPACK result is preferred over raising: if convergence stalls,
-    the eigenvalues that did converge are returned and the method is reported
-    as ``"arpack-partial"`` so the caller can see the degradation.
-
-    Parameters
-    ----------
-    laplacian:
-        Symmetric PSD sparse Laplacian.
-    k:
-        Number of eigenvalues requested.  Clamped to ``n - 1`` for ARPACK.
-    dense_threshold:
-        Matrices with dimension at or below this use dense LAPACK directly.
-    tol:
-        ARPACK relative tolerance; ``0`` requests machine precision.
-    maxiter:
-        ARPACK iteration cap.  ``None`` selects a generous default.
-    n_components:
-        Known number of connected components, recorded for cross-checking the
-        multiplicity of the zero eigenvalue.
-
-    Returns
-    -------
-    Spectrum
+    the eigenvalues that did converge are returned and the path is reported as
+    ``"arpack-partial"`` so the caller can see the degradation.
     """
-    if not issparse(laplacian):
-        raise TypeError("laplacian must be a scipy.sparse matrix")
     n = laplacian.shape[0]
-    if laplacian.shape[0] != laplacian.shape[1]:
-        raise ValueError(f"laplacian must be square, got {laplacian.shape}")
-    if k < 1:
-        raise ValueError(f"k must be >= 1, got {k}")
-    if n < 1:
-        raise ValueError("laplacian must be non-empty")
-
-    k_eff = min(k, n)
     ztol = _zero_tolerance(laplacian)
-    common = dict(
-        matrix_dimension=n,
-        n_components=int(n_components) if n_components is not None else -1,
-        zero_tolerance=ztol,
-    )
 
-    def finish(values: FloatArray, method: str) -> Spectrum:
-        vals = np.sort(np.real(np.asarray(values, dtype=F64)))
-        # Eigenvalues of a PSD operator cannot be negative; clip round-off.
-        vals[np.abs(vals) <= ztol] = 0.0
-        return Spectrum(
-            eigenvalues=np.ascontiguousarray(vals, dtype=F64),
-            k_requested=k,
-            method=method,  # type: ignore[arg-type]
-            **common,  # type: ignore[arg-type]
-        )
+    def sorted_values(values: FloatArray) -> FloatArray:
+        return np.sort(np.real(np.asarray(values, dtype=F64)))
 
-    # --- Path 3 (taken first when cheap): dense LAPACK ---------------------- #
     if n <= dense_threshold:
-        LOGGER.info("spectrum: dense LAPACK on a %d x %d Laplacian", n, n)
+        LOGGER.debug("block: dense LAPACK on %d x %d", n, n)
         dense = np.asarray(laplacian.todense(), dtype=F64)
         dense = 0.5 * (dense + dense.T)  # enforce exact symmetry
-        values = np.linalg.eigvalsh(dense)
-        return finish(values[:k_eff], "dense")
+        return sorted_values(np.linalg.eigvalsh(dense)[:k_eff]), "dense"
 
     if k_eff >= n:
         raise ValueError(
@@ -462,9 +455,8 @@ def smallest_eigenvalues(
 
     ncv = min(n, max(2 * k_eff + 1, 20))
     iterations = maxiter if maxiter is not None else 10 * n
-
-    # --- Path 1: shift-invert ---------------------------------------------- #
     sigma = -max(1e-5, ztol * 10.0)
+
     try:
         LOGGER.info(
             "spectrum: ARPACK shift-invert (sigma=%.2e, k=%d, ncv=%d)", sigma, k_eff, ncv
@@ -480,11 +472,14 @@ def smallest_eigenvalues(
             ncv=ncv,
             return_eigenvectors=False,
         )
-        return finish(values, "shift-invert")
+        return sorted_values(values), "shift-invert"
     except (ArpackNoConvergence, ArpackError, RuntimeError, ValueError) as exc:
-        LOGGER.warning("shift-invert failed (%s: %s); trying direct ARPACK", type(exc).__name__, exc)
+        LOGGER.warning(
+            "shift-invert failed (%s: %s); trying direct ARPACK",
+            type(exc).__name__,
+            exc,
+        )
 
-    # --- Path 2: direct ARPACK --------------------------------------------- #
     try:
         LOGGER.info("spectrum: ARPACK which='SA' (k=%d, ncv=%d)", k_eff, ncv)
         values = eigsh(
@@ -496,7 +491,7 @@ def smallest_eigenvalues(
             ncv=ncv,
             return_eigenvectors=False,
         )
-        return finish(values, "arpack-sa")
+        return sorted_values(values), "arpack-sa"
     except ArpackNoConvergence as exc:
         converged = np.asarray(exc.eigenvalues, dtype=F64)
         if converged.size:
@@ -506,12 +501,15 @@ def smallest_eigenvalues(
                 converged.size,
                 k_eff,
             )
-            return finish(converged, "arpack-partial")
+            return sorted_values(converged), "arpack-partial"
         LOGGER.warning("ARPACK returned no converged eigenvalues; falling back to dense")
     except (ArpackError, RuntimeError, ValueError) as exc:
-        LOGGER.warning("direct ARPACK failed (%s: %s); falling back to dense", type(exc).__name__, exc)
+        LOGGER.warning(
+            "direct ARPACK failed (%s: %s); falling back to dense",
+            type(exc).__name__,
+            exc,
+        )
 
-    # --- Path 3 (fallback): dense LAPACK ----------------------------------- #
     LOGGER.warning(
         "spectrum: falling back to dense LAPACK on a %d x %d matrix; this needs "
         "roughly %.1f GiB",
@@ -521,8 +519,100 @@ def smallest_eigenvalues(
     )
     dense = np.asarray(laplacian.todense(), dtype=F64)
     dense = 0.5 * (dense + dense.T)
-    values = np.linalg.eigvalsh(dense)
-    return finish(values[:k_eff], "dense")
+    return sorted_values(np.linalg.eigvalsh(dense)[:k_eff]), "dense"
+
+
+def smallest_eigenvalues(
+    laplacian: csr_matrix,
+    k: int = 50,
+    *,
+    dense_threshold: int = 2000,
+    tol: float = 0.0,
+    maxiter: int | None = None,
+    n_components: int | None = None,
+    component_labels: IntArray | None = None,
+) -> Spectrum:
+    """Compute the ``k`` algebraically smallest eigenvalues of ``L``.
+
+    When ``component_labels`` identifies more than one connected component the
+    Laplacian is block diagonal, and the spectrum is assembled from the blocks'
+    spectra.  That path is not merely an optimisation -- it is a correctness
+    requirement.  A graph with many components has a kernel whose dimension
+    equals that component count, and no Krylov method can resolve a degeneracy
+    of that order: ARPACK converges to an arbitrary subset of the invariant
+    subspace and silently returns eigenvalues that are *not* the smallest.  On
+    the Chen-Engel-Glotzer packing (686 components) whole-matrix shift-invert
+    reports 53 zeros and 7 threes instead of 60 zeros; the block path returns
+    the exact answer.
+
+    Parameters
+    ----------
+    laplacian:
+        Symmetric PSD sparse Laplacian.
+    k:
+        Number of eigenvalues requested.  Clamped to the matrix dimension.
+    dense_threshold:
+        Blocks with dimension at or below this use dense LAPACK directly.
+    tol:
+        ARPACK relative tolerance; ``0`` requests machine precision.
+    maxiter:
+        ARPACK iteration cap.  ``None`` selects a generous default.
+    n_components:
+        Known number of connected components, recorded for cross-checking the
+        multiplicity of the zero eigenvalue.
+    component_labels:
+        Per-vertex component index.  Supplying it together with
+        ``n_components > 1`` enables the block-diagonal path.
+
+    Returns
+    -------
+    Spectrum
+    """
+    if not issparse(laplacian):
+        raise TypeError("laplacian must be a scipy.sparse matrix")
+    if laplacian.shape[0] != laplacian.shape[1]:
+        raise ValueError(f"laplacian must be square, got {laplacian.shape}")
+    n = laplacian.shape[0]
+    if k < 1:
+        raise ValueError(f"k must be >= 1, got {k}")
+    if n < 1:
+        raise ValueError("laplacian must be non-empty")
+
+    k_eff = min(k, n)
+    ztol = _zero_tolerance(laplacian)
+
+    if component_labels is not None and n_components is not None and n_components > 1:
+        LOGGER.info("spectrum: block-diagonal over %d connected components", n_components)
+
+        def solve_block(block: csr_matrix, kb: int) -> FloatArray:
+            return _single_block_eigenvalues(
+                block, kb, dense_threshold=dense_threshold, tol=tol, maxiter=maxiter
+            )[0]
+
+        values = _block_diagonal_spectrum(
+            laplacian,
+            k_eff,
+            np.asarray(component_labels, dtype=np.int64),
+            int(n_components),
+            solve_block,
+        )
+        method = "block-diagonal"
+    else:
+        values, method = _single_block_eigenvalues(
+            laplacian, k_eff, dense_threshold=dense_threshold, tol=tol, maxiter=maxiter
+        )
+
+    values = np.sort(np.real(np.asarray(values, dtype=F64)))
+    # Eigenvalues of a PSD operator cannot be negative; clip round-off.
+    values[np.abs(values) <= ztol] = 0.0
+    return Spectrum(
+        eigenvalues=np.ascontiguousarray(values, dtype=F64),
+        k_requested=k,
+        method=method,  # type: ignore[arg-type]
+        matrix_dimension=n,
+        n_components=int(n_components) if n_components is not None else -1,
+        zero_tolerance=ztol,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -558,8 +648,18 @@ class DegeneracyReport:
         return degenerate / total
 
 
+#: Minimum number of adjacent-gap ratios before their mean is reported.  The
+#: statistic is a distributional one; quoting it from two or three spacings
+#: invites reading a symmetry class out of pure noise.
+MIN_GAP_RATIO_SAMPLES: int = 8
+
+
 def analyse_degeneracies(
-    eigenvalues: FloatArray, *, rtol: float = 1e-8, atol: float = 1e-9
+    eigenvalues: FloatArray,
+    *,
+    rtol: float = 1e-8,
+    atol: float = 1e-9,
+    min_ratio_samples: int = MIN_GAP_RATIO_SAMPLES,
 ) -> DegeneracyReport:
     """Group eigenvalues into degenerate levels and characterise the spacings.
 
@@ -608,9 +708,16 @@ def analyse_degeneracies(
         s1, s2 = level_spacings[:-1], level_spacings[1:]
         hi = np.maximum(s1, s2)
         usable = hi > 0.0
-        if np.any(usable):
-            ratios = np.minimum(s1, s2)[usable] / hi[usable]
+        ratios = np.minimum(s1, s2)[usable] / hi[usable]
+        if ratios.size >= min_ratio_samples:
             gap_ratio_mean = float(ratios.mean())
+        elif ratios.size:
+            LOGGER.info(
+                "adjacent-gap ratio suppressed: %d sample(s), need %d for the mean "
+                "to carry any distributional meaning",
+                ratios.size,
+                min_ratio_samples,
+            )
 
     counts = np.bincount(multiplicities)
     histogram = {int(m): int(c) for m, c in enumerate(counts) if c and m > 0}

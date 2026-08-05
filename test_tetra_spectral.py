@@ -149,6 +149,36 @@ class TestHoneycomb:
 # --------------------------------------------------------------------------- #
 # Packing backend
 # --------------------------------------------------------------------------- #
+class TestMotifs:
+    def test_single_motif_is_one_tetrahedron(self) -> None:
+        motif = tg.build_motif("single")
+        assert motif.shape == (1, 4, 3)
+        np.testing.assert_allclose(tg.edge_lengths(motif), 1.0, atol=1e-15)
+
+    def test_dimer_motif_is_two_fused_tetrahedra(self) -> None:
+        motif = tg.build_motif("dimer")
+        assert motif.shape == (2, 4, 3)
+        np.testing.assert_allclose(tg.edge_lengths(motif), 1.0, atol=1e-12)
+
+    def test_dimer_motif_is_centred_on_its_centroid(self) -> None:
+        motif = tg.build_motif("dimer")
+        np.testing.assert_allclose(motif.reshape(-1, 3).mean(axis=0), 0.0, atol=1e-15)
+
+    def test_dimer_halves_touch_without_overlapping(self) -> None:
+        motif = tg.build_motif("dimer")
+        assert tg.sat_overlap_depth(motif[0:1], motif[1:2])[0] == pytest.approx(0.0, abs=1e-12)
+
+    def test_dimer_shares_exactly_three_vertices(self) -> None:
+        """A face-fused pair shares a triangular face: 8 vertices become 5."""
+        motif = tg.build_motif("dimer")
+        merged = ts.merge_vertices(motif.reshape(-1, 3), atol=1e-9)
+        assert merged.n_unique == 5
+
+    def test_unknown_motif_is_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            tg.build_motif("octahedron")
+
+
 class TestDensePacking:
     def test_search_yields_a_valid_certified_packing(self) -> None:
         cloud = tg.build_dense_packing(64, cycles=60, restarts=1, seed=3)
@@ -171,9 +201,23 @@ class TestDensePacking:
 
     def test_compression_is_monotone(self) -> None:
         """Volume must never increase: every lattice move is strictly densifying."""
-        low = tg._asc_search(4, 40, seed=5)
-        high = tg._asc_search(4, 200, seed=5)
+        low = tg._asc_search(2, 40, seed=5)
+        high = tg._asc_search(2, 200, seed=5)
         assert high.packing_fraction >= low.packing_fraction
+
+    @pytest.mark.parametrize("motif, per_cell", [("single", 2), ("dimer", 4)])
+    def test_cell_population_follows_the_motif(self, motif: str, per_cell: int) -> None:
+        result = tg._asc_search(2, 30, seed=5, motif=motif)
+        assert result.n_tetrahedra_per_cell == per_cell
+        np.testing.assert_allclose(
+            tg.edge_lengths(result.cell_tetrahedra), 1.0, atol=1e-12
+        )
+
+    def test_dimer_packing_is_certified_non_overlapping(self) -> None:
+        cloud = tg.build_dense_packing(64, motif="dimer", cycles=80, restarts=1, seed=3)
+        cloud.assert_regular(edge=1.0, atol=1e-9)
+        assert tg.find_overlapping_pairs(cloud.tetrahedra).shape[0] == 0
+        assert cloud.provenance["motif"] == "dimer"
 
     @pytest.mark.parametrize("kwargs", [{"cycles": 0}, {"restarts": 0}, {"n_particles": 0}])
     def test_rejects_invalid_parameters(self, kwargs: dict) -> None:
@@ -445,6 +489,18 @@ class TestDegeneracyAnalysis:
     def test_gap_ratio_is_none_without_enough_levels(self) -> None:
         assert ts.analyse_degeneracies(np.array([0.0, 1.0])).gap_ratio_mean is None
 
+    def test_gap_ratio_is_suppressed_on_too_few_samples(self) -> None:
+        """A mean over two spacings carries no distributional meaning."""
+        report = ts.analyse_degeneracies(np.array([0.0, 3.0, 5.0]))
+        assert report.n_levels == 3
+        assert report.gap_ratio_mean is None
+
+    def test_gap_ratio_threshold_is_configurable(self) -> None:
+        report = ts.analyse_degeneracies(
+            np.array([0.0, 3.0, 5.0]), min_ratio_samples=1
+        )
+        assert report.gap_ratio_mean == pytest.approx(2.0 / 3.0)
+
     def test_rejects_empty_spectrum(self) -> None:
         with pytest.raises(ValueError):
             ts.analyse_degeneracies(np.zeros(0))
@@ -502,7 +558,9 @@ class TestOctahedralFingerprint:
 class TestPackingHasNoSharedVertices:
     def test_dense_packing_shatters_into_disjoint_k4s(self) -> None:
         """Generic-position tetrahedra share no vertices, so the graph fragments."""
-        cloud = tg.build_dense_packing(64, cycles=60, restarts=1, seed=3)
+        cloud = tg.build_dense_packing(
+            64, motif="single", cycles=60, restarts=1, seed=3
+        )
         merged = ts.merge_vertices(cloud.raw_points, atol=1e-5)
         bundle = ts.build_unit_distance_graph(merged.points)
 
@@ -513,10 +571,147 @@ class TestPackingHasNoSharedVertices:
             ts.graph_laplacian(bundle.adjacency),
             k=8,
             n_components=bundle.n_components,
+            component_labels=bundle.component_labels,
         )
         # Algebraic connectivity of a disconnected graph is exactly zero.
         assert spectrum.algebraic_connectivity == 0.0
-        assert spectrum.first_positive is None or spectrum.first_positive == pytest.approx(4.0)
+
+
+# --------------------------------------------------------------------------- #
+# The Chen-Engel-Glotzer optimum
+# --------------------------------------------------------------------------- #
+class TestCEGPacking:
+    """The densest known tetrahedron packing, phi = 4000/4671."""
+
+    def test_unit_cell_reproduces_the_published_density(self) -> None:
+        cell, lattice = tg.ceg_unit_cell()
+        assert cell.shape == (4, 4, 3)
+        volume = abs(float(np.linalg.det(lattice)))
+        phi = 4 * tg.UNIT_TETRA_VOLUME / volume
+        assert phi == pytest.approx(4000 / 4671, abs=1e-15)
+
+    def test_unit_cell_matches_the_papers_lattice_volume(self) -> None:
+        """Paper reports V = 2 det[a,b,c] = 42039/1000 at edge 3*sqrt(2)."""
+        _, lattice = tg.ceg_unit_cell()
+        rescaled = abs(float(np.linalg.det(lattice))) * (3 * math.sqrt(2)) ** 3
+        assert rescaled == pytest.approx(42039 / 1000, rel=1e-12)
+
+    def test_unit_cell_tetrahedra_are_regular_with_unit_edge(self) -> None:
+        cell, _ = tg.ceg_unit_cell()
+        np.testing.assert_allclose(tg.edge_lengths(cell), 1.0, atol=1e-12)
+
+    def test_unit_cell_is_overlap_free_under_periodicity(self) -> None:
+        cell, lattice = tg.ceg_unit_cell()
+        assert tg._configuration_is_valid(cell, lattice)
+
+    def test_tiled_packing_has_no_overlaps(self) -> None:
+        cloud = tg.build_ceg_packing(200)
+        assert tg.find_overlapping_pairs(cloud.tetrahedra).shape[0] == 0
+
+    def test_dimers_share_faces_so_components_are_dipyramids(self) -> None:
+        """Face contact inside a dimer is exact vertex sharing: 8 -> 5 vertices."""
+        cloud = tg.build_ceg_packing(200)
+        merged = ts.merge_vertices(cloud.raw_points, atol=1e-5)
+        bundle = ts.build_unit_distance_graph(merged.points)
+
+        assert bundle.n_components == cloud.n_tetrahedra // 2
+        assert merged.n_unique == bundle.n_components * 5
+        assert bundle.n_edges == bundle.n_components * 9
+        assert int(merged.cluster_sizes.max()) == 2
+        # A triangular dipyramid has two apexes (degree 3) and three equatorial
+        # vertices (degree 4).
+        assert sorted(np.bincount(bundle.degrees)[3:].tolist()) == sorted(
+            [2 * bundle.n_components, 3 * bundle.n_components]
+        )
+
+    def test_spectrum_is_exactly_that_of_k5_minus_an_edge(self) -> None:
+        """K5 minus an edge has Laplacian spectrum {0, 3, 5, 5, 5}."""
+        cloud = tg.build_ceg_packing(200)
+        merged = ts.merge_vertices(cloud.raw_points, atol=1e-5)
+        bundle = ts.build_unit_distance_graph(merged.points)
+        spectrum = ts.smallest_eigenvalues(
+            ts.graph_laplacian(bundle.adjacency),
+            k=merged.n_unique,
+            n_components=bundle.n_components,
+            component_labels=bundle.component_labels,
+        )
+        report = ts.analyse_degeneracies(spectrum.eigenvalues)
+
+        np.testing.assert_allclose(report.levels, [0.0, 3.0, 5.0], atol=1e-9)
+        n = bundle.n_components
+        np.testing.assert_array_equal(report.multiplicities, [n, n, 3 * n])
+        assert spectrum.algebraic_connectivity == 0.0
+        assert spectrum.first_positive == pytest.approx(3.0)
+
+    def test_kernel_dimension_equals_dimer_count(self) -> None:
+        cloud = tg.build_ceg_packing(200)
+        merged = ts.merge_vertices(cloud.raw_points, atol=1e-5)
+        bundle = ts.build_unit_distance_graph(merged.points)
+        spectrum = ts.smallest_eigenvalues(
+            ts.graph_laplacian(bundle.adjacency),
+            k=merged.n_unique,
+            n_components=bundle.n_components,
+            component_labels=bundle.component_labels,
+        )
+        assert spectrum.zero_multiplicity == bundle.n_components
+        assert spectrum.method == "block-diagonal"
+
+    def test_is_reproducible(self) -> None:
+        np.testing.assert_array_equal(
+            tg.build_ceg_packing(200).tetrahedra, tg.build_ceg_packing(200).tetrahedra
+        )
+
+    def test_rejects_nonsense_size(self) -> None:
+        with pytest.raises(ValueError):
+            tg.build_ceg_packing(0)
+
+
+class TestBlockDiagonalSolver:
+    """Krylov methods cannot resolve a hugely degenerate kernel; blocks can."""
+
+    @staticmethod
+    def _disjoint_tetrahedra(count: int) -> ts.GraphBundle:
+        base = tg.regular_tetrahedron()
+        pts = np.vstack([base + np.array([50.0 * i, 0, 0]) for i in range(count)])
+        return ts.build_unit_distance_graph(pts)
+
+    def test_block_path_finds_the_whole_kernel(self) -> None:
+        bundle = self._disjoint_tetrahedra(40)
+        spectrum = ts.smallest_eigenvalues(
+            ts.graph_laplacian(bundle.adjacency),
+            k=40,
+            n_components=bundle.n_components,
+            component_labels=bundle.component_labels,
+        )
+        assert spectrum.method == "block-diagonal"
+        assert spectrum.zero_multiplicity == 40
+        np.testing.assert_allclose(spectrum.eigenvalues, 0.0, atol=1e-12)
+
+    def test_block_path_agrees_with_dense_on_the_full_spectrum(self) -> None:
+        bundle = self._disjoint_tetrahedra(12)
+        laplacian = ts.graph_laplacian(bundle.adjacency)
+        n = laplacian.shape[0]
+        blocked = ts.smallest_eigenvalues(
+            laplacian,
+            k=n,
+            n_components=bundle.n_components,
+            component_labels=bundle.component_labels,
+        )
+        dense = np.sort(np.linalg.eigvalsh(laplacian.toarray()))
+        np.testing.assert_allclose(blocked.eigenvalues, dense, atol=1e-10)
+
+    def test_connected_graph_skips_the_block_path(self) -> None:
+        cloud = tg.build_honeycomb(200)
+        merged = ts.merge_vertices(cloud.raw_points)
+        bundle = ts.build_unit_distance_graph(merged.points)
+        spectrum = ts.smallest_eigenvalues(
+            ts.graph_laplacian(bundle.adjacency),
+            k=20,
+            n_components=bundle.n_components,
+            component_labels=bundle.component_labels,
+        )
+        assert bundle.n_components == 1
+        assert spectrum.method != "block-diagonal"
 
 
 # --------------------------------------------------------------------------- #
@@ -555,6 +750,23 @@ class TestFrames:
 # CLI
 # --------------------------------------------------------------------------- #
 class TestCommandLine:
+    def test_ceg_backend_runs_end_to_end(self, tmp_path) -> None:
+        code = cli.main(
+            [
+                "--backend", "ceg",
+                "--min-tetrahedra", "200",
+                "--num-eigenvalues", "40",
+                "--log-level", "ERROR",
+                "--json-summary", str(tmp_path / "ceg.json"),
+            ]
+        )
+        assert code == 0
+        import json
+
+        payload = json.loads((tmp_path / "ceg.json").read_text())
+        assert payload["geometry"]["provenance"]["packing_fraction_exact"] == "4000/4671"
+        assert payload["spectrum"]["algebraic_connectivity"] == 0.0
+
     def test_end_to_end_run_succeeds(self, tmp_path) -> None:
         code = cli.main(
             [
