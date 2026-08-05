@@ -18,6 +18,7 @@ import pytest
 from scipy.sparse import csr_matrix
 
 import tetra_geometry as tg
+import tetra_lift as tl
 import tetra_spectral as ts
 import tetra_spectral_analysis as cli
 
@@ -966,3 +967,180 @@ class TestCommandLine:
         assert completed.returncode == 0
         assert "LAPLACIAN SPECTRUM" in completed.stdout
         assert "lambda_0 == 0 detected" in completed.stdout
+
+
+# --------------------------------------------------------------------------- #
+# Regression: unwrapped particles defeated the periodic overlap test
+# --------------------------------------------------------------------------- #
+class TestPeriodicOverlapRegression:
+    """A particle drifting out of the cell once hid overlaps entirely.
+
+    The image-range search is derived from the lattice widths and is only valid
+    for particles inside the cell.  Fractional coordinates were never wrapped,
+    so a random walk could carry a particle several cells away; its true
+    periodic neighbours then fell outside the enumerated range and were never
+    tested.  Seed 1007 at N=3 reported phi = 0.982 -- an "impossible" density
+    that an independent tiling check showed to be 581 overlapping pairs with a
+    penetration depth of 0.457.
+    """
+
+    def test_particles_stay_inside_the_cell(self) -> None:
+        result = tg._asc_search(3, 300, seed=1007, motif="single")
+        inverse = np.linalg.inv(result.lattice)
+        fractional = result.cell_tetrahedra.mean(axis=1) @ inverse
+        assert np.all(fractional >= -1e-9)
+        assert np.all(fractional <= 1.0 + 1e-9)
+
+    @pytest.mark.parametrize("seed", [7, 1007])
+    def test_search_results_survive_an_independent_tiling_check(self, seed: int) -> None:
+        """Verify by assembling the cloud, not by reasoning about image ranges."""
+        result = tg._asc_search(3, 300, seed=seed, motif="single")
+        grid = np.arange(5.0)
+        i, j, k = np.meshgrid(grid, grid, grid, indexing="ij")
+        shifts = np.stack([i.ravel(), j.ravel(), k.ravel()], axis=1) @ result.lattice
+        tiled = (result.cell_tetrahedra[None] + shifts[:, None, None, :]).reshape(-1, 4, 3)
+        assert tg.find_overlapping_pairs(tiled).shape[0] == 0
+
+    def test_image_range_covers_the_fractional_offset(self) -> None:
+        """Spans must exceed reach/width, since particles differ by up to one cell."""
+        lattice = np.eye(3) * 0.8
+        offsets = tg._image_offsets(lattice)
+        assert offsets is not None
+        reach = 2.0 * tg.UNIT_TETRA_CIRCUMRADIUS
+        assert int(np.abs(offsets).max()) >= math.ceil(reach / 0.8) + 1
+
+    def test_wrapping_a_particle_cannot_change_validity(self) -> None:
+        """Translating by a lattice vector leaves the periodic packing identical."""
+        result = tg._asc_search(3, 200, seed=11, motif="single")
+        lattice = result.lattice
+        shifted = result.cell_tetrahedra.copy()
+        shifted[0] += lattice[0] * 3 - lattice[2] * 2
+        assert tg._configuration_is_valid(result.cell_tetrahedra, lattice)
+        assert tg._configuration_is_valid(shifted, lattice)
+
+    def test_builder_rejects_an_overlapping_search_result(self, monkeypatch) -> None:
+        """build_dense_packing must refuse to return a non-packing."""
+        good = tg._asc_search(2, 120, seed=5, motif="single")
+        broken = tg.PackingResult(
+            lattice=good.lattice * 0.35,      # far too small to hold the particles
+            cell_tetrahedra=good.cell_tetrahedra,
+            packing_fraction=9.9,
+            accepted_moves=1,
+            attempted_moves=1,
+            n_particles=2,
+            motif="single",
+        )
+        monkeypatch.setattr(tg, "_asc_search", lambda *a, **k: broken)
+        with pytest.raises(AssertionError, match="overlapping"):
+            tg.build_dense_packing(16, motif="single", cycles=10, restarts=1, seed=5)
+
+
+# --------------------------------------------------------------------------- #
+# Higher-dimensional lift obstructions
+# --------------------------------------------------------------------------- #
+class TestZModuleRank:
+    """The rank test must be able to detect a real lift, not only deny one."""
+
+    def test_cubic_lattice_has_rank_three(self) -> None:
+        points = [[Fraction(x), Fraction(y), Fraction(z)]
+                  for x in range(3) for y in range(3) for z in range(3)]
+        result = tl.zmodule_rank(tl.rational_coefficients(points))
+        assert result.rank == 3
+        assert not result.admits_projection_lift
+
+    def test_planar_set_has_rank_two(self) -> None:
+        points = [[Fraction(x), Fraction(y), Fraction(0)] for x in range(4) for y in range(4)]
+        assert tl.zmodule_rank(tl.rational_coefficients(points)).rank == 2
+
+    def test_collinear_set_has_rank_one(self) -> None:
+        points = [[Fraction(k), Fraction(0), Fraction(0)] for k in range(5)]
+        assert tl.zmodule_rank(tl.rational_coefficients(points)).rank == 1
+
+    def test_icosahedral_quasicrystal_has_rank_six(self) -> None:
+        """The positive control: a genuine cut-and-project set must show rank 6.
+
+        Icosahedron vertices are (0, +-1, +-phi) and cyclic permutations. Over
+        the basis [1, phi] each coordinate is a pair of rationals, and the
+        module they generate fills Q^6 -- exactly the rank-6 signature of an
+        icosahedral quasicrystal, and greater than the ambient dimension 3.
+        """
+        one, phi = [Fraction(1), Fraction(0)], [Fraction(0), Fraction(1)]
+        zero, neg_one, neg_phi = [Fraction(0), Fraction(0)], [Fraction(-1), Fraction(0)], [Fraction(0), Fraction(-1)]
+        points = []
+        for a in (one, neg_one):
+            for b in (phi, neg_phi):
+                points.append([zero, a, b])
+                points.append([a, b, zero])
+                points.append([b, zero, a])
+        result = tl.zmodule_rank(points)
+        assert result.basis_size == 2
+        assert result.rank == 6
+        assert result.admits_projection_lift
+
+    def test_rejects_float_input(self) -> None:
+        with pytest.raises(TypeError):
+            tl.zmodule_rank([[[0.5], [0.0], [0.0]]])
+
+    def test_rejects_empty_input(self) -> None:
+        with pytest.raises(ValueError):
+            tl.zmodule_rank([])
+
+
+class TestRootSystemObstruction:
+    @staticmethod
+    def _graph(variant: str):
+        cloud = tg.build_ceg_packing(4 * 3**3, variant=variant)
+        merged = ts.merge_vertices(cloud.raw_points, atol=1e-5)
+        return merged, ts.build_unit_distance_graph(merged.points)
+
+    def test_square_lattice_angles_are_root_legal(self) -> None:
+        """Positive control: Z^2 unit-distance edges meet at 90 and 180 degrees."""
+        pts = np.array([[x, y, 0.0] for x in range(4) for y in range(4)])
+        bundle = ts.build_unit_distance_graph(pts)
+        spectrum = tl.edge_angle_spectrum(pts, bundle.edges)
+        assert spectrum.root_compatible
+        assert spectrum.offending_angles.size == 0
+
+    def test_tetrahedral_angle_is_not_root_legal(self) -> None:
+        """arccos(-1/3) = 109.47 deg is the tetrahedron's own vertex angle."""
+        tetra_angle = math.degrees(math.acos(-1 / 3))
+        assert not any(abs(tetra_angle - a) <= 1e-6 for a in tl.ROOT_ANGLES_DEGREES)
+
+    def test_ceg_edges_include_the_tetrahedral_angle(self) -> None:
+        merged, bundle = self._graph("densest-connected")
+        spectrum = tl.edge_angle_spectrum(merged.points, bundle.edges)
+        tetra_angle = math.degrees(math.acos(-1 / 3))
+        assert np.any(np.abs(spectrum.angles_degrees - tetra_angle) < 1e-4)
+
+    def test_ceg_is_not_root_compatible(self) -> None:
+        merged, bundle = self._graph("densest-connected")
+        spectrum = tl.edge_angle_spectrum(merged.points, bundle.edges)
+        assert not spectrum.root_compatible
+        assert spectrum.offending_angles.size > 0
+
+    @pytest.mark.parametrize(
+        "variant", ["optimal", "densest-connected", "kallus-elser-gravel"]
+    )
+    def test_lift_is_excluded_for_every_variant(self, variant: str) -> None:
+        u, v, w = tg.CEG_FAMILY_PRESETS[variant]
+        exact = tg.ceg_exact_vertices(u, v, w, reps=2)
+        merged, bundle = self._graph(variant)
+        report = tl.root_system_report(
+            tl.rational_coefficients(exact), merged.points, bundle.edges
+        )
+        assert report.zmodule.rank == 3
+        assert not report.zmodule.admits_projection_lift
+        assert report.admissible_root_systems == []
+        assert report.verdict.startswith("LIFT EXCLUDED")
+
+    def test_exact_vertices_agree_with_the_float_construction(self) -> None:
+        """The rational frame must be the float frame up to the 3*sqrt(2) scale."""
+        u, v, w = tg.CEG_FAMILY_PRESETS["optimal"]
+        exact = np.array(
+            [[float(c) for c in point] for point in tg.ceg_exact_vertices(u, v, w, reps=1)]
+        ) / (3 * math.sqrt(2))
+        cell, _ = tg.ceg_unit_cell(u, v, w)
+        built = np.unique(np.round(cell.reshape(-1, 3), 9), axis=0)
+        recovered = np.unique(np.round(exact, 9), axis=0)
+        assert recovered.shape == built.shape
+        np.testing.assert_allclose(recovered, built, atol=1e-9)

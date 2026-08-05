@@ -653,6 +653,67 @@ def ceg_unit_cell(
     return np.ascontiguousarray(tetrahedra), np.ascontiguousarray(lattice)
 
 
+def ceg_exact_vertices(
+    u: Fraction, v: Fraction, w: Fraction, reps: int = 2
+) -> list[list[Fraction]]:
+    """Vertices of a tiled CEG packing in *exact rational* paper coordinates.
+
+    Coordinates are left in the paper's frame, where the tetrahedron edge is
+    ``3 * sqrt(2)`` and every lattice, offset and dimer component is rational.
+    The unit-edge rescaling used elsewhere multiplies everything by a single
+    irrational factor, which is a global similarity and cannot change the rank
+    of the Z-module the coordinates generate -- so the rational frame is both
+    equivalent and exactly representable.
+
+    Parameters
+    ----------
+    u, v, w:
+        Family parameters.
+    reps:
+        Tiling repetitions per lattice direction.
+
+    Returns
+    -------
+    list of [Fraction, Fraction, Fraction]
+    """
+    if reps < 1:
+        raise ValueError("reps must be >= 1")
+
+    half = Fraction(1, 2)
+    a = (Fraction(27, 10) + u, Fraction(21, 20) - v, Fraction(-3, 20) + 2 * u + v)
+    b = (Fraction(-3, 10) - u, Fraction(51, 20) + v, Fraction(27, 20) - 2 * u - v)
+    c = (
+        Fraction(129, 160) - u + 2 * v + 2 * w,
+        Fraction(-237, 320) + half * u - v + 3 * w,
+        Fraction(753, 320) + half * u - v + w,
+    )
+    d = (Fraction(1, 10) + u, Fraction(-1, 20) + u + v, Fraction(-1, 20) + u - v)
+
+    def add(p, q):
+        return tuple(x + y for x, y in zip(p, q))
+
+    def scale(k, p):
+        return tuple(Fraction(k) * x for x in p)
+
+    positive = [
+        [Fraction(x) for x in CEG_DIMER_VERTICES[name]]
+        for name in ("o", "p", "q", "r", "s")
+    ]
+    shift = add(d, a)
+    negative = [[shift[i] - vertex[i] for i in range(3)] for vertex in positive]
+
+    lattice = (add(a, b), add(b, c), add(c, a))
+
+    vertices: list[list[Fraction]] = []
+    for i in range(reps):
+        for j in range(reps):
+            for k in range(reps):
+                offset = add(add(scale(i, lattice[0]), scale(j, lattice[1])), scale(k, lattice[2]))
+                for vertex in positive + negative:
+                    vertices.append([vertex[n] + offset[n] for n in range(3)])
+    return vertices
+
+
 def build_ceg_packing(
     min_tetrahedra: int = 1000,
     *,
@@ -883,7 +944,11 @@ def _image_offsets(lattice: FloatArray) -> FloatArray | None:
     widths = _lattice_widths(lattice)
     if not np.all(np.isfinite(widths)) or np.any(widths <= 1e-12):
         return None
-    spans = np.maximum(np.ceil(reach / widths), 1.0).astype(np.int64)
+    # The +1 covers the fractional offset between two particles.  Centroid
+    # separations are (delta_f + n) @ lattice with delta_f in (-1, 1)^3, so the
+    # integer part n must be searched one cell further than the reach alone
+    # suggests.  Without this margin a pair can be in contact yet never tested.
+    spans = np.maximum(np.ceil(reach / widths), 1.0).astype(np.int64) + 1
     if np.any(spans > MAX_IMAGE_SPAN):
         return None
     grids = [np.arange(-s, s + 1, dtype=np.int64) for s in spans]
@@ -1205,7 +1270,15 @@ def _asc_search(
                 )
                 quats[idx] = trial_q / np.linalg.norm(trial_q)
             else:
-                fractional[idx] = old_f + rng.normal(scale=trans_step.value, size=3)
+                # Wrap back into the cell.  Translating a particle by a whole
+                # lattice vector leaves the periodic packing identical, but an
+                # unwrapped coordinate random-walks out of the box, and the
+                # periodic image search is only valid for particles inside it --
+                # a drifted particle's true neighbours are never tested and
+                # overlaps go unnoticed.
+                fractional[idx] = np.mod(
+                    old_f + rng.normal(scale=trans_step.value, size=3), 1.0
+                )
 
             ok = _configuration_is_valid(
                 _cell_vertices(shape, lattice, fractional, quats), lattice
@@ -1370,6 +1443,18 @@ def build_dense_packing(
     )  # (reps^3, 3)
 
     tiled = (oriented[None, :, :, :] + translations[:, None, None, :]).reshape(-1, 4, 3)
+
+    # Independent end-to-end check on the tiled result.  The periodic test used
+    # during the search reasons about image ranges; this one simply looks at
+    # every nearby pair of the assembled cloud, so a bug in that reasoning
+    # cannot hide here.
+    overlaps = find_overlapping_pairs(tiled)
+    if overlaps.shape[0]:
+        depth = float(sat_overlap_depth(tiled[overlaps[:, 0]], tiled[overlaps[:, 1]]).max())
+        raise AssertionError(
+            f"ASC produced {overlaps.shape[0]} overlapping tetrahedron pairs "
+            f"(max penetration {depth:.6f}); the search result is not a packing"
+        )
 
     cloud = TetraCloud(
         tetrahedra=tiled,

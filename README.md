@@ -169,7 +169,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `tetra_spectral.py` | Vertex merging, graph construction, Laplacian, eigensolver, degeneracy analysis |
 | `tetra_spectral_analysis.py` | CLI, reporting, export |
 | `explore_connectivity.py` | Family sweep: connectivity vs density, CSV + figure |
-| `test_tetra_spectral.py` | Test suite (157 tests) |
+| `tetra_lift.py` | Higher-dimensional lift obstructions: Z-module rank, root-system angles |
+| `test_tetra_spectral.py` | Test suite (177 tests) |
 
 ## Method notes
 
@@ -227,33 +228,97 @@ only from at least 8 ratios. On the CEG packing there are 3 distinct levels and 
 spacings; quoting ⟨r⟩ = 0.667 there and calling it "near GOE" would be reading a symmetry
 class out of noise.
 
-**Packing search** is adaptive-shrinking-cell Monte Carlo on hard particles. Three
-design points matter, and each was established by measurement rather than assumption:
+**Packing search** is adaptive-shrinking-cell Monte Carlo on hard particles. Lattice
+moves use a *traceless* (volume-preserving) shear plus an explicit compression factor: a
+naive random symmetric strain changes volume by ±17% while the compression bias is 0.4%,
+and since expansion never creates overlaps those moves always pass and the cell
+random-walks *outward*. Making every accepted lattice move strictly densifying is what
+gives monotone convergence.
 
-1. Lattice moves use a *traceless* (volume-preserving) shear plus an explicit
-   compression factor. A naive random symmetric strain changes volume by ±17% while the
-   compression bias is 0.4%; since expansion never creates overlaps, those moves always
-   pass and the cell random-walks *outward*. Making every accepted lattice move strictly
-   densifying is what gives monotone convergence.
-2. Periodic reheating of the step sizes is required. Without it the search fully stalls
-   (0.5573 → 0.5579 for 2.7× more cycles); with it, 0.5573 → 0.5932.
-3. Neither dimer idea helped the stochastic search, and both were kept only because the
-   measurements say so. *Seeding* random tetrahedra as dimer pairs gave 0.42–0.52 across
-   three seeds versus 0.49–0.72 for random initialisation, because reheating disassembles
-   the pairs before jamming. Making the dimer a *rigid* motif (`--motif dimer`, halving
-   the degrees of freedom) did no better: best-of-four 0.5325 versus 0.7238 for free
-   tetrahedra. Seed variance dominates either way, which is why the builder restarts and
-   keeps the densest. The exact optimum comes from `--backend ceg`, not from this search.
+> **Correction — a bug invalidated every density this search previously reported.**
+> Fractional coordinates were never wrapped back into the cell, so a particle could
+> random-walk several cells away. The periodic image range is derived from the lattice
+> widths and is only valid for particles *inside* the cell, so a drifted particle's true
+> neighbours were never tested and overlaps went unseen. It surfaced at N = 3, seed 1007,
+> as φ = 0.982 — a physically impossible density that an independent tiling check showed
+> to be **581 overlapping pairs with penetration depth 0.457**, nearly half an edge.
+>
+> Fixed by wrapping coordinates each move (a lattice translation, exactly neutral for a
+> periodic packing) and widening the image span by one cell to cover the fractional
+> offset between particles. `build_dense_packing` now also runs an independent
+> `find_overlapping_pairs` check on the assembled cloud, so a flaw in the image-range
+> reasoning cannot hide again.
+>
+> **CEG and honeycomb were never affected** — both are verified by independent tiling
+> checks and reproduce their published densities exactly. Only the stochastic backend's
+> numbers moved.
+
+With the bug fixed the honest picture is more modest, and two claims made earlier do not
+survive:
+
+- The search reaches roughly **0.43–0.61**, not the 0.5–0.75 previously reported. Seed 11
+  at N = 4 gave 0.7238 before the fix and **0.6055** after; the difference was overlap.
+- **Reheating is not demonstrated to help.** The earlier figure (0.5573 → 0.5932) came
+  from invalid packings. Re-measured at seed 7: 0.5338 without reheating at both 1500 and
+  4000 cycles, 0.5188 / 0.5198 with. Both plateau; reheating is marginally *worse* here.
+  It is kept as an option, no longer as a recommendation.
+- Rigid dimer motifs still do not help, and that direction does survive: best-of-four
+  **0.5325** (dimer) versus **0.6055** (free tetrahedra).
 
 Periodic image ranges are computed from the cell's perpendicular widths rather than
 assuming a 3×3×3 minimum-image scheme, which silently misses collisions once the cell
-shrinks below the particle diameter — as it must at high density. A cell too anisotropic
-to certify is rejected rather than under-tested.
+shrinks below the particle diameter. A cell too anisotropic to certify is rejected rather
+than under-tested.
 
-**On the achieved density.** The stochastic search reaches roughly 0.5–0.75 depending on
-seed, and makes no claim to reach the optimum — for that, use `--backend ceg`, which is
-exact. Every density reported by the search is one that was measured, and
-`--verify-packing` runs an exact separating-axis check that no tetrahedra interpenetrate.
+**On the achieved density.** The stochastic search makes no claim to reach the optimum —
+for that, use `--backend ceg`, which is exact. Every density it reports is measured, and
+`--verify-packing` runs an exact separating-axis check.
+
+## No higher-dimensional lift exists
+
+`tetra_lift.py` tests whether these structures could be 3D shadows of something more
+symmetric — a cut-and-project quasicrystal, or a graph drawn from a root system such as
+`D₆` or `E₈`. Two independent obstructions both fire, and either alone is decisive.
+
+**1. The coordinate Z-module has rank 3.** A cut-and-project set from dimension *n* has
+coordinate rank *n* — icosahedral quasicrystals have rank 6, dodecagonal ones rank 5 —
+because their coordinates live in `Q(√5)` or `Q(√3)` with rationally independent
+components. Every CEG family member has **exactly rational** coordinates (common
+denominators 5, 160, 320 for the three presets), hence rank 3, hence it *is* a
+three-dimensional lattice structure with no higher-dimensional space to descend from.
+
+The test is built to be able to say yes: it takes coordinates as coefficient vectors over
+an algebraic basis, and a regression test feeds it icosahedron vertices over `[1, φ]` and
+confirms it returns **rank 6**. A test that could only ever deny a lift would be worthless.
+
+**2. The edge angles are not root-system angles.** Two roots of norm 2 have integer inner
+product, so minimal vectors in *any* root lattice meet only at 60°, 90°, 120° or 180°. The
+`densest-connected` graph shows **15 distinct angles, of which only 60° is legal**. Among
+the offenders:
+
+> **109.471221° = arccos(−1/3) — the regular tetrahedron's own vertex angle.**
+
+That angle is intrinsic to the shape, not to the packing, so *no* arrangement of regular
+tetrahedra embeds in a root lattice, in any dimension. This is the same incommensurability
+that stops tetrahedra from tiling space.
+
+The Laplacian multiplicities tell the same story: `{4: 122, 24: 1, 128: 1}` — every value
+divisible by 4, the number of identical components. They are component repetition, not
+irrep dimensions. `E₈`'s smallest non-trivial irrep is 248-dimensional.
+
+## The N = 3 phase is not reachable here
+
+Table I lists N = 3 at **φ = 2/3** ("3 monomers, three-fold symmetric", 21% success rate),
+but the paper does **not publish its coordinates** — they are in ref. [26], an external
+data file, and ref. [27] Appendix D. Unlike the dimer family there is no analytic
+parameter form to implement, so the question of whether N = 3 shows a smooth or
+discontinuous connectivity curve **cannot be answered without those coordinates**.
+
+Reaching it by search is out of range: the paper uses **7 × 10⁶ Monte Carlo moves per
+particle** with a 21% success rate, while a 2500-cycle run here is 2.5 × 10³ moves per
+particle — about 2800× short, which in pure NumPy is days of compute. The search plateaus
+near 0.47 for N = 3, well below 2/3. The infrastructure is in place (`--asc-particles 3`)
+and every result is overlap-certified; what is missing is the published geometry.
 
 ## Tests
 
@@ -263,8 +328,18 @@ python -m pytest test_tetra_spectral.py -v
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
 tetrahedron volume and circumradius), the FCC kissing number, sparse/dense/block solver
-agreement, kernel dimension versus component count, monotonicity of the packing search,
-rejection of degenerate periodic cells, and the two structural claims themselves: that
-the honeycomb's multiplicities never exceed 3 with triplets dominating (`O_h`), and that
-the CEG packing's spectrum is exactly {0, 3, 5, 5, 5} per dimer with V, φ and
-non-overlap all matching the paper.
+agreement, kernel dimension versus component count, rejection of degenerate periodic
+cells, and the structural claims themselves: the honeycomb's multiplicities never
+exceeding 3 with triplets dominating (`O_h`), the CEG spectrum being exactly
+{0, 3, 5, 5, 5} per dimer with V, φ and non-overlap all matching the paper, and
+connectivity localising to the plane u = 0.
+
+Two groups exist specifically to keep the project honest:
+
+- `TestPeriodicOverlapRegression` pins the wrapping bug — particles inside the cell,
+  image spans wide enough for the fractional offset, results surviving an *independent*
+  tiling check rather than the image-range reasoning that failed, and `build_dense_packing`
+  refusing to return a non-packing.
+- `TestZModuleRank` includes a **positive control**: icosahedron vertices over `[1, φ]`
+  must return rank 6. Without it, the lift test could only ever say no, and would pass
+  even if it were broken.
