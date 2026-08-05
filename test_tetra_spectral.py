@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import subprocess
+from fractions import Fraction
 import sys
 
 import networkx as nx
@@ -664,6 +665,100 @@ class TestCEGPacking:
     def test_rejects_nonsense_size(self) -> None:
         with pytest.raises(ValueError):
             tg.build_ceg_packing(0)
+
+
+class TestCEGFamily:
+    """The three-parameter double dimer family of eq. (6)."""
+
+    @pytest.mark.parametrize("variant", sorted(tg.CEG_FAMILY_PRESETS))
+    def test_presets_reproduce_their_published_density(self, variant: str) -> None:
+        cloud = tg.build_ceg_packing(64, variant=variant)
+        expected = tg.CEG_PRESET_FRACTIONS[variant]
+        assert cloud.provenance["packing_fraction"] == pytest.approx(
+            float(expected), abs=1e-14
+        )
+        assert cloud.provenance["packing_fraction_exact"] == str(expected)
+
+    @pytest.mark.parametrize("variant", sorted(tg.CEG_FAMILY_PRESETS))
+    def test_presets_are_certified_packings(self, variant: str) -> None:
+        cloud = tg.build_ceg_packing(64, variant=variant)
+        assert tg.find_overlapping_pairs(cloud.tetrahedra).shape[0] == 0
+        np.testing.assert_allclose(tg.edge_lengths(cloud.tetrahedra), 1.0, atol=1e-12)
+
+    @pytest.mark.parametrize("variant", sorted(tg.CEG_FAMILY_PRESETS))
+    def test_presets_lie_in_the_restricted_space(self, variant: str) -> None:
+        assert tg.ceg_in_restricted_space(*tg.CEG_FAMILY_PRESETS[variant])
+
+    def test_family_reproduces_theorem_1_vectors(self) -> None:
+        """eq. (6) at (3/160, 3/64, 0) must equal the printed optimum."""
+        a, b, c, d = tg.ceg_family_vectors(Fraction(3, 160), Fraction(3, 64), Fraction(0))
+        np.testing.assert_allclose(a, 3 / 320 * np.array([290, 107, -7]), atol=1e-15)
+        np.testing.assert_allclose(b, 3 / 320 * np.array([-34, 277, 135]), atol=1e-15)
+        np.testing.assert_allclose(c, 3 / 320 * np.array([94, -83, 247]), atol=1e-15)
+        np.testing.assert_allclose(d, 1 / 320 * np.array([38, 5, -25]), atol=1e-15)
+
+    def test_closed_form_density_matches_geometry(self) -> None:
+        for u, v, w in [
+            (Fraction(0), Fraction(0), Fraction(0)),
+            (Fraction(3, 160), Fraction(3, 64), Fraction(0)),
+            (Fraction(1, 200), Fraction(-1, 100), Fraction(1, 320)),
+        ]:
+            _, lattice = tg.ceg_unit_cell(u, v, w)
+            geometric = 4 * tg.UNIT_TETRA_VOLUME / abs(float(np.linalg.det(lattice)))
+            assert geometric == pytest.approx(float(tg.ceg_packing_fraction(u, v, w)), abs=1e-14)
+
+    def test_density_is_independent_of_w(self) -> None:
+        """w is a pure lattice shear, so it cannot change the density."""
+        base = tg.ceg_packing_fraction(Fraction(3, 160), Fraction(3, 64), Fraction(0))
+        for w in (Fraction(-1, 32), Fraction(1, 64), Fraction(1, 32)):
+            assert tg.ceg_packing_fraction(Fraction(3, 160), Fraction(3, 64), w) == base
+
+    def test_optimal_is_the_densest_preset(self) -> None:
+        best = max(tg.CEG_PRESET_FRACTIONS.values())
+        assert best == Fraction(4000, 4671)
+
+    def test_origin_is_the_kallus_elser_gravel_packing(self) -> None:
+        assert tg.ceg_packing_fraction(Fraction(0), Fraction(0), Fraction(0)) == Fraction(100, 117)
+
+    def test_restricted_space_rejects_far_exterior_points(self) -> None:
+        assert not tg.ceg_in_restricted_space(Fraction(0), Fraction(1), Fraction(0))
+
+    def test_rejects_unknown_variant(self) -> None:
+        with pytest.raises(ValueError):
+            tg.build_ceg_packing(32, variant="nonexistent")
+
+    def test_rejects_partial_parameters(self) -> None:
+        with pytest.raises(ValueError):
+            tg.ceg_unit_cell(Fraction(0), Fraction(0))
+
+
+class TestFamilyConnectivityContrast:
+    """Density and graph connectivity are traded off within the family."""
+
+    @staticmethod
+    def _graph(variant: str, reps: int):
+        cloud = tg.build_ceg_packing(4 * reps**3, variant=variant)
+        assert cloud.provenance["replicas_per_axis"] == reps
+        merged = ts.merge_vertices(cloud.raw_points, atol=1e-5)
+        return cloud, merged, ts.build_unit_distance_graph(merged.points)
+
+    @pytest.mark.parametrize("variant", ["optimal", "torquato-jiao"])
+    @pytest.mark.parametrize("reps", [2, 3, 4])
+    def test_dimers_stay_isolated_at_every_size(self, variant: str, reps: int) -> None:
+        cloud, merged, bundle = self._graph(variant, reps)
+        assert bundle.n_components == cloud.n_tetrahedra // 2
+        assert bundle.degrees.max() == 4
+        assert np.bincount(bundle.component_labels).max() == 5
+
+    @pytest.mark.parametrize("reps", [2, 3, 4, 5])
+    def test_keg_components_scale_linearly_with_the_box(self, reps: int) -> None:
+        """The less dense KEG packing links dimers; components grow with size."""
+        cloud, _, bundle = self._graph("kallus-elser-gravel", reps)
+        assert bundle.n_components == 12 * (reps - 1)
+        # Dimer count is cubic in reps while the component count is linear, so
+        # components must be extended rather than one-per-dimer.
+        assert bundle.n_components < cloud.n_tetrahedra // 2
+        assert bundle.degrees.max() > 4
 
 
 class TestBlockDiagonalSolver:

@@ -43,6 +43,11 @@ __all__ = [
     "build_honeycomb",
     "build_ceg_packing",
     "ceg_unit_cell",
+    "ceg_family_vectors",
+    "ceg_packing_fraction",
+    "ceg_in_restricted_space",
+    "CEG_FAMILY_PRESETS",
+    "CEG_PRESET_FRACTIONS",
     "build_dense_packing",
     "build_motif",
     "MOTIF_NAMES",
@@ -442,32 +447,14 @@ def build_honeycomb(min_tetrahedra: int = 1000, *, max_radius: float = 40.0) -> 
 
 
 # --------------------------------------------------------------------------- #
-# Backend 2: the Chen-Engel-Glotzer optimal packing (exact, analytic)
+# Backend 2: the Chen-Engel-Glotzer double dimer family (exact, analytic)
 # --------------------------------------------------------------------------- #
 #: Densest known packing fraction of regular tetrahedra, 4000/4671.
 CEG_PACKING_FRACTION: float = 4000.0 / 4671.0
 
-#: Lattice and offset vectors of the CEG optimum, from Chen, Engel & Glotzer,
-#: "Dense crystalline dimer packings of regular tetrahedra", Discrete Comput.
-#: Geom. 44, 253 (2010), Appendix C, entry ``C3+_opt`` (the point u = +3/160 on
-#: the optimal line of the three-parameter double-dimer family).  Exact
-#: rationals in the paper's own coordinates, where the tetrahedron edge is
-#: 3*sqrt(2).
-CEG_A: tuple[Fraction, Fraction, Fraction] = (
-    Fraction(87, 32), Fraction(321, 320), Fraction(-21, 320),
-)
-CEG_B: tuple[Fraction, Fraction, Fraction] = (
-    Fraction(-51, 160), Fraction(831, 320), Fraction(81, 64),
-)
-CEG_C: tuple[Fraction, Fraction, Fraction] = (
-    Fraction(141, 160), Fraction(-249, 320), Fraction(741, 320),
-)
-CEG_D: tuple[Fraction, Fraction, Fraction] = (
-    Fraction(19, 160), Fraction(1, 64), Fraction(-5, 64),
-)
-
 #: Vertices of the positive dimer +F2 in the paper's coordinates (Definition 1).
-#: ``p, q, r`` span the face shared by the two tetrahedra.
+#: ``p, q, r`` span the face shared by the two tetrahedra; the tetrahedron edge
+#: is ``3 * sqrt(2)`` and each tetrahedron has volume 9.
 CEG_DIMER_VERTICES: dict[str, tuple[int, int, int]] = {
     "o": (2, 2, 2),
     "p": (2, -1, -1),
@@ -476,43 +463,175 @@ CEG_DIMER_VERTICES: dict[str, tuple[int, int, int]] = {
     "s": (-2, -2, -2),
 }
 
+#: Named points of the three-parameter family, as exact ``(u, v, w)`` rationals.
+#:
+#: ``optimal`` / ``optimal-mirror``
+#:     The two maximal-density points, phi = 4000/4671 (Theorem 1).  They are
+#:     related by the crystallographic isometry T of eq. (14).
+#: ``kallus-elser-gravel``
+#:     The origin, phi = 100/117.  The whole line ``(0, 0, w)`` is the
+#:     one-parameter family of Kallus, Elser & Gravel.
+#: ``torquato-jiao``
+#:     Densest point of the Torquato-Jiao two-parameter family (the plane
+#:     ``5u = -2v``), phi = 12250/14319.
+CEG_FAMILY_PRESETS: dict[str, tuple[Fraction, Fraction, Fraction]] = {
+    "optimal": (Fraction(3, 160), Fraction(3, 64), Fraction(0)),
+    "optimal-mirror": (Fraction(-3, 160), Fraction(-3, 64), Fraction(0)),
+    "kallus-elser-gravel": (Fraction(0), Fraction(0), Fraction(0)),
+    "torquato-jiao": (Fraction(3, 140), Fraction(-3, 56), Fraction(-3, 448)),
+}
 
-def _as_vector(values: tuple[Fraction, ...]) -> FloatArray:
-    return np.array([float(v) for v in values], dtype=F64)
+#: Exact packing fraction at each preset, for cross-checking the construction.
+CEG_PRESET_FRACTIONS: dict[str, Fraction] = {
+    "optimal": Fraction(4000, 4671),
+    "optimal-mirror": Fraction(4000, 4671),
+    "kallus-elser-gravel": Fraction(100, 117),
+    "torquato-jiao": Fraction(12250, 14319),
+}
 
 
-def ceg_unit_cell() -> tuple[FloatArray, FloatArray]:
-    """Return the four tetrahedra and lattice of the CEG optimal packing.
+def ceg_family_vectors(
+    u: Fraction, v: Fraction, w: Fraction
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
+    """Lattice vectors ``a, b, c`` and offset ``d`` of the double dimer family.
 
-    The construction follows Chen, Engel & Glotzer exactly.  A *dimer* is two
-    regular tetrahedra sharing a face, forming a triangular dipyramid; the
-    positive dimer ``+F2`` has vertices ``o, p, q, r, s`` with ``p, q, r``
-    spanning the shared face, and the negative dimer ``-F2`` is its inversion.
-    The packing places positive dimers on the even sublattice
+    This is equation (6) of Chen, Engel & Glotzer: the three-parameter linear
+    space of double dimer configurations that satisfy the nine linear incidence
+    conditions of their Lemma 2.  Coordinates are the paper's own, in which the
+    tetrahedron edge is ``3 * sqrt(2)``.
+
+    Parameters
+    ----------
+    u, v, w:
+        Family parameters.  Passing :class:`~fractions.Fraction` keeps the
+        construction exact up to the final float conversion.
+
+    Returns
+    -------
+    (a, b, c, d)
+        Four ``(3,)`` float64 vectors.
+    """
+    half = Fraction(1, 2)
+    rows = (
+        (Fraction(27, 10) + u, Fraction(21, 20) - v, Fraction(-3, 20) + 2 * u + v),
+        (Fraction(-3, 10) - u, Fraction(51, 20) + v, Fraction(27, 20) - 2 * u - v),
+        (
+            Fraction(129, 160) - u + 2 * v + 2 * w,
+            Fraction(-237, 320) + half * u - v + 3 * w,
+            Fraction(753, 320) + half * u - v + w,
+        ),
+        (Fraction(1, 10) + u, Fraction(-1, 20) + u + v, Fraction(-1, 20) + u - v),
+    )
+    return tuple(  # type: ignore[return-value]
+        np.array([float(component) for component in row], dtype=F64) for row in rows
+    )
+
+
+def ceg_packing_fraction(u: Fraction, v: Fraction, w: Fraction) -> Fraction:
+    """Exact packing fraction of the family member at ``(u, v, w)``.
+
+    From equation (11), ``V = (9/25)(117 + 60u^2 - 80uv - 80v^2)`` and
+    ``phi = 2U/V = 36/V``, giving
+
+    ``phi = 100 / (117 + 60u^2 - 80uv - 80v^2)``.
+
+    The result is independent of ``w``: that direction is a pure lattice shear,
+    so the whole line ``(u, v, w)`` has constant density.  The quadratic form is
+    a hyperbolic paraboloid with a saddle at the origin, which is why the
+    extrema are attained on the boundary of the restricted space rather than at
+    an interior stationary point.
+    """
+    denominator = Fraction(117) + 60 * u * u - 80 * u * v - 80 * v * v
+    if denominator <= 0:
+        raise ValueError(f"degenerate family parameters: V <= 0 at ({u}, {v}, {w})")
+    return Fraction(100) / denominator
+
+
+def ceg_in_restricted_space(u: Fraction, v: Fraction, w: Fraction) -> bool:
+    """Whether ``(u, v, w)`` lies in the restricted space ``P''`` of Lemma 3.
+
+    ``P''`` is the intersection of the four half-spaces of equation (9), each
+    coming from an edge-to-edge or vertex-to-face incidence condition:
+
+    * ``H_{b+c}``:  ``+u/2 + 2v - w <= 33/320``
+    * ``H_{c+a}``:  ``-u/2 - 2v - w <= 33/320``
+    * ``H_{b-c}``:  ``-v + w <= 3/64``
+    * ``H_{c-a}``:  ``+v + w <= 3/64``
+
+    Every configuration in ``P''`` is proved to be a genuine packing.  Points
+    outside it are not necessarily overlapping -- the conditions are sufficient,
+    not necessary -- so :func:`ceg_unit_cell` runs the separating-axis test
+    regardless rather than relying on this predicate.
+    """
+    half = Fraction(1, 2)
+    limit_a, limit_b = Fraction(33, 320), Fraction(3, 64)
+    return (
+        half * u + 2 * v - w <= limit_a
+        and -half * u - 2 * v - w <= limit_a
+        and -v + w <= limit_b
+        and v + w <= limit_b
+    )
+
+
+def ceg_unit_cell(
+    u: Fraction | None = None,
+    v: Fraction | None = None,
+    w: Fraction | None = None,
+    *,
+    variant: str = "optimal",
+) -> tuple[FloatArray, FloatArray]:
+    """Return the four tetrahedra and lattice of a CEG double dimer packing.
+
+    A *dimer* is two regular tetrahedra sharing a face, forming a triangular
+    dipyramid; the positive dimer ``+F2`` has vertices ``o, p, q, r, s`` with
+    ``p, q, r`` spanning the shared face, and the negative dimer ``-F2`` is its
+    inversion.  Positive dimers occupy the even sublattice
 
     ``L+ = {n_a a + n_b b + n_c c : n_a + n_b + n_c = 0 mod 2}``
 
-    which is spanned by ``a + b``, ``b + c``, ``c + a``, and negative dimers on
-    the odd coset ``L- = L+ + (d + a)``.  One unit cell therefore holds one
-    positive and one negative dimer: four tetrahedra of total volume ``2U``,
-    giving ``phi = 2U/V = 36/V``.
+    spanned by ``a + b``, ``b + c``, ``c + a``; negative dimers occupy the odd
+    coset ``L- = L+ + (d + a)``.  One unit cell therefore holds one positive and
+    one negative dimer -- four tetrahedra of total volume ``2U = 36`` -- giving
+    ``phi = 36/V``.
 
-    Coordinates are rescaled from the paper's edge length of ``3*sqrt(2)`` to
+    Coordinates are rescaled from the paper's edge length of ``3 * sqrt(2)`` to
     the unit edge used throughout this module.
+
+    Parameters
+    ----------
+    u, v, w:
+        Explicit family parameters.  Supply all three, or none to use
+        ``variant``.
+    variant:
+        Name from :data:`CEG_FAMILY_PRESETS`.  Ignored when ``u, v, w`` are
+        given.
 
     Returns
     -------
     (tetrahedra, lattice)
-        ``(4, 4, 3)`` vertex coordinates and the ``(3, 3)`` lattice whose rows
-        span ``L+``.
+        ``(4, 4, 3)`` vertex coordinates and the ``(3, 3)`` lattice spanning
+        ``L+``.
     """
-    a, b, c, d = (_as_vector(v) for v in (CEG_A, CEG_B, CEG_C, CEG_D))
-    v = {name: np.array(coords, dtype=F64) for name, coords in CEG_DIMER_VERTICES.items()}
+    supplied = [p for p in (u, v, w) if p is not None]
+    if supplied and len(supplied) != 3:
+        raise ValueError("supply all three of u, v, w, or none of them")
+    if not supplied:
+        if variant not in CEG_FAMILY_PRESETS:
+            raise ValueError(
+                f"unknown variant {variant!r}; expected one of "
+                f"{tuple(CEG_FAMILY_PRESETS)}"
+            )
+        u, v, w = CEG_FAMILY_PRESETS[variant]
 
+    params = tuple(Fraction(p) for p in (u, v, w))  # type: ignore[arg-type]
+    a, b, c, d = ceg_family_vectors(*params)
+    vertices = {
+        name: np.array(coords, dtype=F64) for name, coords in CEG_DIMER_VERTICES.items()
+    }
     positive = np.array(
         [
-            [v["o"], v["p"], v["q"], v["r"]],
-            [v["s"], v["p"], v["q"], v["r"]],
+            [vertices["o"], vertices["p"], vertices["q"], vertices["r"]],
+            [vertices["s"], vertices["p"], vertices["q"], vertices["r"]],
         ],
         dtype=F64,
     )
@@ -524,20 +643,34 @@ def ceg_unit_cell() -> tuple[FloatArray, FloatArray]:
     return np.ascontiguousarray(tetrahedra), np.ascontiguousarray(lattice)
 
 
-def build_ceg_packing(min_tetrahedra: int = 1000, *, max_replicas: int = 40) -> TetraCloud:
-    """Build the densest known packing of regular tetrahedra, phi = 4000/4671.
+def build_ceg_packing(
+    min_tetrahedra: int = 1000,
+    *,
+    variant: str = "optimal",
+    u: Fraction | None = None,
+    v: Fraction | None = None,
+    w: Fraction | None = None,
+    max_replicas: int = 40,
+) -> TetraCloud:
+    """Build a Chen-Engel-Glotzer double dimer packing and certify it.
 
-    This is the exact analytic optimum of Chen, Engel & Glotzer -- not a
-    stochastic search result.  The unit cell is verified on construction: the
-    tetrahedra are checked to be regular with unit edge, the packing fraction
-    is checked against 4000/4671, and the separating-axis test is run over all
-    periodic images to certify that nothing interpenetrates.  A tiled copy is
-    then returned.
+    The default ``variant="optimal"`` is the densest packing of regular
+    tetrahedra known, ``phi = 4000/4671 ~ 0.856347`` -- an exact analytic
+    construction, not a stochastic search result.
+
+    Every cell is verified rather than trusted: the tetrahedra are checked to be
+    regular with unit edge, the geometric packing fraction is checked against the
+    closed form of :func:`ceg_packing_fraction`, and the separating-axis test is
+    run over all periodic images to certify that nothing interpenetrates.
 
     Parameters
     ----------
     min_tetrahedra:
         Minimum tetrahedron count in the returned cloud.
+    variant:
+        Name from :data:`CEG_FAMILY_PRESETS`.
+    u, v, w:
+        Explicit family parameters, overriding ``variant`` when all are given.
     max_replicas:
         Safety bound on tiling repetitions per lattice direction.
 
@@ -548,17 +681,35 @@ def build_ceg_packing(min_tetrahedra: int = 1000, *, max_replicas: int = 40) -> 
     if min_tetrahedra < 1:
         raise ValueError("min_tetrahedra must be >= 1")
 
-    cell, lattice = ceg_unit_cell()
+    if u is None and v is None and w is None:
+        if variant not in CEG_FAMILY_PRESETS:
+            raise ValueError(
+                f"unknown variant {variant!r}; expected one of "
+                f"{tuple(CEG_FAMILY_PRESETS)}"
+            )
+        params = CEG_FAMILY_PRESETS[variant]
+        label = variant
+    else:
+        if None in (u, v, w):
+            raise ValueError("supply all three of u, v, w, or none of them")
+        params = (Fraction(u), Fraction(v), Fraction(w))  # type: ignore[arg-type]
+        label = "custom"
+
+    cell, lattice = ceg_unit_cell(*params)
     per_cell = int(cell.shape[0])
 
     volume = abs(float(np.linalg.det(lattice)))
     phi = per_cell * UNIT_TETRA_VOLUME / volume
-    if abs(phi - CEG_PACKING_FRACTION) > 1e-12:
+    expected = float(ceg_packing_fraction(*params))
+    if abs(phi - expected) > 1e-12:
         raise AssertionError(
-            f"CEG cell reproduces phi={phi:.15f}, expected {CEG_PACKING_FRACTION:.15f}"
+            f"CEG cell reproduces phi={phi:.15f}, closed form gives {expected:.15f}"
         )
     if not _configuration_is_valid(cell, lattice):
-        raise AssertionError("CEG unit cell failed the separating-axis overlap test")
+        raise AssertionError(
+            f"CEG cell at (u, v, w) = {params} failed the separating-axis overlap "
+            "test; the point lies outside the region where the construction packs"
+        )
 
     reps = 1
     while reps <= max_replicas and per_cell * reps**3 < min_tetrahedra:
@@ -580,11 +731,14 @@ def build_ceg_packing(min_tetrahedra: int = 1000, *, max_replicas: int = 40) -> 
         provenance={
             "backend": "ceg",
             "source": (
-                "Chen, Engel & Glotzer, Discrete Comput. Geom. 44, 253 (2010), "
-                "Appendix C, entry C3+_opt"
+                "Chen, Engel & Glotzer, Discrete Comput. Geom. 44, 253 (2010); "
+                "double dimer family eq. (6), optimum Theorem 1"
             ),
+            "variant": label,
+            "family_parameters_uvw": tuple(str(p) for p in params),
             "packing_fraction": phi,
-            "packing_fraction_exact": "4000/4671",
+            "packing_fraction_exact": str(ceg_packing_fraction(*params)),
+            "in_restricted_space": ceg_in_restricted_space(*params),
             "unit_cell_volume": volume,
             "structure": "double dimer lattice, 1 positive + 1 negative dimer per cell",
             "space_group": "P-1",
@@ -595,8 +749,10 @@ def build_ceg_packing(min_tetrahedra: int = 1000, *, max_replicas: int = 40) -> 
     )
     cloud.assert_regular(edge=1.0, atol=1e-12)
     LOGGER.info(
-        "CEG packing: phi=%.12f (4000/4671), %d tetrahedra from %d^3 cells",
+        "CEG packing (%s): phi=%.12f = %s, %d tetrahedra from %d^3 cells",
+        label,
         phi,
+        ceg_packing_fraction(*params),
         cloud.n_tetrahedra,
         reps,
     )

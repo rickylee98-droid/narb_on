@@ -150,7 +150,7 @@ def build_cloud(args: argparse.Namespace) -> tg.TetraCloud:
     if args.backend == "honeycomb":
         return tg.build_honeycomb(args.min_tetrahedra)
     if args.backend == "ceg":
-        return tg.build_ceg_packing(args.min_tetrahedra)
+        return tg.build_ceg_packing(args.min_tetrahedra, variant=args.ceg_variant)
     return tg.build_dense_packing(
         args.min_tetrahedra,
         n_particles=args.asc_particles,
@@ -526,6 +526,7 @@ def summary_dict(result: AnalysisResult, args: argparse.Namespace) -> dict[str, 
             "degeneracy_atol": args.degeneracy_atol,
             "seed": args.seed,
             "motif": args.motif,
+            "ceg_variant": args.ceg_variant,
         },
         "geometry": {
             "n_tetrahedra": result.cloud.n_tetrahedra,
@@ -601,6 +602,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=1500,
         help="Monte Carlo cycles for the packing backend (default: 1500)",
+    )
+    geom.add_argument(
+        "--ceg-variant",
+        choices=tuple(tg.CEG_FAMILY_PRESETS),
+        default="optimal",
+        help=(
+            "which member of the Chen-Engel-Glotzer double dimer family to build: "
+            "'optimal' phi=4000/4671 (default), 'optimal-mirror' the same density "
+            "via the mirror point, 'kallus-elser-gravel' phi=100/117, "
+            "'torquato-jiao' phi=12250/14319"
+        ),
     )
     geom.add_argument(
         "--motif",

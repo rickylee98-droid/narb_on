@@ -27,9 +27,32 @@ Algebraic connectivity is exactly 0. Every degeneracy is *repetition of identica
 components*, not a hidden symmetry group. That is the honest answer for a maximum-density
 packing.
 
-The rich, degenerate spectrum lives instead in the **interlocking** structure: the
+### Density trades off against connectivity, inside the family
+
+The paper's construction is a **three-parameter family** (eq. 6), and the whole family is
+implemented — so the trade-off is directly measurable. Three named members reproduce their
+published densities exactly and all pass the separating-axis test:
+
+| `--ceg-variant` | φ | Components | Max degree | Structure |
+| --- | --- | --- | --- | --- |
+| `optimal` | **4000/4671** = 0.856348 | exactly 1 per dimer | 4 | bounded |
+| `torquato-jiao` | 12250/14319 = 0.855507 | exactly 1 per dimer | 4 | bounded |
+| `kallus-elser-gravel` | 100/117 = 0.854701 | **exactly 12(reps−1)** | **6** | **extended** |
+
+The *least* dense of the three has by far the richest graph. KEG sits at the symmetric
+origin `(u,v,w) = (0,0,0)` and is transitive on individual tetrahedra, and that extra
+symmetry produces unit-distance coincidences **between** dimers — not shared vertices, but
+distinct vertices exactly 1 apart. Its component count grows only *linearly* with box size
+while the dimer count grows cubically, so mean component size grows as ~reps²: the
+components are extended networks, not isolated dipyramids. Its Fiedler value is 0.157,
+not 3.
+
+So buying the last 0.2% of density costs you the entire connected structure. Both facts
+are locked in by tests at several box sizes.
+
+The richest spectrum of all still lives in the **interlocking** structure: the
 tetrahedral–octahedral honeycomb on the FCC lattice, where tetrahedra genuinely share
-vertices and edges. All three geometries are implemented, so the contrast is reproducible.
+vertices and edges. All backends are implemented, so every contrast is reproducible.
 
 *(An earlier version of this README claimed a dense packing gives one disjoint `K₄` per
 tetrahedron. That is true only of the stochastic `packing` backend, whose tetrahedra land
@@ -122,14 +145,23 @@ chain, so the largest cluster radius is measured and a warning is emitted if it 
 10× the tolerance. In the honeycomb, coincident vertices are bitwise identical, so the
 observed radius is < 1e-15 and no chaining occurs.
 
-**The CEG optimum** is stored as the exact rationals of Chen, Engel & Glotzer (2010),
-Appendix C entry `C3+_opt` — lattice vectors `a, b, c` and offset `d` at the optimal
-point `u = +3/160`. The packing places positive dimers on the even sublattice
-`L⁺ = ⟨a+b, b+c, c+a⟩` and negative (inverted) dimers on the coset `L⁻ = L⁺ + (d+a)`,
-giving 4 tetrahedra per cell. Coordinates are rescaled from the paper's edge length of
-3√2 to unit edge. Construction *verifies* rather than asserts: it reproduces
-V = 42039/1000, checks φ against 4000/4671 to 1e-12, and runs the separating-axis test
-over all periodic images before returning.
+**The CEG family** is implemented as equation (6) of Chen, Engel & Glotzer (2010): the
+three-parameter linear space `(u, v, w)` of double dimer configurations satisfying their
+nine linear incidence conditions, carried in exact `Fraction` arithmetic. The packing
+places positive dimers on the even sublattice `L⁺ = ⟨a+b, b+c, c+a⟩` and negative
+(inverted) dimers on the coset `L⁻ = L⁺ + (d+a)`, giving 4 tetrahedra per cell.
+Coordinates are rescaled from the paper's edge length of 3√2 to unit edge.
+
+Cross-checks that the implementation is right, all of them tested:
+
+- eq. (6) at `(3/160, 3/64, 0)` reproduces the Theorem 1 vectors to 1e-15 — two
+  independent statements in the paper agreeing.
+- The closed form `φ = 100/(117 + 60u² − 80uv − 80v²)` (eq. 11) matches the geometric
+  `4·V_tet/|det L|` at every tested point.
+- `w` is a pure lattice shear, so density is provably independent of it — verified.
+- `ceg_in_restricted_space` implements the four half-spaces of `P″` (eq. 9). These are
+  *sufficient* conditions for a packing, not necessary, so construction runs the
+  separating-axis test regardless rather than trusting the predicate.
 
 **Eigensolver.** When the graph is disconnected the Laplacian is block diagonal and the
 spectrum is assembled from the blocks. This is a correctness requirement, not an
