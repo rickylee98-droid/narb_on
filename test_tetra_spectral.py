@@ -1548,6 +1548,139 @@ class TestN3Fingerprint:
 
 
 # --------------------------------------------------------------------------- #
+# Why 16: the quotient graph with voltages
+# --------------------------------------------------------------------------- #
+class TestSublatticeIndex:
+    """Exact integer index of a subgroup of Z^3, with no symbolic dependency."""
+
+    def test_standard_basis_has_index_one(self) -> None:
+        index, _ = ts.sublattice_index(np.eye(3, dtype=np.int64))
+        assert index == 1
+
+    def test_doubled_lattice_has_index_eight(self) -> None:
+        index, basis = ts.sublattice_index(2 * np.eye(3, dtype=np.int64))
+        assert index == 8
+        assert basis == ((2, 0, 0), (0, 2, 0), (0, 0, 2))
+
+    def test_index_matches_the_determinant(self) -> None:
+        generators = [(2, 0, 0), (1, 1, 0), (0, 0, 3)]
+        index, _ = ts.sublattice_index(generators)
+        assert index == abs(round(float(np.linalg.det(np.array(generators, float)))))
+        assert index == 6
+
+    def test_redundant_generators_do_not_change_the_index(self) -> None:
+        base = [(2, 2, 0), (0, 2, 0), (0, 0, 2)]
+        extra = base + [(2, 4, 0), (4, 0, 2), (-2, -2, 0)]
+        assert ts.sublattice_index(extra)[0] == ts.sublattice_index(base)[0] == 8
+
+    def test_a_non_spanning_set_has_no_finite_index(self) -> None:
+        index, basis = ts.sublattice_index([(1, 0, 0), (0, 1, 0), (2, 3, 0)])
+        assert index is None
+        assert basis is None
+
+    def test_no_generators_is_rank_zero(self) -> None:
+        assert ts.sublattice_index([]) == (None, None)
+        assert ts.sublattice_rank([]) == 0
+
+    @pytest.mark.parametrize(
+        "generators, expected",
+        [
+            ([], 0),
+            ([(0, 0, 0)], 0),
+            ([(1, 2, 3)], 1),
+            ([(1, 0, 0), (2, 0, 0)], 1),
+            ([(1, 0, 0), (0, 1, 0), (2, 3, 0)], 2),
+            ([(1, 1, 1), (0, 1, 0), (0, 0, 5)], 3),
+        ],
+    )
+    def test_rank_counts_independent_directions(self, generators, expected: int) -> None:
+        assert ts.sublattice_rank(generators) == expected
+
+
+class TestPeriodicGraphComponents:
+    """The infinite graph's component count, from one unit cell and exact integers."""
+
+    def test_n3_quotient_has_nine_orbits_in_two_pieces(self) -> None:
+        cell, lattice = tg.n3_unit_cell()
+        report = ts.periodic_graph_components(cell, lattice)
+        assert report.n_orbits == 9          # 12 raw vertices, 3 pairs coincide
+        assert len(report.components) == 2
+        assert sorted(len(c.orbits) for c in report.components) == [4, 5]
+
+    def test_each_n3_piece_closes_only_on_even_translations(self) -> None:
+        """The whole explanation: cycle voltages generate exactly 2 Z^3."""
+        cell, lattice = tg.n3_unit_cell()
+        report = ts.periodic_graph_components(cell, lattice)
+        for component in report.components:
+            assert component.rank == 3
+            assert component.index == 8
+            basis = np.array(component.sublattice_basis, dtype=np.int64)
+            assert np.all(basis % 2 == 0)                    # subgroup of 2 Z^3
+            assert ts.sublattice_index(2 * np.eye(3, dtype=np.int64))[0] == 8
+
+    def test_sixteen_is_two_pieces_times_eight_parity_classes(self) -> None:
+        cell, lattice = tg.n3_unit_cell()
+        report = ts.periodic_graph_components(cell, lattice)
+        assert report.n_infinite_components == 16
+        assert report.n_infinite_components == 2 * 2 ** 3
+
+    @pytest.mark.parametrize("span", [1, 2, 3, 4])
+    def test_the_answer_does_not_depend_on_the_search_span(self, span: int) -> None:
+        cell, lattice = tg.n3_unit_cell()
+        report = ts.periodic_graph_components(cell, lattice, span=span)
+        assert report.n_infinite_components == 16
+
+    @pytest.mark.parametrize("reps", [4, 5, 6])
+    def test_agrees_with_direct_counts_on_finite_blocks(self, reps: int) -> None:
+        cell, lattice = tg.n3_unit_cell()
+        grid = np.arange(reps, dtype=float)
+        i, j, k = np.meshgrid(grid, grid, grid, indexing="ij")
+        translations = np.stack([i.ravel(), j.ravel(), k.ravel()], axis=1) @ lattice
+        tiled = (cell[None] + translations[:, None, None, :]).reshape(-1, 4, 3)
+        merged = ts.merge_vertices(tiled.reshape(-1, 3), atol=1e-5)
+        bundle = ts.build_unit_distance_graph(merged.points)
+        report = ts.periodic_graph_components(cell, lattice)
+        assert bundle.n_components == report.n_infinite_components
+
+    def test_ceg_optimum_is_bounded_dimers_not_a_network(self) -> None:
+        """Rank 0: every cycle closes at zero voltage, so nothing extends."""
+        cell, lattice = tg.ceg_unit_cell(variant="optimal")
+        report = ts.periodic_graph_components(cell, lattice)
+        assert [c.rank for c in report.components] == [0, 0]
+        assert report.n_infinite_components is None      # infinitely many dimers
+
+    def test_the_connected_ceg_member_is_a_stack_of_sheets(self) -> None:
+        """Rank 2, not 3: connectivity on the u = 0 plane is two-dimensional."""
+        cell, lattice = tg.ceg_unit_cell(variant="densest-connected")
+        report = ts.periodic_graph_components(cell, lattice)
+        assert len(report.components) == 1
+        assert report.components[0].rank == 2
+        assert report.components[0].index is None
+        assert report.n_infinite_components is None
+
+    @pytest.mark.parametrize("reps", [3, 4, 5])
+    def test_sheet_count_grows_with_the_block(self, reps: int) -> None:
+        """One sheet per layer -- the direct counterpart of rank 2."""
+        cell, lattice = tg.ceg_unit_cell(variant="densest-connected")
+        grid = np.arange(reps, dtype=float)
+        i, j, k = np.meshgrid(grid, grid, grid, indexing="ij")
+        translations = np.stack([i.ravel(), j.ravel(), k.ravel()], axis=1) @ lattice
+        tiled = (cell[None] + translations[:, None, None, :]).reshape(-1, 4, 3)
+        merged = ts.merge_vertices(tiled.reshape(-1, 3), atol=1e-5)
+        bundle = ts.build_unit_distance_graph(merged.points)
+        assert bundle.n_components == reps
+
+    def test_rejects_malformed_input(self) -> None:
+        cell, lattice = tg.n3_unit_cell()
+        with pytest.raises(ValueError, match="shape"):
+            ts.periodic_graph_components(cell.reshape(-1, 3), lattice)
+        with pytest.raises(ValueError, match="shape"):
+            ts.periodic_graph_components(cell, lattice[:2])
+        with pytest.raises(ValueError, match="span"):
+            ts.periodic_graph_components(cell, lattice, span=0)
+
+
+# --------------------------------------------------------------------------- #
 # The N = 2 phase: a monomer double lattice
 # --------------------------------------------------------------------------- #
 class TestDoubleLattice:

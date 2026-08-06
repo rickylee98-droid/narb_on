@@ -76,7 +76,8 @@ symmetry produces unit-distance coincidences **between** dimers — not shared v
 distinct vertices exactly 1 apart. Its component count grows only *linearly* with box size
 while the dimer count grows cubically, so mean component size grows as ~reps²: the
 components are extended networks, not isolated dipyramids. Its Fiedler value is 0.157,
-not 3.
+not 3. (The quotient graph later pins the exponent down exactly: those components are
+two-dimensional **sheets** — see "Why exactly 16".)
 
 So buying the last 0.2% of density costs you the entire connected structure. Both facts
 are locked in by tests at several box sizes.
@@ -534,6 +535,62 @@ One artefact worth naming, since the script would otherwise report it as signal:
 multiplicity doubles, giving {2, 4, 6}. That is a property of the finite cluster, not the
 crystal. Use an odd `layers`.
 
+### Why exactly 16: the quotient graph with voltages
+
+"16 at every block size" is an observation, not an explanation, and a finite block can never
+supply one — its component count mixes genuine networks with pieces the boundary happened to
+sever. The infinite graph answers it exactly, and cheaply, via `periodic_graph_components`.
+
+Collapse the structure onto a single unit cell, so vertices become **orbits** under lattice
+translation, and label each edge with the translation it crosses — its *voltage*. Fix a
+spanning tree, and every remaining edge closes a cycle carrying a net voltage in `Z³`. Those
+voltages generate a subgroup `L ⊆ Z³`, and a quotient component unrolls into exactly
+**`[Z³ : L]`** infinite networks. The intuition is direct: if every cycle in a component sums
+to an *even* translation, no path inside that component can ever reach an odd cell, so the odd
+cells must be served by a different copy.
+
+For the N = 3 phase:
+
+| | value |
+| --- | --- |
+| raw vertices per cell | 12 (3 tetrahedra × 4) |
+| distinct orbits | **9** — three vertex pairs coincide under translation |
+| quotient components | **2**, of 4 and 5 orbits |
+| cycle-voltage lattice, each | **`2Z³`** — Hermite basis `(2,2,0), (0,2,0), (0,0,2)`, Smith invariants `[2,2,2]` |
+| index, each | **8** |
+
+So the count factors, and the factors are meaningful:
+
+> **16 = 2 × 2³**
+
+Two vertex families that never touch each other, each closing its cycles only on even
+translations, hence each interleaving into one copy per **parity class** of `Z³`. Not sixteen
+arbitrary pieces — two structures, each eight-fold interpenetrating. The arithmetic is exact
+integer Hermite reduction (`sublattice_index`), with no floating-point determinant that could
+round a singular matrix into an invertible one, and no symbolic dependency. It agrees with
+direct `build_unit_distance_graph` counts at every block size tested, and is independent of
+the translation-search span.
+
+The same machinery sharpens an earlier claim about the dimer family, and not in its favour.
+The **rank** of the voltage lattice is the *dimensionality* of a component: rank 0 means it
+closes into a bounded cluster, rank 1 an infinite chain, rank 2 an infinite sheet, rank 3 a
+network filling all three directions. Only rank 3 yields a finite component count.
+
+| structure | quotient components | rank | what a component actually is |
+| --- | --- | --- | --- |
+| CEG `optimal` | 2 | **0** | bounded dipyramids — infinitely many, one per dimer |
+| CEG `torquato-jiao` | 2 | **0** | same |
+| CEG `kallus-elser-gravel` | 1 | **2** | an infinite **sheet** |
+| CEG `densest-connected` (u = 0) | 1 | **2** | an infinite **sheet** |
+| **N = 3 phase** | 2 | **3** | genuine 3D networks — **16** of them |
+
+The u = 0 connectivity plane does not produce a three-dimensional network. It produces
+**stacked two-dimensional layers with no bonds between them**, which a finite block confirms
+directly: tiling `densest-connected` into an `L³` block gives exactly `L` components, one per
+layer, growing without bound. Earlier this README called those "extended networks"; the honest
+description is *extended within a plane*. The N = 3 phase is the only structure here whose
+connectivity is genuinely three-dimensional.
+
 ## The P3 orbit family (the ansatz that did not work)
 
 The best P3₂ packing has **no vertex sharing at all**: 648 tetrahedra give 2592 raw vertices
@@ -545,7 +602,7 @@ That places the three families on a clean ladder of decreasing connectivity:
 | structure | sharing | components | λ₁⁺ |
 | --- | --- | --- | --- |
 | FCC honeycomb | vertices *and* edges | 1 (connected) | 0.3066 |
-| CEG dimers, u = 0 | faces, plus inter-dimer contacts | extended networks | 0.033–0.28 |
+| CEG dimers, u = 0 | faces, plus inter-dimer contacts | 2D sheets, one per layer | 0.033–0.28 |
 | CEG dimers, u ≠ 0 | faces only | 1 per dimer (`K₅−e`) | 3 |
 | **P3 screw packings** | **none** | **1 per tetrahedron (`K₄`)** | **4** |
 
