@@ -708,9 +708,16 @@ in how many flips they admit.
 
 Replacing the ill-posed Yangian test with the group that demonstrably does act:
 
-> **|Aut(flip graph)| = 2n**, exactly, in every case measured — `n = 5,6,7,8` at `m = 2`
-> and `n = 6,7,8,9` at `m = 4`. That is the dihedral group `D_n`: the cyclic symmetry of
-> the amplituhedron together with reversal of the moment curve.
+> **|Aut(flip graph)| = 2n**, exactly, for `n = 5,6,7,8` at `m = 2` and `n = 7,8,9` at
+> `m = 4`. That is the dihedral group `D_n`: the cyclic symmetry of the amplituhedron
+> together with reversal of the moment curve.
+
+One case is deliberately excluded, and it is worth stating rather than hiding. `A(6,1,4)`
+has only **2** tilings, so its flip graph is `K₂` and its automorphism group has order 2,
+not 12. `D_6` still acts on those two tilings — it simply cannot act *faithfully* on a
+two-element set, so the graph cannot see most of the group. The rule is that `|Aut|` equals
+`2n` once there are enough tilings for the action to be faithful; `n = 6` at `m = 4` is
+below that threshold. The test suite parametrisation excludes exactly this case.
 
 Two multiplicities exceed anything `D_n` can force — its real irreps are only dimensions 1
 and 2 — so they were checked from the **characteristic polynomial**, not from a tolerance:

@@ -464,6 +464,24 @@ class TestSymmetry:
         graph = amp.flip_graph(vertices, report.tilings)
         assert sum(1 for _ in GraphMatcher(graph, graph).isomorphisms_iter()) == 2 * n
 
+    def test_too_few_tilings_for_a_faithful_action(self) -> None:
+        """A(6,1,4) has 2 tilings, so its flip graph cannot see all of D_6.
+
+        Pinned deliberately: the 2n rule holds only once there are enough
+        tilings for the dihedral action to be faithful, and this is the case
+        below that threshold.  Without this test the exclusion above would look
+        like a case that was quietly dropped for failing.
+        """
+        from networkx.algorithms.isomorphism import GraphMatcher
+
+        vertices = amp.cyclic_polytope(6, 4)
+        volume = amp.polytope_normalised_volume(vertices, amp.gale_facets(6, 4))
+        report = amp.enumerate_tilings(vertices, volume)
+        graph = amp.flip_graph(vertices, report.tilings)
+        assert report.n_tilings == 2
+        assert sum(1 for _ in GraphMatcher(graph, graph).isomorphisms_iter()) == 2
+        assert 2 != 2 * 6
+
     @pytest.mark.parametrize("n, m", [(6, 2), (7, 2), (6, 4), (7, 4)])
     def test_configuration_automorphisms_include_the_cyclic_shift(
         self, n: int, m: int
