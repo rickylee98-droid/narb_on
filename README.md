@@ -186,7 +186,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `test_amplituhedron.py` | Amplituhedron test suite (116 tests) |
 | `arithmetic_que.py` | LPS Ramanujan graphs, Hecke operators, thin-set equidistribution |
 | `test_bootstrap.py` | Bootstrap test suite (60 tests) |
-| `test_arithmetic_que.py` | Arithmetic QUE test suite (69 tests) |
+| `test_arithmetic_que.py` | Arithmetic QUE test suite (84 tests) |
 
 ## Method notes
 
@@ -1001,6 +1001,40 @@ exactly when `|S| → ∞`, at precisely the random-matrix rate — **no scarrin
 arithmetic enhancement either**. The barbell control confirms the statistic can detect
 scarring when it is there (ratio 1.5), so the null result is a measurement rather than a
 blind spot.
+
+### Pulling the thread: a model that is Ramanujan *and* inhomogeneous
+
+The obstruction says exactly what to give up. The modular surface is a **quotient** `Γ\ℍ`,
+not a group — so the faithful discrete analogue is a **Schreier graph**, not a Cayley graph.
+Taking the LPS generators acting on the projective line `P¹(F_q)` gives one, and all three
+properties that matter survive:
+
+| property | why it survives | measured |
+| --- | --- | --- |
+| **Ramanujan** | the Schreier operator is the *restriction* of the Cayley one to stabiliser-invariant functions, so its spectrum is a sub-multiset | `4.3861 ≤ 4.4721` at q=509 |
+| **Hecke structure** | `[A_p, A_p'] = 0` is a group-algebra identity, so it survives any action | all six commutators **exactly 0** |
+| **Inhomogeneity** | right multiplication no longer acts by automorphisms — it would have to normalise the generator set | projector spread **order 1**, versus `1e-13` on the Cayley graph |
+
+Ramanujan comes for free, with no new proof. And the graph has `q+1` vertices rather than
+`~q³`, so `q` reaches the thousands cheaply.
+
+**The null model is what makes the answer real.** The raw projector spread *grows* with the
+graph — 1.93 → 4.11 as q goes 101 → 2053 — which looks like scarring and is not. The maximum
+is simply taken over more vertices. Comparing against a uniformly random subspace of matched
+dimension absorbs that entirely:
+
+| q | n | observed | random-subspace null | **ratio** |
+| --- | --- | --- | --- | --- |
+| 101 | 102 | 1.9286 | 4.0407 | **0.477** |
+| 257 | 258 | 2.8590 | 4.7738 | **0.599** |
+| 509 | 510 | 3.1869 | 5.2846 | **0.603** |
+| 1013 | 1014 | 3.6675 | 5.7814 | **0.634** |
+| 2053 | 2054 | 4.1051 | 6.3084 | **0.651** |
+
+**Ratio below 1 at every size**: the eigenspace mass is *more* equidistributed than a random
+subspace, not less. That is a genuine QUE-type positive result — and unlike the Cayley case
+it is a measurement rather than an identity, because the observable is no longer frozen by
+symmetry. Reading the raw spread alone would have suggested the exact opposite conclusion.
 
 ## Tests
 

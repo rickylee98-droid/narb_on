@@ -106,6 +106,10 @@ __all__ = [
     "random_regular_graph",
     "eigenvector_mass",
     "gaussian_baseline",
+    "projective_line_graph",
+    "random_subspace_spread",
+    "equidistribution_report",
+    "EquidistributionReport",
 ]
 
 LOGGER = logging.getLogger(__name__)
@@ -678,3 +682,137 @@ def gaussian_baseline(subset_size: int) -> float:
     if subset_size < 1:
         raise ValueError(f"subset size must be positive; got {subset_size}")
     return float(np.sqrt(2.0 / subset_size))
+
+
+# --------------------------------------------------------------------------- #
+# The model the obstruction points to: an inhomogeneous Ramanujan quotient
+# --------------------------------------------------------------------------- #
+def projective_line_graph(p: int, q: int) -> tuple[csr_matrix, int]:
+    """Schreier graph of the LPS generators acting on ``P^1(F_q)``.
+
+    This is what the obstruction argument asks for.  The modular surface is a
+    *quotient* ``Gamma \\ H``, not a group, so the faithful discrete analogue is a
+    Schreier graph rather than a Cayley graph -- and giving up the group structure
+    is exactly what breaks the homogeneity that made the Cayley model vacuous.
+
+    Three properties survive the quotient, and they are the ones that matter:
+
+    * **Ramanujan, for free.**  The Schreier adjacency operator is the
+      restriction of the Cayley one to the subspace of functions invariant under
+      the point stabiliser, and that subspace is invariant because right
+      convolution commutes with left translation.  So the spectrum is a
+      *sub-multiset* of the Cayley graph's and inherits ``|lambda| <= 2 sqrt(p)``
+      with no new proof required.
+    * **Hecke structure.**  ``[A_p, A_p'] = 0`` still holds exactly, since it is a
+      statement in the group algebra and survives any action.
+    * **Inhomogeneity.**  Right multiplication no longer acts by graph
+      automorphisms -- it would need to normalise the generator set -- so the
+      spectral projector's diagonal is free to vary, and it does.
+
+    Size is ``q + 1`` rather than ``|PSL(2, F_q)| ~ q^3``, so ``q`` can be pushed
+    into the thousands cheaply.
+
+    Returns
+    -------
+    (adjacency, n_vertices)
+        Symmetrised adjacency and the vertex count ``q + 1``.  Points of the
+        projective line are indexed ``0 .. q-1`` followed by the point at
+        infinity.
+    """
+    generators = lps_generators(p, q)
+    points: list[object] = list(range(q)) + ["inf"]
+    index = {point: i for i, point in enumerate(points)}
+
+    def act(generator, point):
+        a, b, c, d = generator
+        if point == "inf":
+            numerator, denominator = a % q, c % q
+        else:
+            numerator, denominator = (a * point + b) % q, (c * point + d) % q
+        if denominator == 0:
+            return "inf"
+        return (numerator * pow(denominator, q - 2, q)) % q
+
+    rows, columns = [], []
+    for point in points:
+        for generator in generators:
+            rows.append(index[point])
+            columns.append(index[act(generator, point)])
+
+    size = len(points)
+    adjacency = coo_matrix(
+        (np.ones(len(rows), dtype=F64), (rows, columns)), shape=(size, size)
+    ).tocsr()
+    symmetric = (adjacency + adjacency.T) * 0.5
+    LOGGER.info("built P^1 Schreier graph for p=%d q=%d: %d vertices", p, q, size)
+    return symmetric.tocsr(), size
+
+
+def random_subspace_spread(
+    size: int, dimension: int, *, trials: int = 60, seed: int = 0
+) -> float:
+    """Median projector-diagonal spread of a uniformly random subspace.
+
+    The null model, and it is essential.  The raw spread grows with the graph
+    simply because the maximum is taken over more vertices, so a growing spread
+    is not evidence of scarring on its own -- quoting one without this baseline
+    would turn an extreme-value effect into a fake result.
+    """
+    if dimension < 1 or dimension > size:
+        raise ValueError(f"need 1 <= dimension <= size; got {dimension}, {size}")
+    rng = np.random.default_rng(seed)
+    spreads = []
+    for _ in range(trials):
+        basis, _ = np.linalg.qr(rng.normal(size=(size, dimension)))
+        spreads.append(float(np.ptp(size * np.sum(basis**2, axis=1) / dimension)))
+    return float(np.median(spreads))
+
+
+@dataclass(frozen=True)
+class EquidistributionReport:
+    """Observed eigenspace spread against a matched random-subspace null."""
+
+    n_vertices: int
+    n_eigenspaces: int
+    median_observed: float
+    median_null: float
+
+    @property
+    def ratio(self) -> float:
+        """Below 1 means more equidistributed than random; above 1 means scarred."""
+        return self.median_observed / self.median_null
+
+
+def equidistribution_report(
+    adjacency: csr_matrix, *, decimals: int = 7, trials: int = 60, seed: int = 0
+) -> EquidistributionReport:
+    """Compare every eigenspace's mass spread to a random subspace of equal size.
+
+    Uses the basis-free projector diagonal, so the result does not depend on how
+    degenerate eigenspaces happen to be diagonalised.  On a vertex-transitive
+    graph this is identically zero and the ratio is meaningless; on the ``P^1``
+    Schreier graph it is a genuine measurement.
+    """
+    matrix = np.asarray(adjacency.todense(), dtype=F64)
+    size = matrix.shape[0]
+    values, vectors = np.linalg.eigh(matrix)
+    levels = np.unique(np.round(values, decimals))
+
+    observed, null = [], []
+    for level in levels:
+        selected = vectors[:, np.abs(values - level) < 10.0**-decimals * 10]
+        dimension = selected.shape[1]
+        if dimension == 0 or dimension == size:
+            continue
+        observed.append(
+            float(np.ptp(size * np.sum(selected**2, axis=1) / dimension))
+        )
+        null.append(random_subspace_spread(size, dimension, trials=trials, seed=seed))
+    if not observed:
+        raise ValueError("no usable eigenspaces were found")
+    return EquidistributionReport(
+        n_vertices=size,
+        n_eigenspaces=len(observed),
+        median_observed=float(np.median(observed)),
+        median_null=float(np.median(null)),
+    )

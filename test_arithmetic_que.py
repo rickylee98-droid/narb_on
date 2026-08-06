@@ -392,3 +392,110 @@ class TestSpectralWindow:
         eigenvalues, eigenvectors = small_spectrum
         with pytest.raises(ValueError, match="low < high"):
             aq.spectral_window_mass(eigenvalues, eigenvectors, 1.0, -1.0)
+
+
+# --------------------------------------------------------------------------- #
+# The model the obstruction points to
+# --------------------------------------------------------------------------- #
+class TestProjectiveLineSchreierGraph:
+    """Ramanujan, Hecke, and inhomogeneous -- all three at once."""
+
+    @pytest.mark.parametrize("p, q", [(5, 101), (5, 257), (13, 101)])
+    def test_size_and_regularity(self, p: int, q: int) -> None:
+        adjacency, size = aq.projective_line_graph(p, q)
+        assert size == q + 1
+        degrees = np.asarray(adjacency.sum(axis=1)).ravel()
+        assert np.allclose(degrees, p + 1)
+
+    @pytest.mark.parametrize("p, q", [(5, 101), (5, 257), (13, 101)])
+    def test_inherits_the_ramanujan_bound(self, p: int, q: int) -> None:
+        """Free, because the Schreier operator restricts the Cayley one.
+
+        Right convolution commutes with left translation, so the space of
+        stabiliser-invariant functions is invariant, and the Schreier spectrum is
+        a sub-multiset of the Cayley spectrum.  No separate proof needed -- but
+        it is still checked.
+        """
+        adjacency, _ = aq.projective_line_graph(p, q)
+        eigenvalues = np.linalg.eigvalsh(np.asarray(adjacency.todense()))
+        non_trivial = np.abs(eigenvalues[np.abs(eigenvalues - (p + 1)) > 1e-8])
+        assert non_trivial.max() <= 2.0 * np.sqrt(p) + 1e-8
+
+    def test_hecke_operators_still_commute(self) -> None:
+        """The commutation is a group-algebra identity, so it survives the quotient."""
+        q = 101
+        operators = {p: aq.projective_line_graph(p, q)[0] for p in (5, 13, 17, 29)}
+        primes = sorted(operators)
+        for i, a in enumerate(primes):
+            for b in primes[i + 1 :]:
+                commutator = operators[a] @ operators[b] - operators[b] @ operators[a]
+                assert abs(commutator).max() == pytest.approx(0.0, abs=1e-9)
+
+    def test_is_connected(self) -> None:
+        import networkx as nx
+
+        adjacency, _ = aq.projective_line_graph(5, 101)
+        assert nx.is_connected(nx.from_scipy_sparse_array(adjacency))
+
+    def test_projector_diagonal_actually_varies(self) -> None:
+        """The whole point: on the Cayley graph this spread is below 1e-13.
+
+        Here it is order 1, so the basis-free observable carries information and
+        the thin-set question becomes answerable rather than vacuous.
+        """
+        adjacency, size = aq.projective_line_graph(5, 257)
+        values, vectors = np.linalg.eigh(np.asarray(adjacency.todense()))
+        levels = np.unique(np.round(values, 7))
+        spreads = []
+        for level in levels:
+            selected = vectors[:, np.abs(values - level) < 1e-6]
+            if selected.shape[1] in (0, size):
+                continue
+            spreads.append(
+                float(np.ptp(size * np.sum(selected**2, axis=1) / selected.shape[1]))
+            )
+        assert max(spreads) > 1.0, "the quotient failed to break homogeneity"
+
+
+class TestEquidistributionAgainstNull:
+    """The raw spread grows with the graph; only the ratio to a null model means anything."""
+
+    def test_null_model_grows_with_size(self) -> None:
+        """Why the baseline is not optional: a bigger graph has a bigger maximum."""
+        small = aq.random_subspace_spread(100, 3, trials=40, seed=1)
+        large = aq.random_subspace_spread(2000, 3, trials=40, seed=1)
+        assert large > small
+
+    def test_null_model_has_the_right_mean(self) -> None:
+        rng = np.random.default_rng(0)
+        basis, _ = np.linalg.qr(rng.normal(size=(400, 5)))
+        mass = 400 * np.sum(basis**2, axis=1) / 5
+        assert np.mean(mass) == pytest.approx(1.0, abs=1e-9)
+
+    def test_rejects_impossible_dimensions(self) -> None:
+        with pytest.raises(ValueError, match="1 <= dimension <= size"):
+            aq.random_subspace_spread(10, 0)
+        with pytest.raises(ValueError, match="1 <= dimension <= size"):
+            aq.random_subspace_spread(10, 11)
+
+    @pytest.mark.parametrize("q", [101, 257])
+    def test_schreier_mass_is_no_worse_than_random(self, q: int) -> None:
+        """The positive result: ratio below 1, so more equidistributed than random.
+
+        Reading the raw spread instead would have suggested the opposite, since
+        it grows from 1.9 to 4.1 as q goes from 101 to 2053 -- entirely an
+        extreme-value effect that the null model absorbs.
+        """
+        adjacency, _ = aq.projective_line_graph(5, q)
+        report = aq.equidistribution_report(adjacency, trials=30)
+        assert report.ratio < 1.0
+        assert report.median_observed > 0.0
+
+    def test_report_fields_are_consistent(self) -> None:
+        adjacency, size = aq.projective_line_graph(5, 101)
+        report = aq.equidistribution_report(adjacency, trials=20)
+        assert report.n_vertices == size
+        assert report.n_eigenspaces > 1
+        assert report.ratio == pytest.approx(
+            report.median_observed / report.median_null
+        )
