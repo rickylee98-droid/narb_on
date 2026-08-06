@@ -44,6 +44,8 @@ from numpy.typing import NDArray
 
 __all__ = [
     "dodecagonal_quasilattice",
+    "recognise_quadratic",
+    "QuadraticForm",
     "ZModuleResult",
     "AngleSpectrum",
     "LiftReport",
@@ -111,6 +113,91 @@ def rational_coefficients(
 ) -> list[list[list[Fraction]]]:
     """Wrap purely rational coordinates as coefficients over the basis ``[1]``."""
     return [[[component] for component in point] for point in points]
+
+
+@dataclass(frozen=True)
+class QuadraticForm:
+    """A recognised element ``p + q sqrt(d)`` of a real quadratic field."""
+
+    rational: Fraction
+    surd: Fraction
+    radicand: int
+    residual: float
+
+    def value(self) -> float:
+        return float(self.rational) + float(self.surd) * math.sqrt(self.radicand)
+
+    def __str__(self) -> str:
+        if self.surd == 0:
+            return str(self.rational)
+        sign = "-" if self.surd < 0 else "+"
+        return f"{self.rational} {sign} {abs(self.surd)}*sqrt({self.radicand})"
+
+
+def recognise_quadratic(
+    value: float,
+    radicand: int = 10,
+    *,
+    max_denominator: int = 200,
+    max_surd_numerator: int = 400,
+    tolerance: float = 1e-9,
+) -> QuadraticForm | None:
+    """Recognise a float as ``p + q sqrt(radicand)`` with small height.
+
+    Used to turn a converged numerical optimum into exact coordinates.  A
+    packing density such as the N = 2 phase's ``9/(139 - 40 sqrt 10)`` says which
+    field the structure lives in; if the search has converged tightly enough, the
+    individual lattice entries should be recognisable in that same field.
+
+    The search is a direct one over a common denominator: for each ``d`` and each
+    surd numerator ``b``, ``d*value - b*sqrt(radicand)`` must be within
+    ``tolerance`` of an integer.  Returning ``None`` is meaningful -- it means the
+    value is not a low-height element of this field, so either the optimum has
+    not converged or the field guess is wrong.
+
+    Parameters
+    ----------
+    value:
+        The float to recognise.
+    radicand:
+        The ``d`` in ``sqrt(d)``.  Must be a positive non-square.
+    max_denominator, max_surd_numerator:
+        Height bounds on the search.
+    tolerance:
+        How close the rational part must land to an integer.
+
+    Returns
+    -------
+    QuadraticForm or None
+    """
+    if radicand <= 0:
+        raise ValueError("radicand must be positive")
+    root = math.isqrt(radicand)
+    if root * root == radicand:
+        raise ValueError(f"radicand {radicand} is a perfect square")
+    if not math.isfinite(value):
+        raise ValueError("value must be finite")
+
+    surd = math.sqrt(radicand)
+    best: QuadraticForm | None = None
+    for denominator in range(1, max_denominator + 1):
+        scaled = denominator * value
+        for numerator in range(-max_surd_numerator, max_surd_numerator + 1):
+            rational_part = scaled - numerator * surd
+            nearest = round(rational_part)
+            residual = abs(rational_part - nearest) / denominator
+            if residual < tolerance:
+                candidate = QuadraticForm(
+                    rational=Fraction(int(nearest), denominator),
+                    surd=Fraction(numerator, denominator),
+                    radicand=radicand,
+                    residual=residual,
+                )
+                if best is None or residual < best.residual:
+                    best = candidate
+        if best is not None:
+            return best
+    return best
 
 
 #: In-plane star vectors of the dodecagonal module, as exact coefficients over

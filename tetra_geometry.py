@@ -48,6 +48,7 @@ __all__ = [
     "build_n3_packing",
     "build_n3_cluster",
     "double_lattice_cell",
+    "refine_double_lattice",
     "N2_PACKING_FRACTION",
     "n3_unit_cell",
     "N3_PACKING_FRACTION",
@@ -1545,6 +1546,255 @@ def _double_lattice_search(
         lattice=lattice,
         offset=offset,
         packing_fraction=2.0 * UNIT_TETRA_VOLUME / volume,
+    )
+
+
+#: Tetrahedron with integer vertices (alternating cube corners), edge ``2*sqrt(2)``
+#: and volume ``8/3``.  In this frame the N = 2 target determinant is
+#: ``16(139 - 40 sqrt(10))/27``, which lies in ``Q(sqrt(10))`` with no ``sqrt(2)``
+#: -- so lattice entries are recognisable as ``p + q sqrt(10)``.  The unit-edge
+#: frame instead gives ``(139 sqrt2 - 80 sqrt5)/54``, mixing radicals and hiding
+#: the structure.
+INTEGER_TETRAHEDRON: FloatArray = np.array(
+    [[1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [-1.0, 1.0, -1.0], [-1.0, -1.0, 1.0]],
+    dtype=F64,
+)
+
+
+def _double_lattice_isobaric(
+    cycles: int,
+    seed: int,
+    *,
+    initial_fraction: float = 0.25,
+    pressure_start: float = 1.0e2,
+    pressure_end: float = 1.0e8,
+    initial: tuple[FloatArray, FloatArray] | None = None,
+) -> DoubleLatticeResult:
+    """Isobaric Monte Carlo for the monomer double lattice.
+
+    The other searches here compress monotonically: a lattice move is accepted
+    only if it shrinks the cell.  That is a greedy descent, and it cannot leave a
+    jammed configuration once every densifying move is blocked -- which is why
+    they plateau short of the known optima.
+
+    This instead runs at finite pressure, as the original Monte Carlo
+    compressions do.  A volume-*increasing* move is accepted with probability
+    ``exp(-P dV)``, so the search can back out of a jam, while the pressure ramps
+    geometrically so the configuration is squeezed ever harder.  Overlapping
+    moves are still rejected outright, so every accepted state remains a
+    certified packing; the earlier runaway, where expansion was accepted
+    unconditionally and the cell drifted apart, cannot happen because expansion
+    now costs.
+
+    Parameters
+    ----------
+    cycles:
+        Monte Carlo cycles.
+    seed:
+        Reproducible seeding.
+    initial_fraction:
+        Starting density when no ``initial`` state is supplied.
+    pressure_start, pressure_end:
+        Geometric pressure ramp, in units where volume is measured with unit
+        tetrahedron edges.
+    initial:
+        Optional ``(lattice, offset)`` to refine instead of starting cold.
+
+    Returns
+    -------
+    DoubleLatticeResult
+    """
+    rng = np.random.default_rng(seed)
+    base = regular_tetrahedron(1.0)
+
+    if initial is not None:
+        lattice = np.array(initial[0], dtype=F64, copy=True)
+        offset = np.array(initial[1], dtype=F64, copy=True)
+    else:
+        offset = rng.normal(scale=0.5, size=3).astype(F64)
+        if np.linalg.norm(offset) < 1e-6:
+            offset = np.array([1.0, 0.0, 0.0], dtype=F64)
+        for _ in range(80):
+            pair = np.stack([base, -base + offset])
+            if sat_overlap_depth(pair[0:1], pair[1:2])[0] <= 1e-12:
+                break
+            offset = offset * 1.15
+        lattice = _initial_lattice(2, initial_fraction, rng)
+
+    for _ in range(80):
+        if _configuration_is_valid(*double_lattice_cell(lattice, offset)):
+            break
+        lattice = lattice * 1.1
+    else:
+        raise RuntimeError("failed to find a valid initial double-lattice configuration")
+
+    offset_step = _AdaptiveStep(0.05, bounds=(1e-10, 1.0))
+    strain_step = _AdaptiveStep(0.01, bounds=(1e-10, 0.15))
+    identity3 = np.eye(3, dtype=F64)
+    volume = abs(float(np.linalg.det(lattice)))
+    best_lattice, best_offset, best_volume = lattice.copy(), offset.copy(), volume
+
+    for cycle in range(cycles):
+        fraction = cycle / max(cycles - 1, 1)
+        pressure = pressure_start * (pressure_end / pressure_start) ** fraction
+
+        for _ in range(3):
+            trial = offset + rng.normal(scale=offset_step.value, size=3)
+            ok = _configuration_is_valid(*double_lattice_cell(lattice, trial))
+            if ok:
+                offset = trial
+            offset_step.record(ok)
+
+        for _ in range(3):
+            strain = rng.normal(scale=strain_step.value, size=(3, 3))
+            strain = 0.5 * (strain + strain.T)
+            candidate = lattice @ (identity3 + strain)
+            trial_volume = abs(float(np.linalg.det(candidate)))
+            ok = False
+            if trial_volume > 1e-12:
+                delta = trial_volume - volume
+                # Metropolis on the pressure-volume work; shrinking is free.
+                if delta <= 0.0 or rng.random() < math.exp(-pressure * delta):
+                    ok = _configuration_is_valid(*double_lattice_cell(candidate, offset))
+            if ok:
+                lattice, volume = candidate, trial_volume
+                if volume < best_volume:
+                    best_lattice, best_offset, best_volume = (
+                        lattice.copy(), offset.copy(), volume,
+                    )
+            strain_step.record(ok)
+
+    return DoubleLatticeResult(
+        lattice=best_lattice,
+        offset=best_offset,
+        packing_fraction=2.0 * UNIT_TETRA_VOLUME / best_volume,
+    )
+
+
+def _contact_candidates(
+    lattice: FloatArray, offset: FloatArray, cutoff: float
+) -> list[tuple[int, int, FloatArray]]:
+    """Neighbour pairs close enough to constrain the optimum."""
+    cell, _ = double_lattice_cell(lattice, offset)
+    inverse = np.linalg.inv(lattice)
+    reach = 2.0 * UNIT_TETRA_CIRCUMRADIUS
+    centres = cell.mean(axis=1)
+
+    candidates: list[tuple[int, int, FloatArray]] = []
+    for i in range(2):
+        for j in range(i, 2):
+            delta = centres[i] - centres[j]
+            base = np.round(delta @ inverse)
+            for a in range(-3, 4):
+                for b in range(-3, 4):
+                    for c in range(-3, 4):
+                        shift = base + np.array([a, b, c], dtype=F64)
+                        if i == j and not (
+                            shift[0] > 0
+                            or (shift[0] == 0 and (shift[1] > 0 or (shift[1] == 0 and shift[2] > 0)))
+                        ):
+                            continue
+                        if np.linalg.norm(delta - shift @ lattice) < reach + cutoff:
+                            candidates.append((i, j, shift.copy()))
+    return candidates
+
+
+def refine_double_lattice(
+    lattice: FloatArray,
+    offset: FloatArray,
+    *,
+    rounds: int = 8,
+    cutoff: float = 0.25,
+    margin: float = 0.0,
+    maxiter: int = 2000,
+) -> DoubleLatticeResult:
+    """Polish a double lattice to the true local optimum under hard contacts.
+
+    Monte Carlo cannot finish this job.  Near jamming the accessible moves are
+    smaller than any sensible step size, and the search plateaus: on the N = 2
+    phase it stalls around 0.7155, which is 99.4% of the known optimum and looks
+    converged from the inside.  Treating it instead as a constrained programme --
+    minimise the cell volume subject to every contact depth staying at or below
+    zero -- closes the remaining gap completely, reaching 0.99999999 of
+    ``N2_PACKING_FRACTION``.
+
+    The active set is rebuilt each round because which images are in contact
+    changes as the cell shrinks.  With ``margin = 0`` the optimiser sits exactly
+    on the constraint boundary, so rounds that land microscopically outside are
+    discarded and the best *certified* configuration is returned.
+
+    Parameters
+    ----------
+    lattice, offset:
+        Starting configuration, typically from :func:`_double_lattice_search`.
+    rounds:
+        Active-set rebuild iterations.
+    cutoff:
+        Extra reach when collecting candidate contacts.
+    margin:
+        Safety gap held at each contact.  Any positive value costs density
+        directly -- ``1e-6`` leaves the result about 6e-6 short.
+    maxiter:
+        Iteration cap for each SLSQP solve.
+
+    Returns
+    -------
+    DoubleLatticeResult
+        The densest configuration that passed the periodic overlap test.
+    """
+    from scipy.optimize import minimize
+
+    current_lattice = np.array(lattice, dtype=F64, copy=True)
+    current_offset = np.array(offset, dtype=F64, copy=True)
+
+    best_lattice = current_lattice.copy()
+    best_offset = current_offset.copy()
+    best_volume = abs(float(np.linalg.det(best_lattice)))
+
+    def split(vector: FloatArray) -> tuple[FloatArray, FloatArray]:
+        return vector[:9].reshape(3, 3), vector[9:12]
+
+    for _ in range(max(rounds, 1)):
+        candidates = _contact_candidates(current_lattice, current_offset, cutoff)
+        if not candidates:
+            break
+
+        def depths(vector: FloatArray, candidates=candidates) -> FloatArray:
+            lat, off = split(vector)
+            cell, _ = double_lattice_cell(lat, off)
+            left = np.array([cell[i] for i, _j, _n in candidates])
+            right = np.array([cell[j] + n @ lat for _i, j, n in candidates])
+            return sat_overlap_depth(left, right)
+
+        result = minimize(
+            lambda vector: abs(float(np.linalg.det(split(vector)[0]))),
+            np.concatenate([current_lattice.ravel(), current_offset]),
+            constraints=[{"type": "ineq", "fun": lambda v: -depths(v) - margin}],
+            method="SLSQP",
+            options={"maxiter": maxiter, "ftol": 1e-16, "eps": 1e-10},
+        )
+        trial_lattice, trial_offset = split(result.x)
+        volume = abs(float(np.linalg.det(trial_lattice)))
+        if volume < 1e-12:
+            break
+
+        if _configuration_is_valid(
+            *double_lattice_cell(trial_lattice, trial_offset), tolerance=1e-11
+        ):
+            current_lattice, current_offset = trial_lattice, trial_offset
+            if volume < best_volume:
+                best_lattice, best_offset, best_volume = (
+                    trial_lattice.copy(), trial_offset.copy(), volume,
+                )
+        else:
+            # Sitting a hair outside the feasible set: back off and retry.
+            current_lattice = trial_lattice * 1.0000002
+            current_offset = trial_offset
+
+    return DoubleLatticeResult(
+        lattice=best_lattice,
+        offset=best_offset,
+        packing_fraction=2.0 * UNIT_TETRA_VOLUME / best_volume,
     )
 
 

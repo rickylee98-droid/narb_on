@@ -1661,3 +1661,98 @@ class TestDodecagonalQuasicrystal:
             tl.dodecagonal_quasilattice(window_radius=0.0)
         with pytest.raises(ValueError):
             tl.dodecagonal_quasilattice(index_range=0)
+
+
+@pytest.fixture(scope="module")
+def refined():
+    """A coarse Monte Carlo result and its constrained-optimisation polish."""
+    coarse = tg._double_lattice_search(4000, seed=17)
+    return coarse, tg.refine_double_lattice(coarse.lattice, coarse.offset, rounds=4)
+
+
+class TestDoubleLatticeRefinement:
+    """Constrained optimisation finishes what Monte Carlo cannot."""
+
+    def test_refinement_improves_on_the_search(self, refined) -> None:
+        coarse, fine = refined
+        assert fine.packing_fraction > coarse.packing_fraction
+
+    def test_refined_result_is_still_a_certified_packing(self, refined) -> None:
+        _, fine = refined
+        cell, lattice = fine.cell
+        np.testing.assert_allclose(tg.edge_lengths(cell), 1.0, atol=1e-12)
+        assert tg._configuration_is_valid(cell, lattice, tolerance=1e-11)
+
+    def test_refinement_never_exceeds_the_published_optimum(self, refined) -> None:
+        """Beating phi_2 would mean the overlap test is broken, not a discovery."""
+        _, fine = refined
+        assert fine.packing_fraction < tg.N2_PACKING_FRACTION + 1e-9
+
+    def test_a_positive_margin_costs_density(self) -> None:
+        """Holding contacts apart by eps leaves the answer short by about eps."""
+        coarse = tg._double_lattice_search(3000, seed=23)
+        tight = tg.refine_double_lattice(coarse.lattice, coarse.offset, rounds=3, margin=0.0)
+        loose = tg.refine_double_lattice(coarse.lattice, coarse.offset, rounds=3, margin=1e-3)
+        assert tight.packing_fraction > loose.packing_fraction
+
+    def test_contact_candidates_are_found(self) -> None:
+        coarse = tg._double_lattice_search(2000, seed=5)
+        candidates = tg._contact_candidates(coarse.lattice, coarse.offset, 0.25)
+        assert len(candidates) > 0
+        for i, j, shift in candidates:
+            assert 0 <= i <= j <= 1
+            assert shift.shape == (3,)
+
+
+class TestQuadraticRecognition:
+    """Turning a converged optimum into exact algebra."""
+
+    @pytest.mark.parametrize(
+        "value, rational, surd",
+        [
+            (16 * (139 - 40 * math.sqrt(10)) / 27, Fraction(2224, 27), Fraction(-640, 27)),
+            (3 / 7 - 5 * math.sqrt(10) / 11, Fraction(3, 7), Fraction(-5, 11)),
+            (math.sqrt(10), Fraction(0), Fraction(1)),
+            (0.5, Fraction(1, 2), Fraction(0)),
+        ],
+    )
+    def test_recognises_low_height_elements(self, value, rational, surd) -> None:
+        form = tl.recognise_quadratic(
+            value, 10, max_denominator=300, max_surd_numerator=3000
+        )
+        assert form is not None
+        assert form.rational == rational
+        assert form.surd == surd
+        assert form.value() == pytest.approx(value, abs=1e-12)
+
+    def test_returns_none_for_a_transcendental(self) -> None:
+        """Returning None is the meaningful answer, not a failure to try."""
+        assert tl.recognise_quadratic(
+            math.pi, 10, max_denominator=60, max_surd_numerator=200, tolerance=1e-12
+        ) is None
+
+    def test_tolerance_below_the_data_precision_returns_none(self) -> None:
+        """A value known to 1e-7 cannot be recognised at 1e-12."""
+        approx = 16 * (139 - 40 * math.sqrt(10)) / 27 + 4e-8
+        assert tl.recognise_quadratic(approx, 10, tolerance=1e-7,
+                                      max_denominator=50, max_surd_numerator=2000) is not None
+        assert tl.recognise_quadratic(approx, 10, tolerance=1e-12,
+                                      max_denominator=50, max_surd_numerator=2000) is None
+
+    def test_rejects_perfect_squares(self) -> None:
+        with pytest.raises(ValueError):
+            tl.recognise_quadratic(1.0, 9)
+
+    def test_the_n2_determinant_is_recognised_from_the_optimum(self) -> None:
+        """End to end: search, refine, then read off the exact determinant.
+
+        In the integer-tetrahedron frame the N = 2 target determinant is
+        16(139 - 40 sqrt10)/27, which lies in Q(sqrt 10) with no sqrt(2); the
+        unit-edge frame instead gives (139 sqrt2 - 80 sqrt5)/54 and hides it.
+        """
+        coarse = tg._double_lattice_search(6000, seed=17)
+        fine = tg.refine_double_lattice(coarse.lattice, coarse.offset, rounds=5)
+        determinant = abs(float(np.linalg.det(fine.lattice * 2 * math.sqrt(2))))
+        expected = 16 * (139 - 40 * math.sqrt(10)) / 27
+        # The refinement gets within a few parts in 1e6 from a short search.
+        assert determinant == pytest.approx(expected, rel=2e-4)

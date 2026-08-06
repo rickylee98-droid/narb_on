@@ -177,7 +177,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `explore_connectivity.py` | Family sweep: connectivity vs density, CSV + figure |
 | `tetra_fastsat.py` | Optional compiled (numba) periodic overlap kernel; NumPy fallback |
 | `tetra_lift.py` | Higher-dimensional lift obstructions: Z-module rank, root-system angles |
-| `test_tetra_spectral.py` | Test suite (243 tests) |
+| `test_tetra_spectral.py` | Test suite (256 tests) |
 
 ## Method notes
 
@@ -343,29 +343,54 @@ The Laplacian multiplicities tell the same story: `{4: 122, 24: 1, 128: 1}` — 
 divisible by 4, the number of identical components. They are component repetition, not
 irrep dimensions. `E₈`'s smallest non-trivial irrep is 248-dimensional.
 
-## The N = 2 phase: identified, not solved
+## The N = 2 phase: solved to nine figures
 
-Table I gives N = 2 at φ₂ = 9/(139 − 40√10) ≈ 0.719488, "2 monomers, transitive". Its
-determinant is worth writing out:
+Table I gives N = 2 at φ₂ = 9/(139 − 40√10) ≈ 0.719488, "2 monomers, transitive". Getting
+there took two ideas, one about the frame and one about the optimiser.
 
-> |det A| = √2(139 − 40√10)/54 = **(139√2 − 80√5)/54**
+**Choose the frame so the algebra is visible.** In the unit-edge frame the target
+determinant is (139√2 − 80√5)/54 — two mixed radicals, and nothing is recognisable. In the
+*integer* frame (tetrahedron at alternating cube corners, edge 2√2) it becomes
 
-Two independent quadratic irrationals — so unlike CEG (rational) and N = 3 (where
-det = 3√2/8), this lattice cannot be rational.
+> |det A| = **16(139 − 40√10)/27** — pure `Q(√10)`, no √2.
 
-The structure was identified. "Transitive" points at Kuperberg's **double lattice**: the
-packing is `T + L` together with `−T + d + L`, with inversion through `d/2` exchanging the
-two. Checking the best unconstrained N = 2 result confirms it — the two orientations are
-inversion-related to within 2.6e-4, and are definitively *not* identical (which would make it
-an N = 1 lattice packing, capped at 18/49).
+**Monte Carlo cannot finish this.** Near jamming the accessible moves are smaller than any
+sensible step size, and the search plateaus at 0.7155 — 99.4% of target, and it looks
+converged from the inside. Three attempts to fix it *as* a Monte Carlo all failed to close
+the gap: adaptive compression helped a little (0.7037 → 0.7145), refinement from the
+unconstrained optimum reached 0.7155, and an **isobaric** version that allows volume
+increases under a pressure penalty did *worse* (0.6786), so the monotone-descent hypothesis
+was wrong.
 
-The density was not. Best achieved is **0.715488 = 99.44%** of φ₂, from a refinement seeded
-on the unconstrained optimum. Fixing a real limitation on the way — `_double_lattice_search`
-held its compression rate fixed, where `_asc_search` adapts it, and near jamming a 0.4%
-volume drop per accepted move is far coarser than the remaining slack; making it adaptive
-moved the cold-start best from 0.7037 to 0.7145. Even so, no exact closed form emerged the
-way `a = √3/2, c = √(2/3)` did for N = 3, so **the N = 2 coordinates remain unrecovered** and
-the rank test cannot be run on them — that needs exact values, not a 99.4% approximation.
+What works is dropping Monte Carlo entirely and treating it as a constrained programme:
+minimise cell volume subject to every contact depth staying at or below zero, rebuilding the
+active set each round because which images touch changes as the cell shrinks.
+
+| method | φ | of target |
+| --- | --- | --- |
+| unconstrained ASC | 0.711822 | 98.94% |
+| double lattice, adaptive compression | 0.714462 | 99.30% |
+| MC refinement from the ASC optimum | 0.715488 | 99.44% |
+| **constrained refinement** | **0.7194880889** | **99.999999%** |
+
+The optimum is **jammed** — 14 of 39 neighbour pairs in contact — and the safety margin is
+the whole story near the end: holding contacts 1e-6 apart leaves the answer 6e-6 short,
+exactly as it should.
+
+Finally, `tetra_lift.recognise_quadratic` reads the converged determinant back as an exact
+algebraic number:
+
+> **2224/27 − (640/27)√10 = 16(139 − 40√10)/27**
+
+which is the target, recovered rather than assumed. The recogniser returns `None` at a
+tolerance of 1e-8 because the numerics are good to 4.5e-8 — the height bound reporting the
+truth rather than fitting noise, which is what makes the positive result meaningful.
+
+**What is still not done:** the individual lattice *entries* are not yet in closed form. The
+determinant is a rotation- and basis-invariant, so it is recoverable from the numerics as it
+stands; pinning the entries needs a canonical frame (LLL-reduced basis, rotation gauge fixed)
+and another few digits. The structure, the field and the density are settled; the coordinates
+are not.
 
 ## Recovering the N = 3 phase, φ = 2/3
 
