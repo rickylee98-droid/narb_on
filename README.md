@@ -178,7 +178,10 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `explore_connectivity.py` | Family sweep: connectivity vs density, CSV + figure |
 | `tetra_fastsat.py` | Optional compiled (numba) periodic overlap kernel; NumPy fallback |
 | `tetra_lift.py` | Higher-dimensional lift obstructions: Z-module rank, root-system angles |
-| `test_tetra_spectral.py` | Test suite (262 tests) |
+| `amplituhedron.py` | Exact `k = 1` amplituhedron tilings: integer SAT in `R^m`, enumeration, flip graph |
+| `amplituhedron_analysis.py` | CLI for the amplituhedron pipeline |
+| `test_tetra_spectral.py` | Tetrahedron test suite (290 tests) |
+| `test_amplituhedron.py` | Amplituhedron test suite (110 tests) |
 
 ## Method notes
 
@@ -640,10 +643,126 @@ implementation runs instead. The two are cross-checked on random configurations,
 were validated against a deliberately naive brute-force reference enumerating a 15³ image
 range — 0 disagreements over 119 configurations, with both verdicts exercised.
 
+## A second target: exact tilings of the k = 1 amplituhedron
+
+The same three tools — exact arithmetic, a separating-axis overlap test, a graph
+Laplacian — transfer to the amplituhedron, but only where the geometry is genuinely
+polytopal. Three things had to be corrected before any code was written.
+
+**The tree-level `m = 4` tiling problem is not open.** BCFW cells were proven to tile the
+`m = 4` tree amplituhedron (Even-Zohar–Lakrec–Parisi–Sherman-Bennett–Tessler–Williams).
+What remains open is the *loop* case, and *counting* tilings. This module targets counting.
+
+**SAT does not apply at `k ≥ 2`.** Those tiles are images of positroid cells: curved
+semialgebraic sets, not polytopes. There is no separating hyperplane to find, so a
+"generalised SAT" there would return confident nonsense.
+
+**"Multiplicities matching a Yangian symmetry" is not well posed.** The Yangian is
+infinite dimensional and does not act on a finite tiling complex.
+
+What *is* exactly true is that at `k = 1` the amplituhedron is a polytope:
+
+> **A(n, 1, m) = C(n, m)**, the cyclic polytope.
+
+A point of `Gr₊(1,n)` is a positive row vector `c`, so `Y = cZ` is a positive combination
+of the rows of `Z`, and positivity of `Z`'s minors says exactly that those rows sit in
+convex position like points on the moment curve. Hence **tilings of `A(n,1,m)` are
+triangulations of `C(n,m)`** — integer vertices, integer volumes, no floating point
+anywhere in the pipeline.
+
+### Everything is pinned against classical results
+
+The module is never allowed to check itself. Every number it produces has an external
+referee that it has no way to know about:
+
+| Claim | Independent referee | Result |
+| --- | --- | --- |
+| facets of `C(n,m)` | Gale's evenness condition, and McMullen's upper-bound theorem | agree |
+| volume of `C(n,2)` | shoelace formula | agree |
+| volume, general route vs facet route | two independent algorithms | agree, 7 cases |
+| volume of `Δ(k,n)` | Eulerian number `A(n-1,k-1)` (Laplace) | agree, 7 cases |
+| tilings of `A(n,1,2)` | Catalan `C(n-2)` | 2, 5, 14, 42, 132 — exact |
+| flip graph of `A(n,1,2)` | associahedron 1-skeleton | `(n-3)`-regular, right edge count |
+| flip-connectivity | Rambau's theorem | confirmed, never assumed |
+
+Flip-connectivity is worth singling out. The enumeration never uses flips — it is an
+exhaustive include/exclude search over exact geometry — so finding the flip graph connected
+afterwards is a real check on both the enumeration and the flip criterion, not a tautology.
+
+### The physical case, m = 4
+
+| | n=6 | n=7 | n=8 | n=9 |
+| --- | --- | --- | --- | --- |
+| candidate simplices | 6 | 21 | 56 | 126 |
+| **tilings** | **2** | **7** | **40** | **357** |
+| simplices per tiling | 3 | 6 | 10 | 15 |
+| flip graph edges | 1 | 7 | 64 | 825 |
+| connected | yes | yes | yes | yes |
+
+Every tiling has exactly `binom(n-3, 2)` simplices — the count is constant across the whole
+tiling space, so tilings differ in shape but never in size. And unlike `m = 2`, the `m = 4`
+flip graph is **not regular**: at `n = 9` its degrees run 4 to 7. Tilings genuinely differ
+in how many flips they admit.
+
+### The symmetry is dihedral, and the degeneracies are exact
+
+Replacing the ill-posed Yangian test with the group that demonstrably does act:
+
+> **|Aut(flip graph)| = 2n**, exactly, in every case measured — `n = 5,6,7,8` at `m = 2`
+> and `n = 6,7,8,9` at `m = 4`. That is the dihedral group `D_n`: the cyclic symmetry of
+> the amplituhedron together with reversal of the moment curve.
+
+Two multiplicities exceed anything `D_n` can force — its real irreps are only dimensions 1
+and 2 — so they were checked from the **characteristic polynomial**, not from a tolerance:
+
+| configuration | eigenvalue | multiplicity | status |
+| --- | --- | --- | --- |
+| `A(8,1,2)` | **6** | **8** | exact integer |
+| `A(8,1,4)` | **3** | **6** | exact integer |
+
+These are real, not artefacts — and they are *not* explained by the symmetry group, since
+`2n = 16` has no 6- or 8-dimensional irrep. They are accidental degeneracies of the flip
+graph, and naming them as such is the honest reading. (The earlier `O_h` and `C₃` results in
+this project were degeneracies *forced* by a group; these are not, and the distinction is
+the whole point of computing them exactly.)
+
+```bash
+# Calibration: must reproduce Catalan
+python amplituhedron_analysis.py --n 8 --m 2 --automorphisms
+
+# The physical case, with symbolic eigenvalues
+python amplituhedron_analysis.py --n 8 --m 4 --exact-spectrum --automorphisms
+
+# The hypersimplex, refereed by an Eulerian number
+python amplituhedron_analysis.py --hypersimplex 2,5 --volume-only
+```
+
+### The overlap test, again profiled rather than guessed
+
+Generalising SAT to `R^m` needs the right axis set. The completeness argument is that the
+origin misses the interior of `P + (-Q)`, whose facets are sums `F + (-G)` of faces with
+`dim F + dim G = m - 1`. A first implementation enumerated `(m-1)`-subsets of the combined
+*edge* directions — a valid superset, but a loose one.
+
+Profiling (not guessing) showed ~435 axes tried per pair. A first fix — caching per-simplex
+facet normals — produced **no measurable speedup**, because those are only 10 of the 435.
+Enumerating **face pairs** directly, which is what the completeness argument actually says,
+cuts `R^4` from 910 axes to 210 and gives:
+
+| | before | after |
+| --- | --- | --- |
+| `A(8,1,4)` full enumeration | 19.0s | **4.1s** |
+| `Δ(2,5)` volume | 127.6s | **33.2s** |
+
+Verdicts were confirmed identical on all 2,535 simplex pairs across four configurations
+before the speedup was accepted. In `R^3` the face-pair set reduces to exactly the familiar
+4 + 4 face normals and 36 edge crosses; in `R^2` to edge normals alone.
+
 ## Tests
 
 ```bash
-python -m pytest test_tetra_spectral.py -v
+python -m pytest test_tetra_spectral.py -v      # tetrahedron packings
+python -m pytest test_amplituhedron.py -v       # amplituhedron tilings
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};

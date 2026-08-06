@@ -11,5 +11,11 @@ threadpoolctl>=3.1
 # search. Without it the tested NumPy fallback runs instead.
 numba>=0.59
 
+# Exact symbolic eigenvalues for the amplituhedron flip graph, so that large
+# multiplicities are read off a characteristic polynomial rather than a
+# floating-point tolerance. The tiling geometry itself needs no symbolic algebra:
+# it runs entirely in Python integers.
+sympy>=1.12
+
 # Test suite only.
 pytest>=7.0
