@@ -177,7 +177,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `explore_connectivity.py` | Family sweep: connectivity vs density, CSV + figure |
 | `tetra_fastsat.py` | Optional compiled (numba) periodic overlap kernel; NumPy fallback |
 | `tetra_lift.py` | Higher-dimensional lift obstructions: Z-module rank, root-system angles |
-| `test_tetra_spectral.py` | Test suite (256 tests) |
+| `test_tetra_spectral.py` | Test suite (262 tests) |
 
 ## Method notes
 
@@ -342,6 +342,47 @@ that stops tetrahedra from tiling space.
 The Laplacian multiplicities tell the same story: `{4: 122, 24: 1, 128: 1}` — every value
 divisible by 4, the number of identical components. They are component repetition, not
 irrep dimensions. `E₈`'s smallest non-trivial irrep is 248-dimensional.
+
+## Finishing the searches: what constrained optimisation rescues
+
+`refine_packing` generalises the N = 2 result — minimise cell volume subject to every
+contact depth staying at or below zero, rebuilding the active set each round. Applied
+across every family here, the outcome is **not** uniform, and the pattern is the
+interesting part:
+
+| family | parameters | MC plateau | refined | |
+| --- | --- | --- | --- | --- |
+| N = 2 double lattice | 12 | 0.715488 | **0.7194880889** | hits the published φ₂ |
+| P3 orbit family | 7 | 0.595562 | **0.5968995** | new family optimum |
+| trimer, free lattice | 13 | 0.5242 | 0.5176 | no gain on the best |
+| N = 4 general ASC | 37 | 0.6055 | 0.6055 | **exactly zero change** |
+
+**A claim from earlier in this work does not survive.** After the N = 2 success I wrote
+that "every one of those plateaus is probably an MC artifact." That is wrong. Refinement
+rescues a search that landed in the *right basin* and merely could not finish — N = 2 and
+P3. Where the search landed in a poor basin, the plateau is a genuine local optimum:
+on the N = 4 cell SLSQP finds no feasible descent direction at all, because 147 contacts
+have jammed 37 parameters. A local method cannot move between basins, and 0.6055 versus
+the true 4000/4671 is a different structure, not an unfinished one.
+
+The P3 result is worth stating separately because it strengthens an earlier conclusion
+rather than weakening it. Both screw groups, from many independent seeds, converge to the
+same **φ = 0.5968995291** (a = 0.86399, c = 0.91623). That is the single-orbit family's
+true optimum, and it is still **10.5% below 2/3** — so the N = 3 phase genuinely is not a
+single C₃ orbit, and the shortfall was never a search artefact. No low-height closed form
+was found for these parameters; the recogniser offers candidates with large height and
+residuals sitting exactly at the numerical precision, which is overfitting, and unlike the
+N = 2 determinant there is no independent target to check them against. Reported as
+numerical.
+
+Two bugs surfaced while building this, both worth naming:
+
+- `refine_packing` originally took its starting volume on trust, so an infeasible start was
+  reported at the *search's* density while the configuration actually interpenetrated. It
+  now refuses an overlapping start outright.
+- `PackingResult` did not carry its own parameters, forcing callers to recover orientations
+  by Kabsch alignment — and my recovery was transposed, silently producing overlapping
+  configurations that looked fine. Searches now return the parameters they used.
 
 ## The N = 2 phase: solved to nine figures
 

@@ -1756,3 +1756,89 @@ class TestQuadraticRecognition:
         expected = 16 * (139 - 40 * math.sqrt(10)) / 27
         # The refinement gets within a few parts in 1e6 from a short search.
         assert determinant == pytest.approx(expected, rel=2e-4)
+
+
+class TestGeneralRefinement:
+    """refine_packing: what constrained optimisation can and cannot rescue."""
+
+    @staticmethod
+    def _p3_build(screw: int):
+        from scipy.spatial.transform import Rotation
+
+        def build(p):
+            quat = np.roll(Rotation.from_rotvec(p[4:7]).as_quat(), 1)
+            return tg.p3_cell(abs(p[0]), abs(p[1]), p[2], p[3], quat, screw)
+
+        return build
+
+    @staticmethod
+    def _p3_params(result) -> np.ndarray:
+        from scipy.spatial.transform import Rotation
+
+        rotvec = Rotation.from_quat(np.roll(result.quat, -1)).as_rotvec()
+        return np.array([result.a, result.c, result.fx, result.fy, *rotvec])
+
+    def test_rejects_an_infeasible_start(self) -> None:
+        """Polishing cannot repair overlaps; reporting a density for one is a lie.
+
+        This is a real bug that shipped: the refiner took its starting volume on
+        trust, so a broken reconstruction was reported at the *search's* density
+        while the configuration actually interpenetrated.
+        """
+        build = self._p3_build(1)
+        params = np.array([0.3, 0.3, 0.1, 0.1, 0.0, 0.0, 0.0])  # far too small a cell
+        cell, lattice = build(params)
+        assert not tg._configuration_is_valid(cell, lattice)
+        with pytest.raises(ValueError, match="infeasible"):
+            tg.refine_packing(build, params, rounds=1)
+
+    def test_refinement_improves_the_p3_family(self) -> None:
+        """The Monte Carlo plateau there is genuinely short of the optimum."""
+        build = self._p3_build(2)
+        coarse = tg._p3_search(2000, seed=503, screw=2)
+        params = self._p3_params(coarse)
+        if not tg._configuration_is_valid(*build(params)):
+            pytest.skip("coarse search landed outside the feasible set")
+        _, refined = tg.refine_packing(build, params, rounds=4, maxiter=300)
+        assert refined >= coarse.packing_fraction
+
+    def test_refined_result_is_certified(self) -> None:
+        build = self._p3_build(2)
+        coarse = tg._p3_search(2000, seed=503, screw=2)
+        params = self._p3_params(coarse)
+        if not tg._configuration_is_valid(*build(params)):
+            pytest.skip("coarse search landed outside the feasible set")
+        best, _ = tg.refine_packing(build, params, rounds=4, maxiter=300)
+        cell, lattice = build(best)
+        np.testing.assert_allclose(tg.edge_lengths(cell), 1.0, atol=1e-12)
+        assert tg._configuration_is_valid(cell, lattice, tolerance=1e-11)
+
+    def test_p3_family_stays_far_below_the_n3_phase(self) -> None:
+        """Even refined, the single-orbit family cannot reach 2/3.
+
+        This is what makes the N = 3 structural conclusion safe: the shortfall is
+        not a search artefact.
+        """
+        build = self._p3_build(2)
+        coarse = tg._p3_search(2000, seed=503, screw=2)
+        params = self._p3_params(coarse)
+        if not tg._configuration_is_valid(*build(params)):
+            pytest.skip("coarse search landed outside the feasible set")
+        _, refined = tg.refine_packing(build, params, rounds=4, maxiter=300)
+        assert refined < 0.62 < float(tg.N3_PACKING_FRACTION)
+
+    def test_search_results_carry_their_own_parameters(self) -> None:
+        """Reconstructing orientations by Kabsch was error-prone and got it wrong."""
+        result = tg._asc_search(3, 200, seed=5, motif="single")
+        assert result.fractional is not None and result.quaternions is not None
+        shape = tg.build_motif("single")
+        rebuilt = tg._cell_vertices(
+            shape, result.lattice, result.fractional, result.quaternions
+        )
+        np.testing.assert_allclose(rebuilt, result.cell_tetrahedra, atol=1e-12)
+
+    def test_contact_candidates_generalise_beyond_two_bodies(self) -> None:
+        result = tg._asc_search(4, 300, seed=7, motif="single")
+        candidates = tg.contact_candidates(result.cell_tetrahedra, result.lattice, 0.25)
+        assert len(candidates) > 0
+        assert max(j for _i, j, _n in candidates) <= 3

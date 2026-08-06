@@ -49,6 +49,8 @@ __all__ = [
     "build_n3_cluster",
     "double_lattice_cell",
     "refine_double_lattice",
+    "refine_packing",
+    "contact_candidates",
     "N2_PACKING_FRACTION",
     "n3_unit_cell",
     "N3_PACKING_FRACTION",
@@ -1671,6 +1673,135 @@ def _double_lattice_isobaric(
     )
 
 
+def contact_candidates(
+    cell: FloatArray, lattice: FloatArray, cutoff: float = 0.25
+) -> list[tuple[int, int, FloatArray]]:
+    """Neighbour pairs, with periodic image, close enough to constrain an optimum.
+
+    Returns one entry per unordered pair including a body against its own
+    images, using the same lexicographic half-space rule as the overlap test so
+    each physical contact appears once.
+    """
+    inverse = np.linalg.inv(lattice)
+    reach = 2.0 * UNIT_TETRA_CIRCUMRADIUS
+    centres = cell.mean(axis=1)
+    count = cell.shape[0]
+
+    candidates: list[tuple[int, int, FloatArray]] = []
+    for i in range(count):
+        for j in range(i, count):
+            delta = centres[i] - centres[j]
+            base = np.round(delta @ inverse)
+            for a in range(-3, 4):
+                for b in range(-3, 4):
+                    for c in range(-3, 4):
+                        shift = base + np.array([a, b, c], dtype=F64)
+                        if i == j and not (
+                            shift[0] > 0
+                            or (shift[0] == 0 and (shift[1] > 0 or (shift[1] == 0 and shift[2] > 0)))
+                        ):
+                            continue
+                        if np.linalg.norm(delta - shift @ lattice) < reach + cutoff:
+                            candidates.append((i, j, shift.copy()))
+    return candidates
+
+
+def refine_packing(
+    build,
+    parameters: FloatArray,
+    *,
+    rounds: int = 8,
+    cutoff: float = 0.25,
+    margin: float = 0.0,
+    maxiter: int = 800,
+    step: float = 1e-10,
+):
+    """Drive any parametrised packing to its local optimum under hard contacts.
+
+    Monte Carlo cannot finish a hard-particle packing.  Near jamming the
+    accessible moves are smaller than any workable step size, so the search
+    plateaus and looks converged from the inside while sitting well short of the
+    optimum -- on the N = 2 phase it stalls at 99.4%, and on a four-tetrahedron
+    cell it stalls far below the known 4000/4671.
+
+    Recast as a constrained programme the problem is routine: minimise the cell
+    volume subject to every contact depth staying at or below zero.  The active
+    set is rebuilt each round, because which periodic images touch changes as the
+    cell contracts.
+
+    Parameters
+    ----------
+    build:
+        Callable mapping a parameter vector to ``(tetrahedra, lattice)``.
+    parameters:
+        Starting parameter vector, typically from a Monte Carlo search.
+    rounds:
+        Active-set rebuild iterations.
+    cutoff:
+        Extra reach when collecting candidate contacts.
+    margin:
+        Safety gap held at each contact.  Any positive value costs density
+        directly, so the default sits exactly on the boundary and infeasible
+        rounds are discarded instead.
+    maxiter, step:
+        SLSQP iteration cap and finite-difference step.
+
+    Returns
+    -------
+    (parameters, packing_fraction)
+        The densest parameters that passed the periodic overlap test, and their
+        measured density.
+    """
+    from scipy.optimize import minimize
+
+    current = np.array(parameters, dtype=F64, copy=True)
+    cell, lattice = build(current)
+    count = cell.shape[0]
+    if not _configuration_is_valid(cell, lattice, tolerance=1e-9):
+        raise ValueError(
+            "refine_packing was given an infeasible starting configuration; "
+            "polishing cannot repair overlaps, and reporting a density for one "
+            "would be meaningless"
+        )
+    best = current.copy()
+    best_volume = abs(float(np.linalg.det(lattice)))
+
+    for _ in range(max(rounds, 1)):
+        cell, lattice = build(current)
+        candidates = contact_candidates(cell, lattice, cutoff)
+        if not candidates:
+            break
+
+        def depths(vector: FloatArray, candidates=candidates) -> FloatArray:
+            tetrahedra, lat = build(vector)
+            left = np.array([tetrahedra[i] for i, _j, _n in candidates])
+            right = np.array([tetrahedra[j] + n @ lat for _i, j, n in candidates])
+            return sat_overlap_depth(left, right)
+
+        result = minimize(
+            lambda vector: abs(float(np.linalg.det(build(vector)[1]))),
+            current,
+            constraints=[{"type": "ineq", "fun": lambda v: -depths(v) - margin}],
+            method="SLSQP",
+            options={"maxiter": maxiter, "ftol": 1e-16, "eps": step},
+        )
+        trial_cell, trial_lattice = build(result.x)
+        volume = abs(float(np.linalg.det(trial_lattice)))
+        if volume < 1e-12 or not np.all(np.isfinite(trial_cell)):
+            break
+
+        # With margin 0 the optimiser sits exactly on the constraint boundary,
+        # so a round can land microscopically outside it.  Keep exploring from
+        # there, but only ever record a configuration the overlap test certifies.
+        current = np.array(result.x, dtype=F64)
+        if volume < best_volume and _configuration_is_valid(
+            trial_cell, trial_lattice, tolerance=1e-11
+        ):
+            best, best_volume = current.copy(), volume
+
+    return best, count * UNIT_TETRA_VOLUME / best_volume
+
+
 def _contact_candidates(
     lattice: FloatArray, offset: FloatArray, cutoff: float
 ) -> list[tuple[int, int, FloatArray]]:
@@ -2171,6 +2302,8 @@ class PackingResult:
     attempted_moves: int
     n_particles: int
     motif: str
+    fractional: FloatArray | None = None
+    quaternions: FloatArray | None = None
 
     @property
     def acceptance_ratio(self) -> float:
@@ -2709,6 +2842,8 @@ def _asc_search(
         attempted_moves=attempted,
         n_particles=n_particles,
         motif=motif,
+        fractional=fractional.copy(),
+        quaternions=quats.copy(),
     )
 
 
