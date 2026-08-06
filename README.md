@@ -181,7 +181,10 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `amplituhedron.py` | Exact `k = 1` amplituhedron tilings: integer SAT in `R^m`, enumeration, flip graph |
 | `amplituhedron_analysis.py` | CLI for the amplituhedron pipeline |
 | `test_tetra_spectral.py` | Tetrahedron test suite (300 tests) |
+| `bootstrap.py` | 2d conformal bootstrap: blocks, crossing, exclusion functionals |
+| `bootstrap_analysis.py` | CLI for the bootstrap |
 | `test_amplituhedron.py` | Amplituhedron test suite (116 tests) |
+| `test_bootstrap.py` | Bootstrap test suite (60 tests) |
 
 ## Method notes
 
@@ -821,11 +824,99 @@ Verdicts were confirmed identical on all 2,535 simplex pairs across four configu
 before the speedup was accepted. In `R^3` the face-pair set reduces to exactly the familiar
 4 + 4 face normals and 36 edge crosses; in `R^2` to edge normals alone.
 
+## A third target: the conformal bootstrap in two dimensions
+
+Same scoping discipline, three corrections before any code:
+
+**The 3d Ising island is out of reach here, and saying otherwise would be dishonest.**
+It needs mixed correlators, a semidefinite program enforcing polynomial positivity in `Δ`
+over a continuum, and an arbitrary-precision SDP solver (SDPB). None of that is a weekend's
+work on top of this repo.
+
+**A separating-axis engine is the wrong tool.** "Testing for the existence of positive
+linear functionals" is linear/semidefinite programming, not SAT. There is no geometry to
+separate.
+
+**But `d = 2` has exactly the phenomenon of interest.** The bound has a kink at the 2d Ising
+model, whose dimensions are known *exactly*: `Δσ = 1/8`, `Δε = 1`. That is a boundary point
+locking onto exact algebraic values, and it is checkable — the same role Catalan numbers
+play for the amplituhedron.
+
+### The blocks are refereed by the Casimir equation
+
+In `d = 2` the conformal block has a closed form that factorises completely, so derivatives
+at the crossing-symmetric point come from one-variable Taylor series with a bounded tail —
+no multivariate numerical differentiation anywhere. The correctness check is independent of
+the implementation: a block *is* an eigenfunction of the quadratic Casimir, and
+
+> residuals come out at **1e-31** across `Δ ∈ {0.25 … 7}`, `ℓ ∈ {0, 2, 4, 6}`.
+
+The float64 fast path (which carries the whole computation) is checked against a 40-digit
+mpmath path: agreement to **1.3e-15**, i.e. six times machine epsilon.
+
+### The result
+
+| Δσ | bound on Δε | local slope |
+| --- | --- | --- |
+| 0.0625 | 0.3428 | — |
+| 0.0900 | 0.6090 | 9.7 |
+| 0.1100 | 0.8425 | 11.7 |
+| **0.1250** | **1.0023** ← 2d Ising, exact value **1** | **10.7** |
+| 0.1400 | 1.0533 | **3.4** |
+| 0.1700 | 1.1478 | 3.1 |
+| 0.2200 | 1.3010 | 3.1 |
+
+Two things to read off. First, a 15-component functional lands within **0.23%** of an
+exactly known dimension. Second, and more to your original question about boundaries
+locking onto special values: **the slope drops by a factor of ~3.4 precisely at Δσ = 1/8**
+and then stays flat. That discontinuity in slope is the kink, and the 2d Ising model sits
+at it — the bound is not a smooth curve that happens to pass near a physical theory, it
+changes character there.
+
+```bash
+python bootstrap_analysis.py --delta-phi 0.125            # the calibration point
+python bootstrap_analysis.py --delta-phi 0.125 --gap 1.4  # is one assumption excluded?
+python bootstrap_analysis.py --scan 0.0625,0.45,9 --csv bound.csv
+```
+
+### Two bugs that a less suspicious pipeline would have shipped
+
+**A single-shot linear program produces functionals that are not exclusion proofs.** The LP
+satisfies its own 660 sampled constraints and then dips to about **−1e-3 between them**. An
+exclusion argument needs `α[F] ≥ 0` for *every* operator, so a functional that goes negative
+anywhere proves nothing at all. The failure is completely silent — the LP reports success.
+The fix is an audit grid the program never trains on, with violations fed back as new
+constraints until nothing on it is negative.
+
+**Feasibility-with-a-tolerance is the wrong question, and it corrupted the bisection.** The
+audit loop would stall near margin `−3e-8` while the constraint set ballooned to 18,260 rows,
+so a gap got reported "not excluded" while gaps on *both sides of it* were excluded. That
+breaks monotonicity, and bisection on a non-monotone predicate returns garbage: it put the
+bound at `Δσ = 0.0625` at **1.85** when the answer is **0.34**.
+
+The fix is to stop asking a yes/no question at the boundary. Maximising the *worst value* the
+functional takes gives a quantity that varies continuously with the assumed gap, so its
+**sign** is a well-posed, monotone predicate — no tolerance in the decision at all. A test
+now pins the monotonicity directly, because that property is what the whole bisection rests
+on.
+
+Caching the constraint rows (every spin-`ℓ ≥ 2` sample sits at its own unitarity bound and is
+therefore identical at every gap) took a bound from **217s to 27s**, same answer.
+
+### What this is, precisely
+
+An exclusion is a proof **against the sampled spectrum**, verified on an independent dense
+grid. It is not the continuum statement a semidefinite program would give. And the converse
+direction is not evidence of anything: failing to find a functional means this derivative
+basis cannot rule a theory out, not that the theory exists. The CLI prints that caveat rather
+than burying it.
+
 ## Tests
 
 ```bash
 python -m pytest test_tetra_spectral.py -v      # tetrahedron packings
 python -m pytest test_amplituhedron.py -v       # amplituhedron tilings
+python -m pytest test_bootstrap.py -v           # conformal bootstrap
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};

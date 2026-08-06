@@ -17,5 +17,9 @@ numba>=0.59
 # it runs entirely in Python integers.
 sympy>=1.12
 
+# Arbitrary-precision reference path for the conformal bootstrap: the float64
+# hot loop is validated against it rather than trusted.
+mpmath>=1.3
+
 # Test suite only.
 pytest>=7.0
