@@ -523,3 +523,68 @@ class TestTilingSummary:
         assert summary["dimension"] == 2
         assert summary["flip_graph_connected"] is True
         assert summary["flip_degree_min"] == summary["flip_degree_max"] == 3
+
+
+class TestDegeneraciesAreAccidental:
+    """The large multiplicities are real, exact, and *not* forced by D_n.
+
+    This is the sharpest statement the pipeline supports about them, and it is
+    deliberately a negative one: character theory rules out the interesting
+    explanation, so calling these an algebraic fingerprint would be wrong.
+    """
+
+    @pytest.mark.parametrize(
+        "n, m, eigenvalue, dimension", [(8, 2, 6.0, 8), (8, 4, 3.0, 6)]
+    )
+    def test_the_big_eigenspaces_are_not_single_irreps(
+        self, n: int, m: int, eigenvalue: float, dimension: int
+    ) -> None:
+        import tetra_spectral as ts
+
+        vertices = amp.cyclic_polytope(n, m)
+        volume = amp.polytope_normalised_volume(vertices, amp.gale_facets(n, m))
+        graph = amp.flip_graph(vertices, amp.enumerate_tilings(vertices, volume).tilings)
+        report = ts.eigenspace_symmetry(graph, eigenvalue)
+        assert report.dimension == dimension
+        assert report.group_order == 2 * n
+        assert not report.is_forced_by_symmetry
+
+    def test_a_small_level_is_forced_for_contrast(self) -> None:
+        """Not everything is accidental -- the machinery can still say yes."""
+        import tetra_spectral as ts
+
+        vertices = amp.cyclic_polytope(8, 4)
+        volume = amp.polytope_normalised_volume(vertices, amp.gale_facets(8, 4))
+        graph = amp.flip_graph(vertices, amp.enumerate_tilings(vertices, volume).tilings)
+        assert ts.eigenspace_symmetry(graph, 2.0).is_forced_by_symmetry
+
+    def test_the_central_shift_acts_as_minus_one_on_the_lambda_6_space(self) -> None:
+        """One automorphism has character -8 on an 8-dimensional space.
+
+        A character equal to minus the dimension means that element acts as
+        exactly -I, so the whole eigenspace sits in the odd part of the
+        order-two central rotation.  That is real structure, and it is still
+        not enough to force the multiplicity.
+        """
+        import tetra_spectral as ts
+
+        vertices = amp.cyclic_polytope(8, 2)
+        graph = amp.flip_graph(vertices, amp.enumerate_tilings(vertices).tilings)
+        report = ts.eigenspace_symmetry(graph, 6.0)
+        assert sorted(report.characters) == [-8] + [0] * 14 + [8]
+
+    def test_the_flip_graphs_have_no_twin_vertices(self) -> None:
+        """Rules out the simplest mechanism for a high multiplicity.
+
+        Twin vertices force Laplacian eigenvalues (degree, or degree + 1 when
+        adjacent).  There are none here, so that explanation is unavailable.
+        """
+        for n, m in ((8, 2), (8, 4)):
+            vertices = amp.cyclic_polytope(n, m)
+            volume = amp.polytope_normalised_volume(vertices, amp.gale_facets(n, m))
+            graph = amp.flip_graph(
+                vertices, amp.enumerate_tilings(vertices, volume).tilings
+            )
+            neighbours = {v: set(graph[v]) for v in graph}
+            for u, v in itertools.combinations(graph, 2):
+                assert neighbours[u] - {v} != neighbours[v] - {u}

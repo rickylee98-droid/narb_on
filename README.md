@@ -180,8 +180,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `tetra_lift.py` | Higher-dimensional lift obstructions: Z-module rank, root-system angles |
 | `amplituhedron.py` | Exact `k = 1` amplituhedron tilings: integer SAT in `R^m`, enumeration, flip graph |
 | `amplituhedron_analysis.py` | CLI for the amplituhedron pipeline |
-| `test_tetra_spectral.py` | Tetrahedron test suite (290 tests) |
-| `test_amplituhedron.py` | Amplituhedron test suite (110 tests) |
+| `test_tetra_spectral.py` | Tetrahedron test suite (300 tests) |
+| `test_amplituhedron.py` | Amplituhedron test suite (116 tests) |
 
 ## Method notes
 
@@ -691,13 +691,14 @@ afterwards is a real check on both the enumeration and the flip criterion, not a
 
 ### The physical case, m = 4
 
-| | n=6 | n=7 | n=8 | n=9 |
-| --- | --- | --- | --- | --- |
-| candidate simplices | 6 | 21 | 56 | 126 |
-| **tilings** | **2** | **7** | **40** | **357** |
-| simplices per tiling | 3 | 6 | 10 | 15 |
-| flip graph edges | 1 | 7 | 64 | 825 |
-| connected | yes | yes | yes | yes |
+| | n=6 | n=7 | n=8 | n=9 | n=10 |
+| --- | --- | --- | --- | --- | --- |
+| candidate simplices | 6 | 21 | 56 | 126 | 252 |
+| **tilings** | **2** | **7** | **40** | **357** | **4824** |
+| simplices per tiling | 3 | 6 | 10 | 15 | 21 |
+| flip graph edges | 1 | 7 | 64 | 825 | 15120 |
+| flip degrees | 1 | 2 | 3–4 | 4–7 | 5–10 |
+| connected | yes | yes | yes | yes | yes |
 
 Every tiling has exactly `binom(n-3, 2)` simplices — the count is constant across the whole
 tiling space, so tilings differ in shape but never in size. And unlike `m = 2`, the `m = 4`
@@ -728,10 +729,65 @@ and 2 — so they were checked from the **characteristic polynomial**, not from 
 | `A(8,1,4)` | **3** | **6** | exact integer |
 
 These are real, not artefacts — and they are *not* explained by the symmetry group, since
-`2n = 16` has no 6- or 8-dimensional irrep. They are accidental degeneracies of the flip
-graph, and naming them as such is the honest reading. (The earlier `O_h` and `C₃` results in
-this project were degeneracies *forced* by a group; these are not, and the distinction is
-the whole point of computing them exactly.)
+`2n = 16` has no 6- or 8-dimensional irrep. The next section pins that down exactly.
+
+### Forced degeneracy versus accidental coincidence
+
+A multiplicity is only evidence of anything when the eigenspace carries a **single**
+irreducible representation of the symmetry group. If several unrelated representations
+happen to land on one eigenvalue, the multiplicity means nothing. Eigenvalue counting alone
+cannot tell these apart — but character theory can, exactly:
+
+> For the character `χ` of the group acting on an eigenspace, `⟨χ,χ⟩ = Σ mᵢ²`.
+> So **`⟨χ,χ⟩ = 1` iff the degeneracy is forced by the symmetry.**
+
+`tetra_spectral.eigenspace_symmetry` implements this, with both controls:
+
+| graph | λ | dim | ⟨χ,χ⟩ | forced? |
+| --- | --- | --- | --- | --- |
+| `K₄` | 4 | 3 | 1 | **yes** |
+| Petersen | 2 | 5 | 1 | **yes** |
+| cube `Q₃` | 2 | 3 | 1 | **yes** |
+| `K₄ ⊔ K₂,₂` (negative control) | 4 | 4 | 2 | no |
+| `A(8,1,4)` | 2 | 1 | 1 | **yes** |
+| **`A(8,1,4)`** | **3** | **6** | **4** | **no** |
+| **`A(8,1,2)`** | **6** | **8** | **8** | **no** |
+
+The negative control matters as much as the positive ones: without it the test could only
+ever say yes, and would pass even if it were broken.
+
+So the verdict on the two big degeneracies is negative and exact. For `λ = 6` the character
+is `8` at the identity, **`−8` at exactly one element**, and `0` at the other fourteen. A
+character of `−dim` means that element acts as exactly `−I`, so the eigenspace sits entirely
+in the odd part of the central rotation `r⁴` — the shift by `n/2` along the moment curve.
+That is genuine structure, and `⟨χ,χ⟩ = 8` still says it is two 2-dimensional irreps
+appearing twice each, not one 8-dimensional one. `D_n` accounts for at most 2 of the 8.
+
+### Three explanations that were tested and failed
+
+Having ruled out symmetry, the natural next question is what *does* produce them. Three
+mechanisms were tried and none survived, which is worth recording rather than quietly
+dropping:
+
+| hypothesis | mechanism | verdict |
+| --- | --- | --- |
+| **twin vertices** | twins force λ = degree (or degree+1 when adjacent), and 5+1 = 6 exactly | **refuted** — the flip graphs have no twin pairs at all, of either kind |
+| **degree-3 independent set** | an independent set of degree-`d` vertices forces λ = `d` | **refuted** — `A(8,1,4)` has 32 degree-3 vertices but they are *not* independent, and the incidence rank predicts multiplicity 25, not 6 |
+| **perfect matching** | a matched pair antisymmetric in a `d`-regular graph forces λ = `d+1` | **refuted** — the minimum-support vector found for `A(8,1,2)` has support 104 of 132 and induces 208 edges, nothing like a matching |
+
+What did survive is a localisation result, and only on the `m = 4` side. For `A(8,1,4)`,
+**16 of the 40 coordinates are identically zero** across the whole `λ = 3` eigenspace — no
+eigenvector touches those 16 tilings — and the minimum-support eigenvector has support
+exactly **8**, on a set inducing **zero edges**. An independent set of degree-3 vertices does
+force λ = 3, so that vector is explained. The remaining multiplicity is not.
+
+`A(8,1,2)` shows the opposite behaviour: its `λ = 6` eigenvectors are **delocalised**, spread
+over at least 104 of the 132 tilings. Whatever produces multiplicity 8 there is global.
+
+**Bottom line: these degeneracies are real, exact, and unexplained.** They are not symmetry
+fingerprints, which is the claim worth being careful about — the `O_h` and `C₃` results
+earlier in this project *are* forced degeneracies, and conflating the two would be the
+easiest way to overstate what any of this shows.
 
 ```bash
 # Calibration: must reproduce Catalan

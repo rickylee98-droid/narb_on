@@ -1975,3 +1975,74 @@ class TestGeneralRefinement:
         candidates = tg.contact_candidates(result.cell_tetrahedra, result.lattice, 0.25)
         assert len(candidates) > 0
         assert max(j for _i, j, _n in candidates) <= 3
+
+
+# --------------------------------------------------------------------------- #
+# Forced degeneracy versus accidental coincidence
+# --------------------------------------------------------------------------- #
+class TestEigenspaceSymmetry:
+    """The distinction eigenvalue multiplicities alone cannot make.
+
+    A multiplicity means something only when the eigenspace carries a single
+    irreducible representation of the symmetry group.  When several unrelated
+    representations happen to land on one eigenvalue, the multiplicity is
+    coincidence.  ``<chi, chi> == 1`` separates the two exactly.
+    """
+
+    @pytest.mark.parametrize(
+        "builder, eigenvalue, dimension",
+        [
+            (lambda: nx.complete_graph(4), 4.0, 3),
+            (lambda: nx.cycle_graph(6), 1.0, 2),
+            (lambda: nx.petersen_graph(), 2.0, 5),
+            (lambda: nx.convert_node_labels_to_integers(nx.hypercube_graph(3)), 2.0, 3),
+        ],
+    )
+    def test_positive_controls_are_forced(self, builder, eigenvalue, dimension) -> None:
+        """Textbook degeneracies that are genuinely irreducible must report so."""
+        graph = nx.convert_node_labels_to_integers(builder())
+        report = ts.eigenspace_symmetry(graph, eigenvalue)
+        assert report.dimension == dimension
+        assert report.norm == 1
+        assert report.is_forced_by_symmetry
+
+    def test_negative_control_is_not_forced(self) -> None:
+        """Without this the test could only ever say yes, and would pass if broken.
+
+        K4 and K(2,2) both have Laplacian eigenvalue 4, so their disjoint union
+        has multiplicity 4 built from two unrelated irreps.
+        """
+        graph = nx.disjoint_union(nx.complete_graph(4), nx.complete_bipartite_graph(2, 2))
+        report = ts.eigenspace_symmetry(graph, 4.0)
+        assert report.dimension == 4
+        assert report.norm > 1
+        assert not report.is_forced_by_symmetry
+
+    def test_identity_character_is_the_dimension(self) -> None:
+        graph = nx.petersen_graph()
+        report = ts.eigenspace_symmetry(graph, 2.0)
+        assert max(report.characters) == report.dimension
+
+    def test_group_order_matches_the_automorphism_count(self) -> None:
+        graph = nx.petersen_graph()
+        assert len(ts.graph_automorphisms(graph)) == 120
+        assert ts.eigenspace_symmetry(graph, 2.0).group_order == 120
+
+    def test_automorphisms_are_genuine_permutations(self) -> None:
+        graph = nx.convert_node_labels_to_integers(nx.hypercube_graph(3))
+        size = graph.number_of_nodes()
+        for permutation in ts.graph_automorphisms(graph):
+            assert sorted(permutation) == list(range(size))
+            for u, v in graph.edges():
+                assert graph.has_edge(permutation[u], permutation[v])
+
+    def test_rejects_an_eigenvalue_that_is_not_there(self) -> None:
+        with pytest.raises(ValueError, match="no eigenvalue within"):
+            ts.eigenspace_symmetry(nx.complete_graph(4), 1.7)
+
+    def test_precomputed_automorphisms_give_the_same_answer(self) -> None:
+        graph = nx.cycle_graph(6)
+        automorphisms = ts.graph_automorphisms(graph)
+        assert ts.eigenspace_symmetry(graph, 1.0, automorphisms=automorphisms) == (
+            ts.eigenspace_symmetry(graph, 1.0)
+        )

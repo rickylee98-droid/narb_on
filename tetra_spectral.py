@@ -29,7 +29,7 @@ import itertools
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, Sequence
 
 import networkx as nx
 import numpy as np
@@ -55,6 +55,9 @@ __all__ = [
     "PeriodicComponent",
     "sublattice_index",
     "sublattice_rank",
+    "EigenspaceSymmetry",
+    "eigenspace_symmetry",
+    "graph_automorphisms",
     "POISSON_RATIO",
     "GOE_RATIO",
 ]
@@ -1016,3 +1019,138 @@ def periodic_graph_components(
         )
 
     return PeriodicGraphReport(n_orbits=len(orbits), components=tuple(components))
+
+
+# --------------------------------------------------------------------------- #
+# Is a degeneracy forced by symmetry, or accidental?
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class EigenspaceSymmetry:
+    """How a symmetry group acts on one eigenspace.
+
+    The whole project turns on a distinction that eigenvalue multiplicities
+    alone cannot make.  A multiplicity can arise because the eigenspace carries
+    an irreducible representation of the structure's symmetry group -- in which
+    case the degeneracy is *forced*, and is genuine algebraic fingerprint -- or
+    because several unrelated representations happen to land on the same
+    eigenvalue, which is coincidence and means nothing.
+
+    Character theory separates them exactly.  For the character ``chi`` of the
+    group acting on the eigenspace, ``<chi, chi> = sum over irreps of m_i^2``.
+    So ``<chi, chi> == 1`` says the eigenspace is a single irrep and the
+    multiplicity is forced; anything larger says it is not.
+    """
+
+    eigenvalue: float
+    dimension: int
+    group_order: int
+    characters: tuple[int, ...]
+    norm: int
+
+    @property
+    def is_forced_by_symmetry(self) -> bool:
+        """Whether the eigenspace is a single irreducible representation."""
+        return self.norm == 1
+
+    @property
+    def n_constituents_lower_bound(self) -> int:
+        """Fewest distinct irreps that can make up ``<chi, chi>``.
+
+        With ``sum m_i^2 = norm`` over ``k`` irreps, ``k`` is smallest when the
+        multiplicities are as unequal as possible, so ``k >= 1`` always and the
+        useful reading is simply that ``norm > 1`` rules out a single irrep.
+        """
+        return 1 if self.norm == 1 else 2
+
+
+def graph_automorphisms(graph: nx.Graph) -> tuple[tuple[int, ...], ...]:
+    """Every automorphism of a graph, as permutations of ``sorted(graph)``.
+
+    Exhaustive, and therefore expensive: use it on the few hundred nodes where
+    the answer matters, not on a whole crystal.
+    """
+    from networkx.algorithms.isomorphism import GraphMatcher
+
+    nodes = sorted(graph)
+    position = {node: i for i, node in enumerate(nodes)}
+    found = set()
+    for mapping in GraphMatcher(graph, graph).isomorphisms_iter():
+        found.add(tuple(position[mapping[node]] for node in nodes))
+    return tuple(sorted(found))
+
+
+def eigenspace_symmetry(
+    graph: nx.Graph,
+    eigenvalue: float,
+    *,
+    automorphisms: Sequence[Sequence[int]] | None = None,
+    atol: float = 1e-8,
+) -> EigenspaceSymmetry:
+    """Decide whether a Laplacian degeneracy is forced by the graph's symmetry.
+
+    Projects each automorphism's permutation matrix onto the eigenspace and
+    takes its trace, giving the character of the action.  Those traces must come
+    out integral for a rational eigenvalue, and a large deviation means the
+    eigenspace was resolved wrongly -- typically because ``atol`` merged two
+    genuinely distinct nearby eigenvalues.  That is checked rather than assumed.
+
+    Parameters
+    ----------
+    graph:
+        The graph whose combinatorial Laplacian is analysed.
+    eigenvalue:
+        The level to examine.
+    automorphisms:
+        Precomputed permutations; recomputed with :func:`graph_automorphisms`
+        when omitted, which dominates the cost.
+    atol:
+        Tolerance for collecting eigenvalues into the eigenspace.
+
+    Returns
+    -------
+    EigenspaceSymmetry
+    """
+    nodes = sorted(graph)
+    size = len(nodes)
+    laplacian = np.asarray(
+        nx.laplacian_matrix(graph, nodelist=nodes).todense(), dtype=F64
+    )
+    values, vectors = np.linalg.eigh(laplacian)
+    selected = vectors[:, np.abs(values - eigenvalue) < atol]
+    dimension = int(selected.shape[1])
+    if dimension == 0:
+        raise ValueError(
+            f"no eigenvalue within {atol} of {eigenvalue}; the closest is "
+            f"{values[np.argmin(np.abs(values - eigenvalue))]:.12g}"
+        )
+
+    projector = selected @ selected.T
+    if automorphisms is None:
+        automorphisms = graph_automorphisms(graph)
+    if not automorphisms:
+        raise ValueError("the automorphism group is empty; it must contain the identity")
+
+    characters = []
+    worst = 0.0
+    for permutation in automorphisms:
+        matrix = np.zeros((size, size), dtype=F64)
+        matrix[np.asarray(permutation, dtype=np.int64), np.arange(size)] = 1.0
+        trace = float(np.trace(projector @ matrix))
+        worst = max(worst, abs(trace - round(trace)))
+        characters.append(int(round(trace)))
+
+    if worst > 1e-6:
+        raise ValueError(
+            f"characters deviate from integers by {worst:.2e}; the eigenspace at "
+            f"{eigenvalue} was probably resolved wrongly -- try a tighter atol"
+        )
+
+    order = len(automorphisms)
+    norm = sum(c * c for c in characters) / order
+    return EigenspaceSymmetry(
+        eigenvalue=float(eigenvalue),
+        dimension=dimension,
+        group_order=order,
+        characters=tuple(characters),
+        norm=int(round(norm)),
+    )
