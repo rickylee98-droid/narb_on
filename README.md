@@ -184,7 +184,9 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `bootstrap.py` | 2d conformal bootstrap: blocks, crossing, exclusion functionals |
 | `bootstrap_analysis.py` | CLI for the bootstrap |
 | `test_amplituhedron.py` | Amplituhedron test suite (116 tests) |
+| `arithmetic_que.py` | LPS Ramanujan graphs, Hecke operators, thin-set equidistribution |
 | `test_bootstrap.py` | Bootstrap test suite (60 tests) |
+| `test_arithmetic_que.py` | Arithmetic QUE test suite (69 tests) |
 
 ## Method notes
 
@@ -911,12 +913,102 @@ direction is not evidence of anything: failing to find a functional means this d
 basis cannot rule a theory out, not that the theory exists. The CLI prints that caveat rather
 than burying it.
 
+## A fourth target: quantum unique ergodicity on thin sets
+
+Scoping corrections first, as before.
+
+**AQUE on the modular surface is a theorem, not an open problem.** Lindenstrauss settled
+the compact and Hecke cases, Soundararajan completed the modular surface. What is open is
+the *thin set* case — restriction to a lower-dimensional or sparse subset.
+
+**Computing real Maass forms needs Hejhal's algorithm**, a specialist hyperbolic-PDE method,
+not a sparse eigenproblem.
+
+So this uses the standard discrete model: **Lubotzky–Phillips–Sarnak Ramanujan graphs**
+`X^{p,q}`, Cayley graphs of `PSL(2,F_q)` or `PGL(2,F_q)` built from the four-square
+parametrisation. Exact integer arithmetic mod `q`, and — crucially — an exact theorem to
+check against.
+
+### The construction, refereed
+
+| Claim | Referee | Result |
+| --- | --- | --- |
+| `p+1` normalised four-square solutions | Jacobi's theorem | exact for p = 5…41 |
+| generator determinants | must equal `p` mod `q` | exact |
+| vertex count | `\|PSL(2,F_q)\|` or `\|PGL(2,F_q)\|`, chosen by the Legendre symbol | exact |
+| **non-trivial eigenvalues** | **Ramanujan bound `\|λ\| ≤ 2√p`** | holds, and tightly |
+
+`X^{5,29}`: largest non-trivial `|λ| = 4.44202` against a bound of `4.47214`. That is a real
+Ramanujan graph, not something that merely compiles.
+
+A bug worth recording: quotienting the matrices by only `±1` instead of by *all* scalars
+gives `X^{5,13}` **4368 vertices instead of 2184**, and its largest non-trivial eigenvalue
+is **5.677 — violating the Ramanujan bound**. The theorem caught it immediately. Without
+that check the graph would have looked perfectly healthy.
+
+### The obstruction: this model cannot answer the question, and that is a theorem
+
+The naive experiment is ill-posed, and the obvious repair is vacuous. Both are *measured*
+here, not asserted:
+
+1. **Per-eigenvector mass is basis-dependent.** These eigenspaces reach multiplicity **81**
+   at `X^{5,13}`. Inside a degenerate eigenspace any orthonormal basis is as good as any
+   other, so a "scar" can be manufactured by rotating the basis.
+
+2. **The basis-free repair is constant by symmetry.** The spectral projector's diagonal
+   `Π_λ(v,v)` is canonical — but a Cayley graph is vertex-transitive and `Π_λ` commutes with
+   every automorphism, so that diagonal *cannot vary*. Measured spread: **< 1e-13**. The
+   observable is identically 1 and carries no information whatsoever.
+
+3. **Hecke operators do not rescue it.** This is what puts the *arithmetic* in AQUE, and the
+   discrete Hecke operators are genuine: `[A_p, A_p'] = 0` **exactly**, in integer
+   arithmetic, for distinct primes of the same quadratic character mod `q`. But they are
+   right convolutions, so they commute with the entire *left* regular action, and their
+   joint eigenspaces cannot drop below the group's irrep dimensions. On `PSL(2,F_13)`, three
+   Hecke operators cut the maximum multiplicity only from **112 to 42**, and the joint
+   multiplicities come out as exactly `{1} ∪ {12,13,14} × {1,2,3}` — the irrep dimensions.
+
+> The homogeneity that makes LPS graphs a clean arithmetic object is exactly what blinds
+> them to this question. The modular surface is *not* homogeneous, and that is the property
+> the model fails to capture.
+
+I built the whole pipeline before noticing this, ran the thin-set experiment, and got
+deviations of 0.0009–0.004 that looked like a beautiful equidistribution result. They were
+window-edge rounding noise on a quantity that is constant by symmetry.
+
+### Where the question does have content
+
+Random `d`-regular graphs keep the spectral gap (Friedman: almost-Ramanujan) and drop the
+fatal homogeneity. Their spectra are **simple** — measured multiplicity 1 at every size
+tested — so eigenvectors are canonical and `|ψ(v)|²` is well posed.
+
+| model | `\|S\|` | r.m.s. deviation | Gaussian baseline `√(2/\|S\|)` | ratio |
+| --- | --- | --- | --- | --- |
+| random 6-regular, N=2000 | 10 | 0.4382 | 0.4472 | **0.98** |
+| random 6-regular, N=2000 | 45 | 0.2047 | 0.2108 | **0.97** |
+| random 6-regular, N=2000 | 205 | 0.0953 | 0.0988 | **0.97** |
+| **barbell (negative control)** | 12 | 0.6206 | 0.4082 | **1.52** |
+
+And the sharp statement — fix `|S| = 30` and grow the graph:
+
+| N | 500 | 1000 | 2000 | 4000 |
+| --- | --- | --- | --- | --- |
+| r.m.s. deviation | 0.2486 | 0.2525 | 0.2544 | 0.2638 |
+
+**Flat.** The fluctuation is governed by `|S|` alone, not by `N`, and it sits within a few
+percent of the Gaussian value at every size. So in this model: thin-set mass equidistributes
+exactly when `|S| → ∞`, at precisely the random-matrix rate — **no scarring, and no
+arithmetic enhancement either**. The barbell control confirms the statistic can detect
+scarring when it is there (ratio 1.5), so the null result is a measurement rather than a
+blind spot.
+
 ## Tests
 
 ```bash
 python -m pytest test_tetra_spectral.py -v      # tetrahedron packings
 python -m pytest test_amplituhedron.py -v       # amplituhedron tilings
 python -m pytest test_bootstrap.py -v           # conformal bootstrap
+python -m pytest test_arithmetic_que.py -v      # arithmetic QUE
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
