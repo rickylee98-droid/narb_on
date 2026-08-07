@@ -193,6 +193,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `test_fractal_stokes.py` | Fractal Stokes test suite (174 tests) |
 | `selberg.py` | Ihara zeta, prime geodesics, graph trace formula, RH analogue |
 | `test_selberg.py` | Selberg test suite (142 tests) |
+| `detection.py` | Community detection via the non-backtracking spectrum |
+| `test_detection.py` | Detection test suite (59 tests) |
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 | `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
 | `paper/fractal_stokes.tex` | Write-up of the fractal Stokes result (10 pp.) |
@@ -1485,6 +1487,86 @@ python -c "import networkx as nx, selberg as sb; print(sb.riemann_hypothesis_tes
 make -C paper selberg_graphs.pdf
 ```
 
+## An application: community detection as a failure of the Ramanujan bound
+
+`detection.py` — turning the proved dichotomy into a detector with a predicted threshold.
+
+### The idea
+
+`selberg.py` proves that each adjacency eigenvalue λ contributes two non-backtracking
+eigenvalues, the roots of x² − λx + q, and that
+
+- |λ| ≤ 2√q ⟹ they are a conjugate pair of modulus **exactly** √q — on a circle;
+- |λ| > 2√q ⟹ they are real and the larger **escapes** the circle.
+
+So "Ramanujan" means *nothing outside the circle*. The application is to read that
+backwards: **an escaping eigenvalue is structure**, and how far outside it sits measures how
+much. Planted communities are a graph failing the Ramanujan bound.
+
+For a sparse graph of mean degree c the bulk sits at radius √(c−1), and a two-group block
+model with assortativity ε = (a−b)/(a+b) puts its signal eigenvalue near cε. The two cross at
+
+> ε\* = √(c−1)/c — the Kesten–Stigum threshold, with **no fitted constant**
+
+### The prediction, tested
+
+n = 4000, c = 5, so ε\* = 0.400. Overlap is scaled so chance = 0 and perfect = 1.
+
+| ε | 0.00 | 0.20 | 0.35 | 0.40 | 0.45 | 0.50 | 0.60 | 0.70 | 0.80 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| \|λ₂\| | 2.263 | 2.260 | 2.261 | 2.287 | 2.281 | 2.469 | 3.015 | 3.500 | 4.000 |
+| c·ε | 0.00 | 1.00 | 1.75 | 2.00 | 2.25 | 2.50 | 3.00 | 3.50 | 4.00 |
+| non-backtracking | 0.003 | 0.010 | 0.015 | 0.039 | 0.065 | **0.350** | 0.648 | 0.800 | 0.887 |
+| adjacency | 0.010 | 0.017 | 0.020 | 0.039 | 0.069 | 0.096 | 0.382 | 0.781 | 0.897 |
+
+Two things happen exactly as predicted:
+
+**λ₂ = max(bulk edge, c·ε).** Below the threshold the second eigenvalue is *pinned* — it does
+not move with the signal at all, reading 2.26 whether ε is 0.00 or 0.35. Above it, it detaches
+and tracks c·ε to under a percent: 3.015 vs 3.00, 3.500 vs 3.50, 4.000 vs 4.00.
+
+**Detection turns on at the crossing.** The overlap sits at chance until the eigenvalue
+detaches, then rises immediately.
+
+**And the non-backtracking operator beats the adjacency matrix exactly where it should** — near
+the threshold, 0.350 against 0.096 at ε = 0.50, a 3.6× advantage. Far above, both work and the
+advantage vanishes (0.887 vs 0.897 at ε = 0.80). That is the expected shape: the adjacency
+spectrum of a sparse graph is spoiled by degree fluctuations whose eigenvectors localise on
+high-degree vertices, and a non-backtracking walk cannot linger on one.
+
+### The finite-size correction, and why it matters practically
+
+The radius √(c−1) is asymptotic. Measured at c = 5 with no planted signal at all, the bulk
+edge sits at **2.26–2.30 across n = 500 to 8000** — flat to one percent, and nowhere near
+2.00. It does not converge over any size one can build.
+
+That has a real consequence: a detector comparing |λ₂| against √(c−1) reports structure in
+structureless graphs, at every size. `empirical_bulk_edge` supplies the honest null by
+measuring the same statistic at ε = 0, and `finite_size_threshold` returns 0.452 against the
+asymptotic 0.400 — which is where detection was actually observed to begin, between 0.45 and
+0.50. A test asserting the edge *descends* toward the limit was written first and failed;
+there is no descent to see.
+
+### Two bugs the referees caught
+
+**The sparse operator was permutation-scrambled.** Built from `graph.edges()` in insertion
+order it is permutation-similar to `selberg.hashimoto_operator` — same spectrum, different
+matrix — so a spectral check would pass while an entrywise one failed. Fixed by reusing
+`selberg.directed_edges` outright instead of restating its convention, which makes the
+entrywise referee meaningful.
+
+**The block model sampled one group twice.** `for b in (a, 1)` visits the (1,1) block twice,
+so group one's internal edges were drawn at double rate. Mean degree came out 6.22 for a
+requested 5 — and since the threshold is a function of mean degree, the experiment was testing
+a prediction for a graph it wasn't generating. It also left the two groups with different
+densities, which is structure nobody asked for and which a detector could find while appearing
+to recover the planted partition. There are tests for both the mean degree and the group
+symmetry now.
+
+```bash
+python -c "import detection as dt; [print(p.assortativity, round(p.nonbacktracking_overlap,3)) for p in dt.threshold_sweep([0.2,0.5,0.8], size=2000)]"
+```
+
 ## Tests
 
 ```bash
@@ -1495,6 +1577,7 @@ python -m pytest test_arithmetic_que.py -v      # arithmetic QUE
 python -m pytest test_spinfoam.py -v            # spin networks
 python -m pytest test_fractal_stokes.py -v      # fractal Stokes
 python -m pytest test_selberg.py -v             # graph Selberg trace formula
+python -m pytest test_detection.py -v           # community detection
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
