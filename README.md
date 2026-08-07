@@ -187,6 +187,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `arithmetic_que.py` | LPS Ramanujan graphs, Hecke operators, thin-set equidistribution |
 | `test_bootstrap.py` | Bootstrap test suite (60 tests) |
 | `test_arithmetic_que.py` | Arithmetic QUE test suite (84 tests) |
+| `spinfoam.py` | Exact Wigner 3j/6j, tetrahedron geometry, Ponzano-Regge limit |
+| `test_spinfoam.py` | Spin-foam test suite (45 tests) |
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 
 ## Method notes
@@ -1073,6 +1075,76 @@ subspace, not less. That is a genuine QUE-type positive result — and unlike th
 it is a measurement rather than an identity, because the observable is no longer frozen by
 symmetry. Reading the raw spread alone would have suggested the exact opposite conclusion.
 
+## A fifth target: the semiclassical limit of spin networks
+
+Two corrections to the usual framing, before any code.
+
+**The 10j symbol's uniform-scaling asymptotics is not open.** Baez–Christensen–Egan showed
+the Barrett–Crane vertex is dominated by *degenerate* configurations, so the oscillatory term
+carrying the Regge action is subdominant and the amplitude does **not** approach classical
+geometry. Monitoring that phase numerically means chasing a signal known to be buried.
+
+**The model that does work is EPRL/FK** (Barrett–Dowdall–Fairbairn–Gomes–Hellmann), which
+needs `SL(2,C)` booster functions — a different and much heavier computation.
+
+What *is* exactly computable and genuinely about convergence to classical geometry is the
+**Ponzano–Regge** limit of the `6j` symbol:
+
+> `{6j} ~ cos(S_R + π/4) / √(12πV)`,  `S_R = Σ lᵢθᵢ`,  `lᵢ = jᵢ + ½`
+
+The Regge action — the classical action of discrete gravity — appears explicitly in the phase.
+
+### Exactness and referees
+
+The Racah formula gives `{6j} = S·√R` with `S, R` rational, so a symbol is stored as that
+exact pair. Spins are doubled internally, so half-integers never produce half-integer
+factorials. The engine is refereed against identities it cannot fake:
+
+| referee | result |
+| --- | --- |
+| sympy cross-check (3j and 6j) | agree to `1e-14` |
+| vanishing when a triad fails | 0 violations |
+| orthogonality relation | 0 failures |
+| Regge symmetry | exact, to the last bit |
+| **Biedenharn–Elliott pentagon** | 0 failures, worst `5.6e-17` |
+
+### The measurement
+
+| shape | α | trustworthy |
+| --- | --- | --- |
+| (1,1,1,1,1,1) | −1.095 | yes |
+| (2,2,2,3,3,3) | −1.097 | yes |
+| (3,3,3,2,2,2) | −1.055 | yes |
+| (2,3,4,4,3,2) | −1.071 | yes |
+| (2,3,3,4,4,5) | −1.085 | yes |
+| (3,4,5,5,4,3) | −1.109 | yes |
+| (3,5,4,2,4,6) | +0.013 | **no — aliased** |
+
+The envelope-normalised error `|exact − PR|·√(12πV)` scales as **λ^(−1)**, and this survives
+**non-uniform** edge scaling. In the classically forbidden regime the symbol instead decays
+**exponentially with no sign change**: for (1,3,4,2,2,2) an exponential fit beats a power law
+by 14× in residual.
+
+### Two bugs, one caught by refusing to average away an outlier
+
+**The edge map was wrong.** The four triads of a `6j` symbol must be the four *faces*. I had
+`(j1,j2,j3)` on the three edges meeting at one vertex — a vertex star. That reproduces correct
+asymptotics on every symmetric shape (the regular tetrahedron, anything palindromic), so it
+passed the first checks; it fails only on shapes like `(2,2,2,3,3,3)`, which showed up as a
+lone α ≈ 0 outlier. There is now a structural test asserting triads = faces, and the fix
+changed which shapes are classically forbidden — an earlier decay result had to be redone.
+
+**`(-1)**n` returns a float for negative `n`.** Python evaluates `(-1)**-1` as `-1.0`, silently
+contaminating exact rational arithmetic. The `3j` sign exponent goes negative for ordinary
+arguments. Replaced with a parity helper.
+
+**And one artifact that is not a bug.** `(3,5,4,2,4,6)` gives α ≈ 0 no matter how far the scan
+runs. Its Regge phase advances **6.99745 cycles per unit scaling** — 0.0026 from an integer, a
+beat period of 391 — so integer spin sampling is nearly phase-locked and no envelope is
+measurable. Well-behaved shapes sit 0.17–0.41 away. `aliasing_diagnostic` now detects this in
+advance and `is_trustworthy` refuses to report the exponent rather than leaving a spurious
+zero to be read as an absence of convergence.
+
 ## Tests
 
 ```bash
@@ -1080,6 +1152,7 @@ python -m pytest test_tetra_spectral.py -v      # tetrahedron packings
 python -m pytest test_amplituhedron.py -v       # amplituhedron tilings
 python -m pytest test_bootstrap.py -v           # conformal bootstrap
 python -m pytest test_arithmetic_que.py -v      # arithmetic QUE
+python -m pytest test_spinfoam.py -v           # spin networks
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
