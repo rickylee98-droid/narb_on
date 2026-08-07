@@ -189,6 +189,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `test_arithmetic_que.py` | Arithmetic QUE test suite (84 tests) |
 | `spinfoam.py` | Exact Wigner 3j/6j, tetrahedron geometry, Ponzano-Regge limit |
 | `test_spinfoam.py` | Spin-foam test suite (45 tests) |
+| `fractal_stokes.py` | Hölder forms on Koch curves: resolution window, coherence exponent, (d, α) sweep |
+| `test_fractal_stokes.py` | Fractal Stokes test suite (161 tests) |
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 | `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
 
@@ -1146,6 +1148,128 @@ measurable. Well-behaved shapes sit 0.17–0.41 away. `aliasing_diagnostic` now 
 advance and `is_trustworthy` refuses to report the exponent rather than leaving a spurious
 zero to be read as an absence of convergence.
 
+## A sixth target: Stokes' theorem on jagged boundaries
+
+`fractal_stokes.py` — line integrals of Hölder forms over Koch curves, and where Young's
+bound actually bites.
+
+### The question, sharpened
+
+"Stokes' theorem fails on a fractal boundary" is, as usually stated, false for the case
+people reach for. At any finite prefractal stage the boundary is a polygon, so Stokes holds
+exactly; and for a *smooth* form the limit converges without difficulty, because the integral
+of a differential form is not the integral with respect to arclength. The snowflake's
+arclength diverges like (4/3)ⁿ while ∮ x dy converges to an area known in closed form. Both
+are checked, the arclength against (4r)ⁿ to twelve figures and the area against the exact
+finite-level formula A_n = T(1 + (3/5)(1 − (4/9)ⁿ)) at every level.
+
+The failure is real at *limited regularity*. If the curve has finite p-variation with p equal
+to its box dimension d, and the form is α-Hölder, Young's condition 1/p + α/p > 1 reads
+
+> **α > d − 1**, so α_c = log 4 / log 3 − 1 = 0.26186 for the standard Koch curve.
+
+The same estimate predicts a rate, not just a threshold: refining level n touches 4ⁿ segments
+of length rⁿ, each contributing O(r^{n(1+α)}), so the increment is bounded by (4 r^{1+α})ⁿ.
+Writing the measured decay as (4^β r^{1+α})ⁿ defines a **coherence exponent** β — Young's
+bound is β = 1, and β = ½ is what independent signs would give. Young's bound is an upper
+bound, so β is a measurement.
+
+### The apex angle makes the dimension a dial
+
+Replacing each segment by a symmetric bump with apex angle θ forces 2r + 2r cos θ = 1, so
+r = 1/(2 + 2cos θ) and d = log 4 / log(1/r) sweeps continuously from 1 to 2. The measurement
+is therefore over the (d, α) *plane*, not a line through one curve.
+
+### The result: a two-branch law
+
+The measured rate is the **larger of two competing mechanisms**, and neither is Young's:
+
+> **rate(α) = max( 2 r^{1+α} , 4 r² )**
+
+- **Incoherent branch** 2 r^{1+α} = 4^{1/2} r^{1+α}. The 4ⁿ per-segment contributions of the
+  Hölder form add with *independent signs*, giving the random-walk exponent β = ½ rather than
+  Young's β = 1.
+- **Geometric branch** 4 r² = 4¹ r^{1+1}. The curve's own second-order geometry contributes
+  coherently and does not care about α. It is exactly the rate the smooth control produces.
+
+The branches meet at α = 1 − d/2 (0.369 for the standard curve; the observed break is at
+0.35). Above the crossover the rate is **flat in α**: at d = 1.262 the measured rates at
+α = 0.40, 0.60, 0.80 are 0.4471, 0.4430, 0.4426 against a prediction of 4/9 = 0.4444.
+
+Verified across five dimensions × six exponents. The smooth control returns rate/prediction
+= 1.000 at *every* dimension; above the crossover the Hölder plateau agrees to 1–8%. Below it
+the incoherent branch is only approximate — β lands in 0.43–0.71 rather than exactly ½, so
+there is residual coherence the law does not capture, and the measured rate runs up to 40%
+above 2 r^{1+α}.
+
+### What follows: convergence below Young's threshold
+
+Replacing d by the measured βd turns Young's condition into α > βd − 1, so with β = ½ the
+threshold moves to **α > d/2 − 1**. Every Koch curve has d < 2, so that is negative: on this
+family the Riemann–Stieltjes sums converge for *every* positive Hölder exponent. The
+geometric branch cannot diverge either, since 4r² < 1 for all r < ½.
+
+At 9 of the 30 grid points Young's rate exceeds 1 while the measured rate does not — for
+instance at d = 1.631, α = 0.40: Young 1.2167, measured 0.6604.
+
+This does not contradict Young. His condition is *sufficient*; failing it does not prove
+divergence, the theorem simply goes silent. The claim is that the sums converge inside the
+region the classical criterion leaves open, and that they do so because of sign cancellation
+which an absolute-value estimate necessarily discards.
+
+### The measurement had to be rebuilt twice
+
+**A fitted decay rate cannot see this, and the first sweep was wrong.** Fitting
+|I_{n+1} − I_n| ~ C·rateⁿ gave a table with β ≈ 0.6 at small α that looked like a clean
+result. It was measuring the truncation. `truncation_stability` is the check: at α = 0.1 the
+fitted rate runs from 0.33 at 12 terms to 0.69 at 38, while at α = 0.5 and 0.75 it holds to
+ten percent.
+
+**And the trap is not escapable by tuning.** A Weierstrass truncation must be both resolved by
+the partition (K ≤ L log(1/r)/log b, since a mode faster than the segment length is aliased
+by the midpoint rule) and small in its tail (b^{−αK} ≤ tail). Multiplying the two, **log b
+cancels**:
+
+> α · L · log(1/r) ≥ log(1/tail)
+
+Raising the base buys nothing — it caps the truncation exactly as fast as it deepens each
+term. Only the level count helps, and L is capped by the 4ᴸ points of the curve. The honest
+floor is α ≥ 0.63 at L = 10, *far above* the threshold 0.26 one wants to probe, and the ratio
+α_floor/α_c = log(1/tail)/(L(log 4 − log(1/r))) falls only like 1/L. **A fixed Weierstrass
+form can never reach the sub-threshold regime.** `resolution_window` reports this and
+`measure_coherence` flags whether its own answer is admissible.
+
+The fix is `matched_weierstrass_form`: cut the spectrum exactly where the partition stops
+resolving it. Every retained mode is resolved, every discarded one would have been aliased,
+so any α becomes measurable. The price is that it is a *sequence* of forms, and it is the
+lacunary construction that **saturates** Young's bound — so it measures how bad a form can
+be, not how bad a typical one is. Results from it are labelled accordingly.
+
+**Then β itself turned out not to be an exponent.** The per-level β drifts monotonically
+downward — 0.813 → 0.572 over eight levels at α = 0.05, no flattening — so quoting it at any
+one level measures the level. What is scale-free is the growth of |Σ|/‖·‖₂: coherent addition
+doubles it every level, independent signs leave it flat. β = ½ + log(growth)/log 4 inverts
+that, and the smooth control pins the calibration exactly, returning growth = 1.9999 and
+β = 1.0000 with residual 5.6 × 10⁻⁵.
+
+### Referees
+
+- The per-segment terms must sum to I_fine − I_coarse exactly, or the child-to-parent
+  grouping is wrong and every coherence number is meaningless.
+- `sampled_alpha` recovers the Hölder exponent the contributions actually exhibit, from how
+  the mean term magnitude shrinks with level. It tracks the requested α to within 0.02 across
+  the whole plane — the aliasing referee.
+- `peakiness` = ℓ¹/(√count·ℓ²) stays near 0.84, so the terms are comparable in size and β is
+  a cancellation exponent rather than one term dominating.
+- The smooth control satisfies |Σ| = ℓ¹ *exactly*, to the last bit, over 262,144 segments:
+  every contribution carries the same sign. That is what coherent addition literally means,
+  and no fitted rate could produce it — the old estimator could only manage 1.005.
+
+```bash
+# The two-branch law across the (d, alpha) plane
+python -c "import fractal_stokes as f; print(f.phase_diagram([0.8, f.KOCH_ANGLE, 1.4], [0.2, 0.6, 0.9]))"
+```
+
 ## Tests
 
 ```bash
@@ -1153,7 +1277,8 @@ python -m pytest test_tetra_spectral.py -v      # tetrahedron packings
 python -m pytest test_amplituhedron.py -v       # amplituhedron tilings
 python -m pytest test_bootstrap.py -v           # conformal bootstrap
 python -m pytest test_arithmetic_que.py -v      # arithmetic QUE
-python -m pytest test_spinfoam.py -v           # spin networks
+python -m pytest test_spinfoam.py -v            # spin networks
+python -m pytest test_fractal_stokes.py -v      # fractal Stokes
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
