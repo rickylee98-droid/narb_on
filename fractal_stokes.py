@@ -174,6 +174,7 @@ __all__ = [
     "koch_dimension",
     "koch_curve",
     "koch_snowflake",
+    "curve_is_simple",
     "polygon_arclength",
     "polygon_signed_area",
     "max_resolvable_terms",
@@ -191,6 +192,8 @@ __all__ = [
     "RateMeasurement",
     "IncrementDecay",
     "measure_increments",
+    "ThresholdMeasurement",
+    "convergence_threshold",
     "young_rate",
     "predicted_rate",
     "predicted_crossover",
@@ -294,6 +297,37 @@ def koch_snowflake(level: int, angle: float = KOCH_ANGLE) -> FloatArray:
         pieces.append(shifted - shifted[0] + origin)
     closed = np.vstack([pieces[0][:-1], pieces[1][:-1], pieces[2]])
     return closed
+
+
+def curve_is_simple(angle: float = KOCH_ANGLE, *, level: int = 6) -> bool:
+    """Whether the generalised Koch curve at this apex angle is non-self-intersecting.
+
+    The bump grows taller relative to its base as the angle opens, and past a
+    critical angle just below ``1.4`` the construction folds back onto itself.
+    A self-overlapping curve is not a curve of box dimension ``log 4 / log(1/r)``
+    in the sense the argument needs -- the four pieces are no longer essentially
+    disjoint -- so results from such an angle must be discarded rather than read
+    as the high-dimension end of the family.
+
+    Tested by looking for vertex pairs that are close in space while far apart
+    along the curve; adjacent and next-adjacent pairs are excluded because they
+    are legitimately within a segment length of each other.
+    """
+    points = koch_curve(level, angle)
+    segment = koch_ratio(angle) ** level
+    order = np.argsort(points[:, 0], kind="stable")
+    limit = 0.5 * segment
+    index = np.arange(len(points))
+    for start in range(len(order)):
+        here = order[start]
+        for other in order[start + 1 : start + 64]:
+            if points[other, 0] - points[here, 0] > limit:
+                break
+            if abs(int(index[other]) - int(index[here])) <= 2:
+                continue
+            if float(np.hypot(*(points[other] - points[here]))) < limit:
+                return False
+    return True
 
 
 def polygon_arclength(points: FloatArray) -> float:
@@ -1063,6 +1097,124 @@ def measure_increments(
         per_phase=tuple(per_phase),
         n_phases=n_phases,
         seed=seed,
+    )
+
+
+@dataclass(frozen=True)
+class ThresholdMeasurement:
+    """Where the increment ratio reaches $1$, and the effective exponent it implies.
+
+    The low branch is fitted in ``log(rate)`` against ``alpha`` and extrapolated
+    to ``rate = 1``.  Solving ``4^beta r^{1+alpha} = 1`` at that point gives
+    ``beta = (1 + alpha_threshold) / d``, so a measured threshold is equivalent
+    to a measured effective dimension ``beta d`` -- which is what Young's
+    condition uses ``d`` for.
+    """
+
+    angle: float
+    dimension: float
+    alphas: tuple[float, ...]
+    tails: tuple[float, ...]
+    slope: float
+    threshold: float
+    threshold_error: float
+
+    @property
+    def young_threshold(self) -> float:
+        return self.dimension - 1.0
+
+    @property
+    def beta(self) -> float:
+        return (1.0 + self.threshold) / self.dimension
+
+    @property
+    def beta_error(self) -> float:
+        return self.threshold_error / self.dimension
+
+    @property
+    def below_young(self) -> bool:
+        """Whether the measured threshold is clear of the classical one."""
+        return self.threshold + 2.0 * self.threshold_error < self.young_threshold
+
+
+def convergence_threshold(
+    angle: float = KOCH_ANGLE,
+    *,
+    alphas: Sequence[float] | None = None,
+    levels: Sequence[int] = tuple(range(3, 11)),
+    base: float = 3.0,
+    n_phases: int = 16,
+    seed: int = 1,
+    resamples: int = 300,
+    margin: float = 1.08,
+) -> ThresholdMeasurement:
+    """Locate the edge of convergence by extrapolating the low branch.
+
+    Only exponents whose rate stands clear of the geometric floor ``4 r^2`` by
+    ``margin`` are used: on the floor the rate no longer depends on ``alpha``, so
+    those points carry no information about where the branch crosses $1$ and
+    including them would flatten the fit toward the floor.
+
+    The error bar comes from resampling phases, using the *same* phase indices at
+    every ``alpha`` so that the correlations between the points are preserved --
+    they share a phase sample, and treating them as independent would understate
+    the spread.
+    """
+    grid = tuple(alphas) if alphas is not None else (0.05, 0.15, 0.25, 0.35, 0.45)
+    if len(grid) < 2:
+        raise ValueError(f"need at least 2 exponents to fit a slope; got {len(grid)}")
+    floor = 4.0 * koch_ratio(angle) ** 2
+    measured = [
+        measure_increments(
+            alpha,
+            angle=angle,
+            levels=levels,
+            base=base,
+            n_phases=n_phases,
+            seed=seed,
+        )
+        for alpha in grid
+    ]
+    keep = [m for m in measured if m.tail_ratio > margin * floor]
+    if len(keep) < 2:
+        raise ValueError(
+            f"only {len(keep)} of {len(grid)} exponents stand clear of the "
+            f"geometric floor {floor:.4f} at angle {angle}; supply smaller alphas"
+        )
+
+    def fit(tables: Sequence[IncrementDecay], pick: NDArray | None) -> tuple[float, float]:
+        ratios = []
+        for item in tables:
+            if pick is None:
+                ratios.append(item.tail_ratio)
+            else:
+                table = np.asarray(item.per_phase, dtype=F64)
+                sample = np.sqrt(np.mean(np.square(table[:, pick]), axis=1))
+                ratios.append(_tail_ratio(tuple(float(v) for v in sample)))
+        x = np.array([item.alpha for item in tables], dtype=F64)
+        y = np.log(np.array(ratios, dtype=F64))
+        slope, intercept = np.polyfit(x, y, 1)
+        if slope >= 0.0:
+            raise ValueError(f"low branch is not decreasing in alpha (slope {slope})")
+        return float(slope), float(-intercept / slope)
+
+    slope, threshold = fit(keep, None)
+    rng = np.random.default_rng(seed + 7)
+    draws = []
+    for _ in range(resamples):
+        pick = rng.integers(0, n_phases, n_phases)
+        try:
+            draws.append(fit(keep, pick)[1])
+        except ValueError:
+            continue
+    return ThresholdMeasurement(
+        angle=angle,
+        dimension=koch_dimension(angle),
+        alphas=tuple(item.alpha for item in keep),
+        tails=tuple(item.tail_ratio for item in keep),
+        slope=slope,
+        threshold=threshold,
+        threshold_error=float(np.std(draws)) if len(draws) > 2 else float("nan"),
     )
 
 
