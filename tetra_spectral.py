@@ -58,6 +58,9 @@ __all__ = [
     "EigenspaceSymmetry",
     "eigenspace_symmetry",
     "graph_automorphisms",
+    "degree_eigenvalue_space",
+    "degree_eigenvalue_report",
+    "DegreeEigenvalueReport",
     "POISSON_RATIO",
     "GOE_RATIO",
 ]
@@ -1153,4 +1156,109 @@ def eigenspace_symmetry(
         group_order=order,
         characters=tuple(characters),
         norm=int(round(norm)),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Degree eigenvalues: where an unexplained multiplicity can come from
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class DegreeEigenvalueReport:
+    """Eigenvectors at ``lambda = d`` living on the degree-``d`` vertices."""
+
+    degree: int
+    n_vertices: int
+    n_degree_vertices: int
+    predicted: int
+    observed: int
+
+    @property
+    def explains_the_level(self) -> bool:
+        """Whether this mechanism accounts for the whole multiplicity."""
+        return self.predicted == self.observed
+
+
+def _rank_mod_prime(rows: list[list[int]], prime: int) -> int:
+    """Rank of an integer matrix over ``GF(prime)``, by Gaussian elimination."""
+    matrix = [[value % prime for value in row] for row in rows]
+    height = len(matrix)
+    width = len(matrix[0]) if height else 0
+    rank = 0
+    for column in range(width):
+        pivot = next((r for r in range(rank, height) if matrix[r][column]), None)
+        if pivot is None:
+            continue
+        matrix[rank], matrix[pivot] = matrix[pivot], matrix[rank]
+        inverse = pow(matrix[rank][column], prime - 2, prime)
+        matrix[rank] = [(value * inverse) % prime for value in matrix[rank]]
+        for r in range(height):
+            if r != rank and matrix[r][column]:
+                factor = matrix[r][column]
+                pivot_row = matrix[rank]
+                matrix[r] = [
+                    (a - factor * b) % prime for a, b in zip(matrix[r], pivot_row)
+                ]
+        rank += 1
+        if rank == height:
+            break
+    return rank
+
+
+#: Two large primes for the modular rank certificate.  Rank over GF(p) never
+#: exceeds the rational rank, and falls below it only when p divides a relevant
+#: minor, so agreement across two unrelated large primes is a strong certificate
+#: that both equal the rational rank.
+_RANK_PRIMES = (2147483647, 2147483629)
+
+
+def degree_eigenvalue_space(graph: nx.Graph, degree: int) -> int:
+    """Dimension of the ``lambda = degree`` eigenvectors supported on degree-``d`` vertices.
+
+    A vector ``v`` vanishing off the set ``S`` of degree-``d`` vertices satisfies
+    ``L v = d v`` exactly when
+
+        sum over w in N(u) intersect S of v_w  =  0     for **every** vertex u,
+
+    inside ``S`` and outside it alike.  Checking the condition only at vertices
+    outside ``S`` is the tempting error and gives a badly wrong count -- on the
+    ``A(8,1,4)`` flip graph it predicts 25 where the true answer is 6.
+
+    So the dimension is ``|S| - rank(M)``, where ``M`` is the ``|V| x |S|``
+    incidence matrix between all vertices and ``S``.  The rank is computed
+    modulo two large primes rather than in floating point, because the whole
+    content of the answer *is* a rank deficiency, and a numerical rank would
+    have to pick a threshold to detect one.
+
+    This construction always *produces* eigenvectors, so it is a lower bound on
+    the multiplicity.  Whether it produces them all is a separate question, and
+    :func:`degree_eigenvalue_report` answers it by measuring rather than assuming.
+    """
+    nodes = sorted(graph)
+    selected = [v for v in nodes if graph.degree(v) == degree]
+    if not selected:
+        return 0
+    incidence = [[1 if graph.has_edge(u, s) else 0 for s in selected] for u in nodes]
+    ranks = {_rank_mod_prime(incidence, prime) for prime in _RANK_PRIMES}
+    if len(ranks) != 1:
+        raise ValueError(
+            f"modular ranks disagree across primes ({sorted(ranks)}); "
+            "at least one prime divides a relevant minor"
+        )
+    return len(selected) - ranks.pop()
+
+
+def degree_eigenvalue_report(graph: nx.Graph, degree: int) -> DegreeEigenvalueReport:
+    """Compare the constructed degree-eigenvector space against the true multiplicity."""
+    nodes = sorted(graph)
+    laplacian = np.asarray(
+        nx.laplacian_matrix(graph, nodelist=nodes).todense(), dtype=F64
+    )
+    values = np.linalg.eigvalsh(laplacian)
+    observed = int(np.sum(np.abs(values - degree) < 1e-8))
+    return DegreeEigenvalueReport(
+        degree=degree,
+        n_vertices=len(nodes),
+        n_degree_vertices=sum(1 for v in nodes if graph.degree(v) == degree),
+        predicted=degree_eigenvalue_space(graph, degree),
+        observed=observed,
     )

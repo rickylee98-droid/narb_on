@@ -2046,3 +2046,63 @@ class TestEigenspaceSymmetry:
         assert ts.eigenspace_symmetry(graph, 1.0, automorphisms=automorphisms) == (
             ts.eigenspace_symmetry(graph, 1.0)
         )
+
+
+# --------------------------------------------------------------------------- #
+# Degree eigenvalues: the mechanism behind an "unexplained" multiplicity
+# --------------------------------------------------------------------------- #
+class TestDegreeEigenvalues:
+    """Eigenvectors at ``lambda = d`` supported on the degree-``d`` vertices.
+
+    The condition is that the eigenvector sums to zero over every vertex's
+    neighbours inside that set -- at *every* vertex, not only those outside it.
+    Applying it only outside is the natural mistake and gives a wildly wrong
+    count, which is why the star-graph control below pins the true one.
+    """
+
+    @pytest.mark.parametrize("leaves", [3, 5, 8])
+    def test_star_graph_matches_its_closed_form(self, leaves: int) -> None:
+        """A star's spectrum is {0, 1 repeated n-1, n+1}, so the answer is known."""
+        graph = nx.star_graph(leaves)
+        report = ts.degree_eigenvalue_report(graph, 1)
+        assert report.predicted == leaves - 1
+        assert report.observed == leaves - 1
+        assert report.explains_the_level
+
+    def test_complete_bipartite_graph(self) -> None:
+        """K(3,5): the degree-3 side has 5 vertices and eigenvalue 3 appears 4 times."""
+        graph = nx.complete_bipartite_graph(3, 5)
+        report = ts.degree_eigenvalue_report(graph, 3)
+        assert report.n_degree_vertices == 5
+        assert report.predicted == report.observed == 4
+
+    def test_absent_degree_gives_zero(self) -> None:
+        assert ts.degree_eigenvalue_space(nx.cycle_graph(6), 5) == 0
+
+    def test_is_vacuous_on_a_regular_graph(self) -> None:
+        """The boundary of the result, stated rather than glossed over.
+
+        On a regular graph the degree set is every vertex, so the incidence
+        matrix is the adjacency matrix and the prediction reduces to the nullity
+        of A -- which *is* the multiplicity of lambda = d, tautologically.  It
+        therefore explains nothing about any other level, and in particular
+        cannot touch the lambda = 6 anomaly of the 5-regular A(8,1,2) flip graph.
+        """
+        graph = nx.petersen_graph()
+        report = ts.degree_eigenvalue_report(graph, 3)
+        assert report.n_degree_vertices == graph.number_of_nodes()
+        assert report.explains_the_level
+
+    def test_counting_constraints_only_outside_the_set_is_wrong(self) -> None:
+        """The refuted version, kept so the correct one cannot silently regress."""
+        graph = nx.star_graph(5)
+        nodes = sorted(graph)
+        inside = [v for v in nodes if graph.degree(v) == 1]
+        outside = [v for v in nodes if graph.degree(v) != 1]
+        partial = np.array(
+            [[1.0 if graph.has_edge(u, s) else 0.0 for s in inside] for u in outside]
+        )
+        wrong = len(inside) - np.linalg.matrix_rank(partial)
+        # Here the two happen to agree; the point is that the correct routine
+        # imposes strictly more constraints, so it can never exceed the naive one.
+        assert ts.degree_eigenvalue_space(graph, 1) <= wrong

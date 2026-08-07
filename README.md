@@ -734,7 +734,8 @@ and 2 — so they were checked from the **characteristic polynomial**, not from 
 | `A(8,1,4)` | **3** | **6** | exact integer |
 
 These are real, not artefacts — and they are *not* explained by the symmetry group, since
-`2n = 16` has no 6- or 8-dimensional irrep. The next section pins that down exactly.
+`2n = 16` has no 6- or 8-dimensional irrep. The next section pins that down exactly, and the
+one after it **solves the `m = 4` case**.
 
 ### Forced degeneracy versus accidental coincidence
 
@@ -789,10 +790,45 @@ force λ = 3, so that vector is explained. The remaining multiplicity is not.
 `A(8,1,2)` shows the opposite behaviour: its `λ = 6` eigenvectors are **delocalised**, spread
 over at least 104 of the 132 tilings. Whatever produces multiplicity 8 there is global.
 
-**Bottom line: these degeneracies are real, exact, and unexplained.** They are not symmetry
-fingerprints, which is the claim worth being careful about — the `O_h` and `C₃` results
-earlier in this project *are* forced degeneracies, and conflating the two would be the
-easiest way to overstate what any of this shows.
+### Solved: λ = 3 in `A(8,1,4)` is a degree eigenvalue
+
+The clue was the localisation. The eigenspace lives on exactly the **24 degree-3 vertices**,
+and `λ = 3` **is** their degree. That turns out to be the whole mechanism.
+
+Let `S` be the set of degree-`d` vertices. A vector `v` vanishing off `S` satisfies `Lv = dv`
+exactly when
+
+> `Σ_{w ∈ N(u) ∩ S} v_w = 0` for **every** vertex `u` — inside `S` and outside it alike.
+
+So the multiplicity is `|S| − rank(M)`, with `M` the `|V| × |S|` incidence matrix. My earlier
+refuted attempt imposed the condition only at vertices *outside* `S`, which predicts **25**
+where the answer is **6** — the error that made this look unexplainable.
+
+| configuration | `\|S\|` | predicted | observed | |
+| --- | --- | --- | --- | --- |
+| `A(8,1,4)`, d=3 | 32 | **6** | **6** | ✅ |
+| `A(8,1,4)`, d=4 | 8 | **1** | **1** | ✅ (a level I had not even looked at) |
+| `A(7,1,4)`, d=2 | 7 | 0 | 0 | ✅ |
+| `A(9,1,4)`, all degrees | — | 0 | 0 | ✅ |
+
+The zeros matter as much as the hits: a mechanism that merely reproduced whatever
+multiplicity was present would be worthless. And this is **containment, not just matching
+dimensions** — the observed eigenvectors vanish identically off `S`, checked exactly, so the
+constructed space *is* the eigenspace.
+
+The rank is taken modulo two large primes rather than numerically, because the entire content
+of the answer is a rank deficiency and a floating-point rank would need a threshold to see one.
+
+### Still open: λ = 6 in `A(8,1,2)`
+
+The same mechanism cannot touch it, and the reason is clean: `A(8,1,2)` is **5-regular**, so
+`S` is every vertex, `M` is the adjacency matrix, and the prediction collapses to the nullity
+of `A` — i.e. tautologically the multiplicity of `λ = 5`. The anomaly sits at `λ = 6`, one
+above the degree, where nothing here applies. It is also **sporadic**: across `n = 6,7,8,9`
+at `m = 2` the integer levels are `{0,1,3,4}`, `{0}`, `{0,6}`, `{0}` — no pattern.
+
+So one of the two is solved and one is not, and the boundary between them is a stated
+property rather than a gap.
 
 ```bash
 # Calibration: must reproduce Catalan

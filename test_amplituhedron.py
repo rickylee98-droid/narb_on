@@ -11,6 +11,7 @@ import itertools
 from fractions import Fraction
 
 import networkx as nx
+import numpy as np
 import pytest
 import sympy
 
@@ -588,3 +589,82 @@ class TestDegeneraciesAreAccidental:
             neighbours = {v: set(graph[v]) for v in graph}
             for u, v in itertools.combinations(graph, 2):
                 assert neighbours[u] - {v} != neighbours[v] - {u}
+
+
+@pytest.fixture(scope="module")
+def m4_flip_graph():
+    vertices = amp.cyclic_polytope(8, 4)
+    volume = amp.polytope_normalised_volume(vertices, amp.gale_facets(8, 4))
+    return amp.flip_graph(vertices, amp.enumerate_tilings(vertices, volume).tilings)
+
+
+class TestDegeneracyExplained:
+    """The lambda = 3 multiplicity of A(8,1,4), which was open until now."""
+
+    @pytest.mark.parametrize("degree, multiplicity", [(3, 6), (4, 1)])
+    def test_degree_eigenvector_mechanism_accounts_for_it(
+        self, m4_flip_graph, degree: int, multiplicity: int
+    ) -> None:
+        """Exactly, not approximately: predicted equals observed."""
+        import tetra_spectral as ts
+
+        report = ts.degree_eigenvalue_report(m4_flip_graph, degree)
+        assert report.predicted == report.observed == multiplicity
+        assert report.explains_the_level
+
+    def test_the_eigenspace_really_lives_on_the_degree_three_vertices(self, m4_flip_graph) -> None:
+        """Containment, not just matching dimensions.
+
+        Equal dimension alone would leave open that the constructed space is a
+        different subspace of the same size; this checks the observed eigenvectors
+        vanish identically off the degree-3 set.
+        """
+        nodes = sorted(m4_flip_graph)
+        laplacian = sympy.Matrix(
+            nx.laplacian_matrix(m4_flip_graph, nodelist=nodes).todense().astype(int).tolist()
+        )
+        basis = sympy.Matrix.hstack(
+            *(laplacian - 3 * sympy.eye(len(nodes))).nullspace()
+        ).T
+        outside = {i for i, v in enumerate(nodes) if m4_flip_graph.degree(v) != 3}
+        assert basis.rows == 6
+        for row in range(basis.rows):
+            for column in outside:
+                assert basis[row, column] == 0
+
+    def test_the_mechanism_correctly_predicts_zero_elsewhere(self) -> None:
+        """The control that stops this being a vacuous fit.
+
+        If it only ever reproduced whatever multiplicity was present it would be
+        worthless.  On C(7,4) and C(9,4) it predicts no degree eigenvalues at all,
+        and there are none.
+        """
+        import tetra_spectral as ts
+
+        for n in (7, 9):
+            vertices = amp.cyclic_polytope(n, 4)
+            volume = amp.polytope_normalised_volume(vertices, amp.gale_facets(n, 4))
+            graph = amp.flip_graph(
+                vertices, amp.enumerate_tilings(vertices, volume).tilings
+            )
+            for degree in sorted({d for _, d in graph.degree()}):
+                report = ts.degree_eigenvalue_report(graph, degree)
+                assert report.predicted == report.observed == 0
+
+    def test_the_m2_anomaly_is_not_explained_by_this(self) -> None:
+        """Honest boundary: A(8,1,2) is 5-regular, so the mechanism is vacuous there.
+
+        Its anomaly sits at lambda = 6, one above the degree, and nothing here
+        touches it. That level remains open.
+        """
+        import tetra_spectral as ts
+
+        vertices = amp.cyclic_polytope(8, 2)
+        graph = amp.flip_graph(vertices, amp.enumerate_tilings(vertices).tilings)
+        assert {d for _, d in graph.degree()} == {5}
+        laplacian = np.asarray(
+            nx.laplacian_matrix(graph, nodelist=sorted(graph)).todense(), dtype=float
+        )
+        values = np.linalg.eigvalsh(laplacian)
+        assert int(np.sum(np.abs(values - 6.0) < 1e-8)) == 8
+        assert ts.degree_eigenvalue_report(graph, 5).explains_the_level
