@@ -191,6 +191,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `test_spinfoam.py` | Spin-foam test suite (45 tests) |
 | `fractal_stokes.py` | Hölder forms on Koch curves: resolution window, coherence exponent, (d, α) sweep |
 | `test_fractal_stokes.py` | Fractal Stokes test suite (174 tests) |
+| `selberg.py` | Ihara zeta, prime geodesics, graph trace formula, RH analogue |
+| `test_selberg.py` | Selberg test suite (109 tests) |
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 | `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
 
@@ -1323,6 +1325,110 @@ python -c "import fractal_stokes as f; m=f.measure_increments(0.65); print(m.rat
 python -c "import fractal_stokes as f; print(f.phase_diagram([0.8, f.KOCH_ANGLE, 1.4], [0.2, 0.6, 0.9]))"
 ```
 
+## A seventh target: the Selberg trace formula on graphs
+
+`selberg.py` — the Ihara zeta function, prime geodesics, and the Riemann hypothesis
+analogue, in exact integer arithmetic.
+
+### The object
+
+For a hyperbolic surface, Selberg's trace formula couples the Laplacian spectrum to the
+lengths of closed geodesics. A finite graph has an exact analogue in which every term is a
+finite integer computable two independent ways — which is the only reason to do this
+numerically. The geodesics are non-backtracking tailless closed walks, counted by the
+Hashimoto edge operator on the 2|E| directed edges:
+
+> B[(u,v),(v,w)] = 1 iff w ≠ u, and N_m = tr(Bᵐ), with ζ(u) = 1/det(I − uB)
+
+Bass's theorem re-expresses that 2|E| × 2|E| determinant through the |V| × |V| adjacency
+matrix: det(I − uB) = (1−u²)^(r−1) det(I − Au + qu²I) for a (q+1)-regular graph.
+
+### Everything is refereed, nothing is asserted
+
+Since arXiv is unreachable from this sandbox (see below), no formula here is taken on
+authority. Each is computed along two routes sharing no code:
+
+- **tr(Bᵐ) vs brute-force enumeration** of closed non-backtracking tailless walks — exact
+  integers, four graphs, lengths 3–8. The wrap-around condition is what makes a walk
+  *tailless*, and a naive path enumeration misses it.
+- **Bass's determinant vs det(I − uB)** — exact integer polynomials, coefficient by
+  coefficient, on six graphs including the 144×144 edge operator of the 24-cell against its
+  24×24 adjacency matrix.
+- **Euler product ∏(1 − u^len)^(−π) vs the ζ power series** — formal power series identity.
+- **Spectral side vs geodesic side** of the trace formula.
+- **1/ζ(K₄) against its classical closed form** (1−u²)²(1−u)(1−2u)(1+u+2u²)³ — an anchor
+  outside the module's own machinery.
+
+Independent combinatorial anchors: π(girth) = 2 × (number of shortest cycles), one per
+orientation. K₄ gives 8 = 2×4 triangles, Petersen 24 = 2×12 pentagons, Heawood 56 = 2×28
+hexagons, K₃,₃ 18 = 2×9 squares. All hold.
+
+### The result: the RH analogue, quantitatively
+
+Substituting u = q^(−s) turns ζ's pole structure into a critical-line statement. A
+(q+1)-regular graph satisfies it exactly when it is **Ramanujan** — every non-trivial
+adjacency eigenvalue obeying |λ| ≤ 2√q. Each λ gives poles at the roots of x² − λx + q, which
+have modulus exactly √q when the Ramanujan bound holds and split into a real pair exceeding
+it when it fails.
+
+The sharp consequence is about the graph prime number theorem π(m) ~ qᵐ/m. Normalising the
+error,
+
+> R(m) = |π(m) − main(m)| · m / q^(m/2)
+
+R is **bounded** iff the graph is Ramanujan, and otherwise grows at rate |α_max|/√q. The
+prediction has no free parameter: the growth comes from diagonalising the adjacency matrix,
+the error from counting closed walks.
+
+| graph | Ramanujan | measured growth | predicted |
+| --- | --- | --- | --- |
+| Petersen | yes | 1.0025 | 1.0000 |
+| Heawood | yes | 0.9868 | 1.0000 |
+| K₅ | yes | 1.0119 | 1.0000 |
+| Pappus | yes | 0.9845 | 1.0000 |
+| 24-cell / 2T Cayley | yes | 0.9521 | 1.0000 |
+| Circular ladder 20 | **no** | 1.2241 | 1.2558 |
+| Circulant C₂₀(1,2) | **no** | 1.1761 | 1.1968 |
+| Circular ladder 30 | **no** | 1.3045 | 1.3493 |
+| Circulant C₂₄(1,2) | **no** | 1.4233 | 1.4022 |
+
+Every case agrees within 0.08, and the two classes separate cleanly.
+
+### Two instrument failures, one of them a real bug
+
+**A fitted error exponent does not work, for the third time in this project.** The error is a
+sum of terms αᵐ with |α| = √q, so it *oscillates* and passes near zero at some lengths.
+Regressing log|error| on m gave residuals of 0.8–1.0 — factor-of-three scatter — and missed
+the predicted exponent at every graph tested, including ones where the prediction is exact by
+construction. Boundedness of R(m) is the right test; a slope is not. `prime_geodesic_fit` is
+retained only so the failure stays visible, with a test asserting its residual is bad.
+
+**The 24-cell Cayley graph was disconnected, and it took four digits to notice.** The obvious
+generating set {±i, ±j, ±k} generates the quaternion group of order 8, not the binary
+tetrahedral group of order 24 — no product of i, j, k has order 3. The resulting graph looks
+entirely healthy: 6-regular on 24 vertices, passes the Ramanujan test. But the prime geodesic
+theorem's main term is *per component*, so with three components it counts 3qᵐ/m and the
+missing two copies masquerade as an error growing like √q per step. Measured growth 2.2372
+against √5 = 2.2360 — the four-digit match is what identified the cause. Fixed by generating
+with ω = (−1+i+j+k)/2, which has order 3, and by verifying the generated subgroup rather than
+assuming it. `riemann_hypothesis_test` now refuses a disconnected graph outright.
+
+The 24 units are the vertices of the 24-cell and form the binary tetrahedral group, the
+double cover of the tetrahedron's rotation group — which is where this meets the packing
+problem the project started from.
+
+### A note on literature access
+
+This sandbox's egress policy blocks `arxiv.org`, `mathweb.ucsd.edu`, `its.caltech.edu` and
+`en.wikipedia.org`; web search works but full-text fetch does not. Nothing in this module
+depends on that, because every identity is verified in code against an independent
+computation — but the standard references (Ihara, Bass, Hashimoto, Terras) could not be read
+directly, and the module is written so that no claim rests on a recollected formula.
+
+```bash
+python -c "import networkx as nx, selberg as sb; print(sb.riemann_hypothesis_test(nx.petersen_graph()).growth)"
+```
+
 ## Tests
 
 ```bash
@@ -1332,6 +1438,7 @@ python -m pytest test_bootstrap.py -v           # conformal bootstrap
 python -m pytest test_arithmetic_que.py -v      # arithmetic QUE
 python -m pytest test_spinfoam.py -v            # spin networks
 python -m pytest test_fractal_stokes.py -v      # fractal Stokes
+python -m pytest test_selberg.py -v             # graph Selberg trace formula
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
