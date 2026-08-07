@@ -190,7 +190,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `spinfoam.py` | Exact Wigner 3j/6j, tetrahedron geometry, Ponzano-Regge limit |
 | `test_spinfoam.py` | Spin-foam test suite (45 tests) |
 | `fractal_stokes.py` | Hölder forms on Koch curves: resolution window, coherence exponent, (d, α) sweep |
-| `test_fractal_stokes.py` | Fractal Stokes test suite (161 tests) |
+| `test_fractal_stokes.py` | Fractal Stokes test suite (174 tests) |
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 | `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
 
@@ -1180,42 +1180,73 @@ Replacing each segment by a symmetric bump with apex angle θ forces 2r + 2r cos
 r = 1/(2 + 2cos θ) and d = log 4 / log(1/r) sweeps continuously from 1 to 2. The measurement
 is therefore over the (d, α) *plane*, not a line through one curve.
 
-### The result: a two-branch law
+### The result: two regimes, and a threshold an order of magnitude below Young's
 
-The measured rate is the **larger of two competing mechanisms**, and neither is Young's:
+The primary instrument is `measure_increments`: the RMS refinement increment per level,
+averaged in quadrature over independent phases, with a bootstrap interval on the tail ratio.
+No model of the decay is assumed. For the standard curve (d = 1.262, α_c = 0.262):
 
-> **rate(α) = max( 2 r^{1+α} , 4 r² )**
+| α | 0.02 | 0.05 | 0.15 | 0.262 = α_c | 0.35 | 0.45 | 0.55 | 0.65 | 0.95 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tail ratio | 0.985 | 0.934 | 0.804 | 0.669 | 0.578 | 0.497 | 0.453 | 0.4445 | 0.4438 |
 
-- **Incoherent branch** 2 r^{1+α} = 4^{1/2} r^{1+α}. The 4ⁿ per-segment contributions of the
-  Hölder form add with *independent signs*, giving the random-walk exponent β = ½ rather than
-  Young's β = 1.
-- **Geometric branch** 4 r² = 4¹ r^{1+1}. The curve's own second-order geometry contributes
-  coherently and does not care about α. It is exactly the rate the smooth control produces.
+**Above α ≈ 0.52 the rate is 4r² = 0.4444 exactly and does not depend on α at all.** At
+α = 0.95 the successive ratios are 0.445, 0.444, 0.445, 0.443, 0.444, 0.445, 0.443 across
+seven refinements; the smooth control gives 0.444 to four places at every level. The curve's
+own second-order geometry sets the rate, and the form's regularity stops mattering once it is
+smooth enough. This half is exact and it is the solid result.
 
-The branches meet at α = 1 − d/2 (0.369 for the standard curve; the observed break is at
-0.35). Above the crossover the rate is **flat in α**: at d = 1.262 the measured rates at
-α = 0.40, 0.60, 0.80 are 0.4471, 0.4430, 0.4426 against a prediction of 4/9 = 0.4444.
+**Below that, the rate rises smoothly toward 1 with no feature whatsoever at α_c.** The low
+branch fits ln(rate) = 0.017 − 1.607 α, which reaches 1 at α ≈ 0.011 — but that is an
+extrapolation through points that are themselves marginal, so the honest statement is
 
-Verified across five dimensions × six exponents. The smooth control returns rate/prediction
-= 1.000 at *every* dimension; above the crossover the Hölder plateau agrees to 1–8%. Below it
-the incoherent branch is only approximate — β lands in 0.43–0.71 rather than exactly ½, so
-there is residual coherence the law does not capture, and the measured rate runs up to 40%
-above 2 r^{1+α}.
+> the edge of convergence lies **below α ≈ 0.05, consistent with zero**, against Young's 0.262
 
-### What follows: convergence below Young's threshold
+At α = 0.02 the tail ratio is 0.985 with interval [0.909, 1.060], straddling 1. At α = 0.05
+the answer depends on the sampling — 0.934 [0.874, 0.994] at eight levels and 32 phases,
+1.024 at seven levels and 12 phases — so that point is **not resolved** by the accessible
+level range, and the table entry should be read as "≈ 1". By α = 0.15, still well under
+Young's threshold, the ratio is 0.804 [0.749, 0.858] with the whole interval clear of 1. And
+at α_c itself the ratio is 0.669 [0.620, 0.714]: comfortably convergent, no kink, nothing
+happening.
 
-Replacing d by the measured βd turns Young's condition into α > βd − 1, so with β = ½ the
-threshold moves to **α > d/2 − 1**. Every Koch curve has d < 2, so that is negative: on this
-family the Riemann–Stieltjes sums converge for *every* positive Hölder exponent. The
-geometric branch cannot diverge either, since 4r² < 1 for all r < ½.
+So the sums do converge well inside the region Young's condition leaves open. That does not
+contradict Young — his condition is *sufficient*, so failing it proves nothing, and the
+theorem simply goes silent there. The mechanism is sign cancellation that an absolute-value
+estimate necessarily discards.
 
-At 9 of the 30 grid points Young's rate exceeds 1 while the measured rate does not — for
-instance at d = 1.631, α = 0.40: Young 1.2167, measured 0.6604.
+### The threshold across dimension: Young's law with d → βd, β ≈ ¾
 
-This does not contradict Young. His condition is *sufficient*; failing it does not prove
-divergence, the theorem simply goes silent. The claim is that the sums converge inside the
-region the classical criterion leaves open, and that they do so because of sign cancellation
-which an absolute-value estimate necessarily discards.
+The apex angle makes this testable rather than a story about one curve. Extrapolating each
+low branch to rate = 1:
+
+| d | Young α_c = d − 1 | measured threshold | 4r² (geometric floor) | implied β = (1+α_thr)/d |
+| --- | --- | --- | --- | --- |
+| 1.135 | 0.135 | −0.178 → converges for every α > 0 | 0.3474 | 0.724 |
+| 1.262 | 0.262 | ≲ 0.05, consistent with 0 | 0.4444 | ≈ 0.80 |
+| 1.631 | 0.631 | **+0.156** | 0.7306 | 0.709 |
+
+At d = 1.631, α = 0.05 the tail ratio is 1.0856 with interval [1.028, 1.168] — entirely above
+1, so that is genuine non-convergence, not a marginal case. There *is* a phase boundary; it
+simply is not where Young's condition puts it.
+
+Setting 4^β r^(1+α) = 1 gives β = (1 + α_thr)/d, and the three dimensions return 0.724, ≈0.80,
+0.709. So the convergence condition is Young's with the box dimension replaced by an effective
+one:
+
+> **α > βd − 1 with β ≈ 0.75 ± 0.05**
+
+β = 1 would recover Young exactly; β = ½ is the random-walk value. It is neither. Independent
+signs are rejected at 15σ by a 48-phase measurement, and the low branch is not even of the
+form 4^β r^(1+α) for constant β — its slope in α is −1.607 at d = 1.262 where that law forces
+−1.099, and −1.444 vs −1.222 at d = 1.135. The implied β drifts from 0.80 at α = 0.02 to 0.65
+at α = 0.45 before the geometric branch takes over.
+
+The geometric floor is confirmed at every dimension: at d = 1.135, α = 0.90 the tail ratio is
+0.3471 [0.345, 0.349] against 4r² = 0.3474. The crossover into it is at α ≈ 0.52 for the
+standard curve, observed between 0.45 (0.497, still above the floor) and 0.55 (0.4525,
+essentially on it) — higher than the 1 − d/2 = 0.369 that `predicted_crossover` returns, since
+that formula inherits the refuted random-walk assumption for the branch below.
 
 ### The measurement had to be rebuilt twice
 
@@ -1252,6 +1283,23 @@ doubles it every level, independent signs leave it flat. β = ½ + log(growth)/l
 that, and the smooth control pins the calibration exactly, returning growth = 1.9999 and
 β = 1.0000 with residual 5.6 × 10⁻⁵.
 
+**And a regression cannot notice that its own model is wrong.** `decay_rate` returns
+exp(slope) of a log-linear fit, which is meaningful only if the sequence *is* geometric.
+Below the crossover it is not: the fit reported convergence with rate 0.75 while the
+increments were flattening out. `RateMeasurement` now carries a `tail_rate` and a `geometric`
+flag, and `converges` tests the tail rather than the whole-sequence slope. The first published
+version of this section drew the wrong exponent (β = ½) from that fit, and a subsequent
+12-phase run then over-corrected in the other direction — reading a genuine marginal case at
+α = 0.05 as a plateau, because RMS over 12 phases has 20% scatter per level. Neither is
+right; the bootstrap interval on the tail ratio is what settles it, and it is now what
+`converges` uses.
+
+**Base 3, not base 2.** With base 2 the matched truncation grows by one or two modes per level
+depending on the level (K = 6, 7, 9, 11, 12, 14, 15), injecting a systematic wobble into any
+cross-level fit — visible as a reproducible dip at level six at every α. Base 3 gives K = L
+exactly for the standard curve, one new mode per level, matching the curve's own lacunarity.
+The χ²/dof of the coherence fit drops from 16.7 to 0.04 above the crossover.
+
 ### Referees
 
 - The per-segment terms must sum to I_fine − I_coarse exactly, or the child-to-parent
@@ -1264,9 +1312,14 @@ that, and the smooth control pins the calibration exactly, returning growth = 1.
 - The smooth control satisfies |Σ| = ℓ¹ *exactly*, to the last bit, over 262,144 segments:
   every contribution carries the same sign. That is what coherent addition literally means,
   and no fitted rate could produce it — the old estimator could only manage 1.005.
+- The partial sums themselves, as the last word on convergence. At α = 0.95 they spread by
+  5.6 × 10⁻⁵ over the final four levels; at α = 0.05, by 9.9 × 10⁻² — of order the value.
 
 ```bash
-# The two-branch law across the (d, alpha) plane
+# Model-free: RMS increments per level with a bootstrap interval on the tail
+python -c "import fractal_stokes as f; m=f.measure_increments(0.65); print(m.ratios, m.tail_interval())"
+
+# Coherence exponents across the (d, alpha) plane
 python -c "import fractal_stokes as f; print(f.phase_diagram([0.8, f.KOCH_ANGLE, 1.4], [0.2, 0.6, 0.9]))"
 ```
 

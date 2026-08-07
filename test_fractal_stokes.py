@@ -251,7 +251,11 @@ class TestDecayRate:
     def test_recovers_a_planted_geometric_rate(self) -> None:
         rate = 0.37
         values = np.cumsum([0.0] + [rate**n for n in range(12)])
-        assert fs.decay_rate(values).rate == pytest.approx(rate, rel=1e-9)
+        measured = fs.decay_rate(values)
+        assert measured.rate == pytest.approx(rate, rel=1e-9)
+        assert measured.tail_rate == pytest.approx(rate, rel=1e-9)
+        assert measured.geometric
+        assert measured.converges
 
     def test_survives_oscillating_signs(self) -> None:
         """Consecutive ratios cannot do this; regression on the whole sequence can."""
@@ -260,9 +264,99 @@ class TestDecayRate:
         values = np.cumsum([0.0] + increments)
         assert fs.decay_rate(values).rate == pytest.approx(rate, rel=1e-9)
 
+    def test_a_plateau_is_not_convergence(self) -> None:
+        """The failure that inverted an earlier conclusion.
+
+        A sequence that decays for a while and then flattens still yields a
+        negative log-linear slope, so the whole-sequence rate comes out below $1$
+        and reads as convergence.  Only the tail distinguishes the two.
+        """
+        increments = [0.5**n for n in range(6)] + [0.5**5] * 6
+        values = np.cumsum([0.0] + increments)
+        measured = fs.decay_rate(values)
+        assert measured.rate < 1.0
+        assert measured.tail_rate == pytest.approx(1.0, abs=1e-9)
+        assert not measured.converges
+        assert not measured.geometric
+
     def test_rejects_a_sequence_that_is_too_short(self) -> None:
         with pytest.raises(ValueError, match="noise floor"):
             fs.decay_rate([0.0, 1.0, 1.5])
+
+
+class TestIncrementDecay:
+    """The model-free instrument, which is the one the conclusions rest on."""
+
+    def test_the_smooth_control_sits_on_four_r_squared(self) -> None:
+        for angle in (0.8, fs.KOCH_ANGLE, 1.4):
+            measured = fs.measure_increments(
+                1.0, angle=angle, levels=tuple(range(3, 9)), n_phases=2, lipschitz=True
+            )
+            floor = 4.0 * fs.koch_ratio(angle) ** 2
+            for ratio in measured.ratios:
+                assert ratio == pytest.approx(floor, rel=1e-3)
+            assert measured.converges
+            assert not measured.plateaus
+
+    def test_a_smooth_holder_form_reaches_the_same_floor(self) -> None:
+        """Above the crossover the rate stops depending on the exponent entirely."""
+        measured = fs.measure_increments(
+            0.95, levels=tuple(range(3, 10)), n_phases=8
+        )
+        assert measured.tail_ratio == pytest.approx(4.0 / 9.0, rel=0.02)
+        assert measured.converges
+
+    def test_the_rate_rises_monotonically_as_the_form_roughens(self) -> None:
+        tails = [
+            fs.measure_increments(a, levels=tuple(range(3, 9)), n_phases=8).tail_ratio
+            for a in (0.9, 0.6, 0.35, 0.15)
+        ]
+        assert tails == sorted(tails)
+
+    def test_nothing_happens_at_youngs_threshold(self) -> None:
+        """The classical threshold leaves no signature in the measured rate.
+
+        At ``alpha_c`` the increments are still decaying at roughly two thirds
+        per level, far from the flattening that a genuine edge of convergence
+        produces, and the neighbouring exponents show no kink around it.
+        """
+        alpha_c = fs.koch_dimension() - 1.0
+        measured = fs.measure_increments(
+            alpha_c, levels=tuple(range(3, 10)), n_phases=12
+        )
+        assert measured.tail_ratio < 0.8
+        assert measured.converges
+        assert not measured.plateaus
+
+    def test_the_bootstrap_interval_brackets_the_point_estimate(self) -> None:
+        measured = fs.measure_increments(0.5, levels=tuple(range(3, 9)), n_phases=8)
+        low, high = measured.tail_interval(resamples=200)
+        assert low <= measured.tail_ratio <= high
+        assert low > 0.0
+
+    def test_a_flat_sequence_is_reported_as_a_plateau(self) -> None:
+        flat = fs.IncrementDecay(
+            alpha=0.05,
+            dimension=fs.koch_dimension(),
+            angle=fs.KOCH_ANGLE,
+            levels=(3, 4, 5, 6),
+            increments=(1e-3, 1e-3, 1e-3, 1e-3),
+            per_phase=((1e-3,), (1e-3,), (1e-3,), (1e-3,)),
+            n_phases=1,
+            seed=0,
+        )
+        assert flat.tail_ratio == pytest.approx(1.0)
+        assert not flat.converges
+        assert flat.plateaus
+
+    @pytest.mark.parametrize("bad", [0.0, -0.1, 1.2])
+    def test_rejects_an_exponent_outside_the_unit_interval(self, bad: float) -> None:
+        with pytest.raises(ValueError, match="alpha"):
+            fs.measure_increments(bad)
+
+    def test_rejects_too_few_levels(self) -> None:
+        with pytest.raises(ValueError, match="at least 3"):
+            fs.measure_increments(0.5, levels=(3, 4))
 
 
 class TestPredictedLaw:
@@ -301,16 +395,30 @@ class TestPredictedLaw:
             for alpha in np.linspace(0.02, 1.0, 25):
                 assert fs.predicted_rate(alpha, angle) <= fs.young_rate(alpha, angle)
 
-    def test_the_effective_threshold_is_negative_on_every_koch_curve(self) -> None:
-        """Convergence for every positive Holder exponent, at every dimension.
+    def test_the_random_walk_threshold_is_the_refuted_prediction(self) -> None:
+        """Kept so the discredited hypothesis stays checkable, not just described.
 
-        The box dimension of this family is bounded by $2$, so ``d/2 - 1 < 0``
-        always, and the geometric branch cannot diverge either since
-        ``4 r^2 < 1`` for every ``r < 1/2``.
+        If the per-segment contributions added with independent signs the
+        threshold would be ``d/2 - 1``, negative at every dimension in this
+        family, meaning convergence for every positive exponent.  Direct
+        measurement puts the edge near ``alpha = 0.01`` instead: below Young's
+        ``d - 1`` by a wide margin, but not absent.
         """
         for angle in ANGLES + [1.5, 1.55]:
             assert fs.effective_threshold(angle) < 0.0
             assert fs.predicted_rate(1e-6, angle) < 1.0
+            assert fs.effective_threshold(angle) < fs.koch_dimension(angle) - 1.0
+
+    def test_the_predicted_crossover_sits_below_the_observed_one(self) -> None:
+        """``1 - d/2 = 0.369`` for the standard curve; the measured break is near ``0.52``.
+
+        The crossover formula inherits the random-walk assumption for the lower
+        branch, so it is displaced by the same amount that assumption is wrong.
+        The geometric branch it crosses *into* is exact; only the location of the
+        meeting point is off.
+        """
+        assert fs.predicted_crossover() == pytest.approx(0.369, abs=1e-3)
+        assert fs.predicted_crossover() < 0.52
 
 
 # --------------------------------------------------------------------------- #
@@ -456,14 +564,35 @@ class TestMatchedMeasurement:
                 alpha, levels=tuple(range(3, 9)), n_phases=3
             )
             assert measured.measured_rate < fs.young_rate(alpha)
-            assert measured.converges
 
-    def test_converges_where_young_is_inconclusive(self) -> None:
-        alpha = 0.05
-        assert fs.young_rate(alpha) > 1.0
-        measured = fs.measure_matched(alpha, levels=tuple(range(3, 9)), n_phases=3)
-        assert measured.measured_rate < 1.0
-        assert measured.effective_dimension < fs.koch_dimension()
+    def test_convergence_is_clear_well_below_youngs_threshold(self) -> None:
+        """Refereed by the model-free instrument, not by the coherence fit.
+
+        The exponent route reports a rate below $1$ even for a plateau, so the
+        claim is checked against the tail of the increments instead.  At
+        ``alpha = 0.15``, little more than half of Young's ``0.262``, the
+        increments are still shrinking by a fifth per level with the whole
+        bootstrap interval clear of $1$.
+        """
+        alpha = 0.15
+        assert alpha < fs.koch_dimension() - 1.0
+        direct = fs.measure_increments(alpha, levels=tuple(range(3, 10)), n_phases=12)
+        assert direct.tail_interval(resamples=200)[1] < 1.0
+        assert direct.converges
+
+    def test_the_smallest_exponents_are_not_resolved(self) -> None:
+        """Honest negative: at ``alpha = 0.05`` the answer depends on the sampling.
+
+        Seven levels at twelve phases give a tail ratio above $1$; eight levels
+        at thirty-two give ``0.93``.  The accessible level range does not settle
+        whether the sums converge there, and reporting either number alone would
+        overstate what was measured.  This is the reason the empirical threshold
+        is quoted as "below ``0.05``, consistent with zero" rather than as the
+        ``0.011`` that extrapolating the fit produces.
+        """
+        direct = fs.measure_increments(0.05, levels=tuple(range(3, 10)), n_phases=12)
+        low, high = direct.tail_interval(resamples=200)
+        assert low < 1.05 and high > 0.9, "expected a tail ratio consistent with 1"
 
     @pytest.mark.parametrize("bad", [0.0, -0.2, 1.4])
     def test_rejects_an_exponent_outside_the_unit_interval(self, bad: float) -> None:
@@ -491,19 +620,22 @@ class TestPhaseDiagram:
         """Above the crossover the rate stops depending on the Holder exponent.
 
         It is then set by the curve's own second-order geometry rather than by
-        the form, which is what makes ``4 r^2`` the right prediction there.
+        the form, which is what makes ``4 r^2`` the right value there.  Measured
+        model-free, and taken above the *observed* crossover near ``0.55``
+        rather than the ``1 - d/2`` one, which inherits the refuted random-walk
+        assumption for the branch below.
         """
         angle = fs.KOCH_ANGLE
-        above = [a for a in (0.5, 0.7, 0.9) if a > fs.predicted_crossover(angle)]
-        rates = [
-            fs.measure_matched(
-                alpha, angle=angle, levels=tuple(range(3, 9)), n_phases=3
-            ).measured_rate
-            for alpha in above
+        floor = 4.0 * fs.koch_ratio(angle) ** 2
+        tails = [
+            fs.measure_increments(
+                alpha, angle=angle, levels=tuple(range(3, 10)), n_phases=8
+            ).tail_ratio
+            for alpha in (0.65, 0.8, 0.95)
         ]
-        assert max(rates) / min(rates) < 1.2
-        for rate in rates:
-            assert rate == pytest.approx(fs.predicted_rate(above[0], angle), rel=0.2)
+        assert max(tails) / min(tails) < 1.08
+        for tail in tails:
+            assert tail == pytest.approx(floor, rel=0.06)
 
 
 # --------------------------------------------------------------------------- #

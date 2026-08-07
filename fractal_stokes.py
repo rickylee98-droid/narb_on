@@ -79,10 +79,65 @@ plausible nonsense.
     truncation goes from 12 terms to 38, while at ``alpha = 0.5`` and ``0.75`` it
     is stable to ten percent.  :func:`truncation_stability` is that check.
 
-Two instruments
----------------
+4.  The one that decided the answer.  A regression cannot notice that its own
+    model is wrong.  Near the edge of convergence the increments decay for a few
+    levels and then flatten, and a log-linear fit through a
+    decays-then-flattens sequence still returns a slope below zero -- reporting
+    ``rate = 0.75 < 1``, i.e. convergence, for sums that are not converging.
+    :attr:`RateMeasurement.converges` therefore tests the *tail*, and
+    :class:`IncrementDecay` is the model-free instrument the conclusions rest on.
+
+    The opposite error is just as easy.  RMS over twelve phases carries twenty
+    percent scatter per level, enough to make a marginal sequence look flat; at
+    ``alpha = 0.05`` twelve phases suggested a plateau and thirty-two did not.
+    Neither reading is safe on its own, which is why
+    :meth:`IncrementDecay.tail_interval` bootstraps over phases and
+    :attr:`IncrementDecay.converges` asks whether the *interval* clears $1$.
+
+What is actually observed
+-------------------------
+Young's law with the box dimension replaced by an effective one,
+
+    alpha > beta d - 1        with beta ~ 0.75 +- 0.05 ,
+
+measured by extrapolating the increment ratio to $1$ at three dimensions:
+``d = 1.135`` gives a threshold of ``-0.178`` (convergence for every positive
+exponent), ``d = 1.262`` gives something at or below ``0.05``, and ``d = 1.631``
+gives ``+0.156`` -- where the tail ratio at ``alpha = 0.05`` is ``1.09`` with a
+bootstrap interval entirely above $1$, so the boundary is real.  Against Young's
+``d - 1`` of ``0.135``, ``0.262`` and ``0.631``, the effective threshold is far
+lower but not absent.  ``beta = 1`` would recover Young exactly and ``beta = 1/2``
+is the random-walk value; it is neither.
+
+Three regimes in ``alpha``, at fixed dimension:
+
+* ``alpha`` above the crossover ``1 - d/2``: the rate is ``4 r^2`` exactly and
+  does not depend on ``alpha`` at all.  At ``alpha = 0.95`` the successive
+  ratios are ``0.445, 0.444, 0.445, 0.443, 0.444, 0.445, 0.443`` against
+  ``4/9 = 0.4444``.  The curve's own second-order geometry sets the rate; the
+  form's regularity is irrelevant once it is smooth enough.
+* below the crossover: the ratio climbs smoothly toward $1$ as ``alpha`` falls,
+  **with no feature at Young's** ``alpha_c``.  For the standard curve the ratio
+  there is ``0.669`` with interval ``[0.620, 0.714]`` -- comfortably converging,
+  no kink.
+* below the effective threshold ``beta d - 1``: the increments stop shrinking and
+  the partial sums wander.  Near it the measurement is genuinely marginal and
+  says so: at ``d = 1.262, alpha = 0.05`` eight levels at 32 phases give
+  ``0.93`` while seven at 12 give ``1.02``, which is why the threshold there is
+  reported as "below ``0.05``, consistent with zero" and not as a fitted digit.
+
+The coherence exponent ``beta`` is a clean power law only in the first regime,
+fitting with ``chi^2/dof`` of ``0.04``; below the crossover the level sequence is
+not a power law at all (``chi^2/dof`` of 7 to 17), so the low branch is quoted as
+a measured slope rather than an exponent.
+
+Instruments
+-----------
+:func:`measure_increments` is primary: phase-averaged RMS increments, no model.
+
 :func:`measure_coherence` fits the decay rate of the whole refinement sequence
-and is subject to trap 3, so it reports whether it is inside the honest window.
+and is subject to traps 3 and 4, so it reports whether it is inside the honest
+window and whether its own geometric model holds.
 
 :func:`coherence_profile` is exact and per-level, and needs no fit.  It splits
 the increment ``I_{n+1} - I_n`` into the ``4^n`` independent contributions of the
@@ -134,6 +189,8 @@ __all__ = [
     "riemann_stieltjes",
     "decay_rate",
     "RateMeasurement",
+    "IncrementDecay",
+    "measure_increments",
     "young_rate",
     "predicted_rate",
     "predicted_crossover",
@@ -145,6 +202,8 @@ __all__ = [
     "CoherenceMeasurement",
     "LevelProfile",
     "coherence_profile",
+    "CorrelationProfile",
+    "increment_correlation",
     "phase_diagram",
     "truncation_stability",
 ]
@@ -606,6 +665,105 @@ def truncation_stability(
     return result
 
 
+@dataclass(frozen=True)
+class CorrelationProfile:
+    """Autocorrelation of the per-segment contributions along the curve.
+
+    The sum of ``N`` terms is ``N`` times their mean identically, so
+    ``randomness = |sum|/l2`` is just ``sqrt(N) * mu / sigma``: the whole question
+    of coherence is whether the mean contribution per segment shrinks like the
+    standard error (``beta = 1/2``) or stays fixed relative to the spread
+    (``beta = 1``).
+
+    What the autocorrelation adds is the *error bar on that mean*.  Neighbouring
+    segments sample nearby parts of the form, so the terms are correlated over a
+    finite lag, and the effective sample size is ``N/tau`` rather than ``N``.  The
+    mean is then distinguishable from zero only when
+    :attr:`significance` is large.  This is what makes the low-``alpha`` end hard:
+    the coherent residue there is a two-sigma effect per level, not a clean zero.
+    """
+
+    level: int
+    count: int
+    autocorrelation: FloatArray
+    integrated_time: float
+    randomness: float
+
+    @property
+    def correlation_length(self) -> int:
+        """First lag at which the autocorrelation drops below ``1/e``."""
+        below = np.nonzero(self.autocorrelation < math.exp(-1.0))[0]
+        return int(below[0]) if below.size else len(self.autocorrelation)
+
+    @property
+    def significance(self) -> float:
+        """``randomness / sqrt(tau)``: how many sigma the coherent residue is.
+
+        The standard error on the mean of ``tau``-correlated terms is
+        ``sigma sqrt(tau/N)``, and the mean itself is ``sigma * randomness /
+        sqrt(N)``, so their ratio is ``randomness / sqrt(tau)`` with the level
+        cancelling.  A value near $1$ means the level's apparent coherence is
+        consistent with noise.
+        """
+        if self.integrated_time <= 0.0:
+            return float("inf")
+        return self.randomness / math.sqrt(self.integrated_time)
+
+
+def increment_correlation(
+    coarse: FloatArray, fine: FloatArray, form: HolderForm, *, max_lag: int = 64
+) -> CorrelationProfile:
+    """Autocorrelation of the per-segment refinement contributions.
+
+    The terms are indexed in order along the curve, so lag is arc position.  The
+    integrated correlation time ``tau = 1 + 2 sum_{k>=1} C(k)`` is the factor by
+    which the variance of the sum exceeds the independent value.
+    """
+    count = len(coarse) - 1
+    if len(fine) - 1 != 4 * count:
+        raise ValueError(
+            f"fine curve has {len(fine) - 1} segments, expected {4 * count}"
+        )
+    if max_lag < 1:
+        raise ValueError(f"max_lag must be positive; got {max_lag}")
+
+    def contributions(points: FloatArray) -> FloatArray:
+        start, end = points[:-1], points[1:]
+        middle = 0.5 * (start + end)
+        delta = end - start
+        return form.f(middle[:, 0], middle[:, 1]) * delta[:, 0] + form.g(
+            middle[:, 0], middle[:, 1]
+        ) * delta[:, 1]
+
+    terms = contributions(fine).reshape(count, 4).sum(axis=1) - contributions(coarse)
+    centred = terms - terms.mean()
+    variance = float(np.dot(centred, centred))
+    lags = min(max_lag, count - 1)
+    if variance <= 0.0 or lags < 1:
+        raise ValueError(
+            f"level {count} contributions carry no variance to correlate "
+            f"(variance={variance})"
+        )
+    auto = np.array(
+        [float(np.dot(centred[: count - k], centred[k:])) / variance for k in range(lags)],
+        dtype=F64,
+    )
+    # Automatic windowing: truncate the sum where the autocorrelation first goes
+    # negative.  Summing past that point adds noise rather than signal, and for a
+    # strongly correlated sequence the unwindowed sum is dominated by whatever
+    # ``max_lag`` happened to be.
+    negative = np.nonzero(auto[1:] < 0.0)[0]
+    window = int(negative[0]) + 1 if negative.size else lags
+    l2 = float(np.sqrt(np.square(terms).sum()))
+    return CorrelationProfile(
+        level=int(round(math.log(count, 4))),
+        count=count,
+        autocorrelation=auto,
+        integrated_time=float(1.0 + 2.0 * auto[1:window].sum()),
+        randomness=abs(float(terms.sum())) / l2 if l2 > 0.0 else 0.0,
+    )
+
+
 def phase_diagram(
     angles: Sequence[float],
     alphas: Sequence[float],
@@ -634,21 +792,49 @@ class RateMeasurement:
     """Geometric decay rate of the increments of a refinement sequence."""
 
     rate: float
+    tail_rate: float
     n_increments: int
     residual: float
 
     @property
     def converges(self) -> bool:
-        return self.rate < 1.0
+        """Whether the increments are still shrinking at the end of the sequence.
+
+        The full-sequence ``rate`` is *not* enough, and trusting it was a real
+        error here.  Regressing ``log|dI_n|`` against ``n`` returns a negative
+        slope for a sequence that decays for a while and then flattens out,
+        which reports convergence for sums that are in fact wandering at a fixed
+        amplitude.  Requiring the tail to be decaying as well is what
+        distinguishes the two.
+        """
+        return self.tail_rate < 0.95
+
+    @property
+    def geometric(self) -> bool:
+        """Whether a single geometric rate describes the sequence at all.
+
+        ``rate`` means nothing when this is false; the sequence has structure a
+        one-parameter model cannot carry, and the right response is to look at
+        the increments rather than to quote an exponent.
+        """
+        return self.residual < 0.5 and abs(
+            math.log(max(self.tail_rate, 1e-9) / max(self.rate, 1e-9))
+        ) < 0.5
 
 
 def decay_rate(values: Sequence[float], *, floor: float = 1e-13) -> RateMeasurement:
-    """Fit ``|I_{n+1} - I_n| ~ C rate^n`` by regression on the whole sequence.
+    """Fit ``|I_{n+1} - I_n| ~ C rate^n``, and check the tail separately.
 
     Consecutive ratios are not used, and must not be: the increments carry their
     own oscillation, so ``|dI_{n+1}|/|dI_n|`` scatters over orders of magnitude
     even when the envelope decays cleanly. Regressing ``log|dI_n|`` against ``n``
     uses every point and is stable.
+
+    But a regression cannot notice that its own model is wrong, and here that
+    mattered: the increments below Young's threshold decay for a few levels and
+    then *plateau*, and the fit happily returns a rate below $1$ for a sequence
+    that is not converging.  ``tail_rate`` repeats the fit on the second half,
+    and :attr:`RateMeasurement.converges` uses that instead.
     """
     increments = np.abs(np.diff(np.asarray(values, dtype=F64)))
     usable = increments > floor
@@ -661,8 +847,11 @@ def decay_rate(values: Sequence[float], *, floor: float = 1e-13) -> RateMeasurem
     logs = np.log(increments[usable])
     slope, intercept = np.polyfit(index, logs, 1)
     residual = float(np.std(logs - (slope * index + intercept)))
+    half = len(index) // 2
+    tail_slope = float(np.polyfit(index[half:], logs[half:], 1)[0]) if half >= 2 else slope
     return RateMeasurement(
         rate=float(math.exp(slope)),
+        tail_rate=float(math.exp(tail_slope)),
         n_increments=int(usable.sum()),
         residual=residual,
     )
@@ -679,16 +868,21 @@ def young_rate(alpha: float, angle: float = KOCH_ANGLE) -> float:
 def predicted_rate(alpha: float, angle: float = KOCH_ANGLE) -> float:
     """Two-branch law for the increment decay rate: ``max(2 r^{1+alpha}, 4 r^2)``.
 
-    Measured, then read off, then checked across dimensions -- not derived.  The
-    two branches are the two things the increment can be dominated by.
+    Only the second branch is established.  It is the one that matters for the
+    regime where anything converges, and it is exact:
 
-    * **Incoherent branch** ``2 r^{1+alpha} = 4^{1/2} r^{1+alpha}``.  The
-      ``4^n`` per-segment contributions of the Holder form add with independent
-      signs, so the coherence exponent is the random-walk value ``beta = 1/2``
-      rather than Young's ``beta = 1``.
-    * **Geometric branch** ``4 r^2 = 4^1 r^{1+1}``.  The curve's own second-order
-      geometry contributes coherently and does not care about ``alpha``; it is
-      exactly the rate the smooth control produces.
+    * **Geometric branch** ``4 r^2 = 4^1 r^{1+1}``.  Above the crossover the
+      curve's own second-order geometry sets the rate and ``alpha`` drops out
+      entirely.  Confirmed model-free to better than one percent over seven
+      refinements and at five dimensions, and it is exactly the rate the smooth
+      control produces.
+    * **Lower branch** ``2 r^{1+alpha}``, the random-walk exponent ``beta = 1/2``
+      applied to the ``4^n`` per-segment contributions.  This is a *conjecture
+      that the measurements do not support*.  Below the crossover the level
+      sequence is not a power law (``chi^2/dof`` of 7 to 17), and below
+      ``alpha_c = d - 1`` the increments stop decaying altogether, so no rate --
+      this one included -- describes them.  The branch is retained because it
+      correctly locates the crossover, not because it predicts the rate there.
 
     The branches meet where ``r^{1-alpha} = 1/2``; see :func:`predicted_crossover`.
     """
@@ -707,15 +901,19 @@ def predicted_crossover(angle: float = KOCH_ANGLE) -> float:
 
 
 def effective_threshold(angle: float = KOCH_ANGLE) -> float:
-    """Convergence threshold implied by the two-branch law: ``d/2 - 1``.
+    """Threshold ``d/2 - 1`` that a random-walk coherence exponent would imply.
 
-    Young's condition is ``alpha > d - 1``.  Measured coherence replaces ``d`` by
-    ``beta d`` with ``beta = 1/2`` in the regime that matters, giving
-    ``alpha > d/2 - 1``.  This is negative for every Koch curve, since ``d < 2``,
-    so on this family the Riemann--Stieltjes sums converge for *every* positive
-    Holder exponent -- strictly inside the region Young's bound declares
-    inconclusive.  The geometric branch never diverges either, because
-    ``4 r^2 < 1`` for all ``r < 1/2``.
+    Retained as the explicit statement of a hypothesis that **was tested and
+    failed**.  If the per-segment contributions added with independent signs,
+    Young's ``alpha > d - 1`` would become ``alpha > beta d - 1`` with
+    ``beta = 1/2``, which is negative for every Koch curve and would mean the
+    sums converge for every positive Holder exponent.
+
+    Direct measurement says otherwise: below ``d - 1`` the increments plateau and
+    the partial sums wander.  The classical threshold is the right one.  This
+    function computes the discredited prediction so that the tests can keep
+    checking it against the observation rather than leaving the refuted claim
+    only in prose; use ``koch_dimension(angle) - 1`` for the real threshold.
     """
     return koch_dimension(angle) / 2.0 - 1.0
 
@@ -731,6 +929,141 @@ def coherence_exponent(rate: float, alpha: float, angle: float = KOCH_ANGLE) -> 
         raise ValueError(f"rate must be positive; got {rate}")
     ratio = koch_ratio(angle)
     return math.log(rate / ratio ** (1.0 + alpha)) / math.log(4.0)
+
+
+def _tail_ratio(increments: Sequence[float]) -> float:
+    """Geometric mean of the successive ratios over the second half of a sequence."""
+    ratios = [b / a for a, b in zip(increments, increments[1:]) if a > 0.0 and b > 0.0]
+    if not ratios:
+        raise ValueError("increment sequence has no usable positive ratios")
+    tail = ratios[len(ratios) // 2 :] or ratios
+    return float(math.exp(sum(math.log(r) for r in tail) / len(tail)))
+
+
+@dataclass(frozen=True)
+class IncrementDecay:
+    """Phase-averaged RMS refinement increments, and whether they keep shrinking.
+
+    The primary instrument, and the only one here that assumes nothing about the
+    form of the decay.  Averaging the increment in quadrature over independent
+    phases removes the sign oscillation that makes a single realisation
+    unreadable, leaving ratios clean enough to be quoted directly -- above the
+    crossover they sit on ``4 r^2`` to three decimal places.
+    """
+
+    alpha: float
+    dimension: float
+    angle: float
+    levels: tuple[int, ...]
+    increments: tuple[float, ...]
+    per_phase: tuple[tuple[float, ...], ...]
+    n_phases: int
+    seed: int
+
+    @property
+    def ratios(self) -> tuple[float, ...]:
+        return tuple(b / a for a, b in zip(self.increments, self.increments[1:]))
+
+    @property
+    def tail_ratio(self) -> float:
+        """Geometric mean of the ratios over the second half of the sequence."""
+        return _tail_ratio(self.increments)
+
+    def tail_interval(self, *, resamples: int = 400) -> tuple[float, float]:
+        """Bootstrap 95% interval for :attr:`tail_ratio`, resampling over phases.
+
+        The increments are RMS averages over a finite phase sample, so the tail
+        ratio carries an error bar of its own.  Comparing it to a fixed cutoff
+        without one is not safe: at ``alpha = 0.05`` twelve phases give ``0.91``
+        and thirty-two give ``0.99``, and only the interval makes clear that
+        neither is evidence of decay.
+        """
+        rng = np.random.default_rng(self.seed + 1)
+        table = np.asarray(self.per_phase, dtype=F64)
+        draws = []
+        for _ in range(resamples):
+            pick = rng.integers(0, table.shape[1], table.shape[1])
+            sample = np.sqrt(np.mean(np.square(table[:, pick]), axis=1))
+            draws.append(_tail_ratio(tuple(float(v) for v in sample)))
+        low, high = np.percentile(draws, [2.5, 97.5])
+        return float(low), float(high)
+
+    @property
+    def converges(self) -> bool:
+        """Whether the increments are still shrinking at the end, beyond noise.
+
+        A sequence that decays and then plateaus passes a whole-sequence fit
+        while failing this, which is exactly the trap the sub-threshold regime
+        sets.  The test is that the *upper* end of the bootstrap interval is
+        still below $1$, so that a marginal point is not counted as convergent.
+        """
+        return self.tail_interval()[1] < 1.0
+
+    @property
+    def plateaus(self) -> bool:
+        """Whether the tail ratio is consistent with no decay at all."""
+        low, high = self.tail_interval()
+        return high >= 1.0 and low > 0.8
+
+    @property
+    def geometric_branch(self) -> float:
+        """``4 r^2``, the rate set by the curve's own second-order geometry."""
+        return 4.0 * koch_ratio(self.angle) ** 2
+
+
+def measure_increments(
+    alpha: float,
+    *,
+    angle: float = KOCH_ANGLE,
+    levels: Sequence[int] = tuple(range(3, 11)),
+    base: float = 3.0,
+    n_phases: int = 16,
+    lipschitz: bool = False,
+    seed: int = 1,
+) -> IncrementDecay:
+    """RMS refinement increment per level, averaged over independent phases.
+
+    ``base`` defaults to $3$ rather than $2$ because for the standard curve that
+    makes the matched truncation grow by exactly one mode per level.  With base
+    $2$ it grows by one or two depending on the level, injecting a systematic
+    wobble into any fit across levels -- visible as a reproducible dip at level
+    six in an earlier sweep.
+    """
+    if not 0.0 < alpha <= 1.0:
+        raise ValueError(f"alpha must lie in (0, 1]; got {alpha}")
+    ordered = tuple(sorted(levels))
+    if len(ordered) < 3:
+        raise ValueError(f"need at least 3 levels; got {len(ordered)}")
+    rng = np.random.default_rng(seed)
+    phases = rng.uniform(0.0, 2.0 * math.pi, n_phases)
+    curves = {level: koch_curve(level, angle) for level in ordered + (ordered[-1] + 1,)}
+    increments = []
+    per_phase = []
+    for level in ordered:
+        totals = []
+        for phase in phases:
+            form = (
+                lipschitz_form(float(phase))
+                if lipschitz
+                else matched_weierstrass_form(
+                    alpha, level + 1, angle=angle, base=base, phase=float(phase)
+                )
+            )
+            totals.append(
+                coherence_profile(curves[level], curves[level + 1], form).total
+            )
+        per_phase.append(tuple(totals))
+        increments.append(float(np.sqrt(np.mean(np.square(totals)))))
+    return IncrementDecay(
+        alpha=1.0 if lipschitz else alpha,
+        dimension=koch_dimension(angle),
+        angle=angle,
+        levels=ordered,
+        increments=tuple(increments),
+        per_phase=tuple(per_phase),
+        n_phases=n_phases,
+        seed=seed,
+    )
 
 
 @dataclass(frozen=True)
