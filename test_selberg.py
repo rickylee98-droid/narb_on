@@ -520,3 +520,82 @@ class TestReachOfTheRHTest:
         )
         assert long_run.agrees_with_spectrum
         assert len(long_run.lengths) >= 15
+
+
+class TestExactRecurrence:
+    """The route that removed the precision floor entirely."""
+
+    @pytest.mark.parametrize(
+        "name,graph", REGULAR + [("2T", sb.binary_tetrahedral_cayley())]
+    )
+    def test_recurrence_matches_the_edge_operator(self, name, graph) -> None:
+        exact = sb.geodesic_counts_exact(graph, 12)
+        direct = sb.trace_formula_check(graph, 12).geodesic
+        assert [exact[m] for m in range(1, 13)] == list(direct)
+
+    def test_it_reaches_lengths_the_spectral_route_refuses(self) -> None:
+        """Same graph, same length: one route refuses, the other is exact."""
+        graph = nx.random_regular_graph(14, 120, seed=0)
+        with pytest.raises(ValueError, match="round-off"):
+            sb.geodesic_counts_from_spectrum(graph, 40)
+        counts = sb.geodesic_counts_exact(graph, 40)
+        assert counts[40] > 13**39
+
+    def test_counts_are_python_integers_not_floats(self) -> None:
+        counts = sb.geodesic_counts_exact(nx.petersen_graph(), 30)
+        assert all(isinstance(v, int) for v in counts.values())
+
+    def test_rejects_a_non_positive_length(self) -> None:
+        with pytest.raises(ValueError, match="max_length"):
+            sb.geodesic_counts_exact(nx.petersen_graph(), 0)
+
+
+class TestFloatAnnihilation:
+    """The bug that silently zeroed the tail of every long sequence.
+
+    ``pi(m)`` reaches ``10^44`` at ``m = 40, q = 13`` while the error being
+    measured is only ``10^22``.  Subtracting a float main term from that coerces
+    the exact count to a float and destroys everything below ``10^28``, so the
+    normalised error came out as an unbroken run of exact zeros, with occasional
+    spurious spikes where the rounding happened to land elsewhere.  Multiplying
+    through by ``m`` keeps the whole quantity integral.
+    """
+
+    def test_the_long_tail_is_not_identically_zero(self) -> None:
+        for graph in (
+            nx.petersen_graph(),
+            nx.random_regular_graph(14, 120, seed=0),
+        ):
+            test = sb.riemann_hypothesis_test(
+                graph, max_length=40, min_length=4, spectral=True
+            )
+            tail = test.normalised[-8:]
+            assert sum(1 for value in tail if value == 0.0) <= 1
+
+    def test_the_naive_float_subtraction_really_does_annihilate(self) -> None:
+        """A positive control on the diagnosis itself."""
+        q, m = 13, 40
+        primes = sb.prime_geodesic_counts(
+            nx.random_regular_graph(14, 120, seed=0), m, spectral=True
+        )
+        naive = abs(primes[m] - 1.0 * q**m / m) * m / q ** (m / 2.0)
+        exact = float(abs(primes[m] * m - q**m)) / q ** (m / 2.0)
+        assert exact > 1.0, "there is a real error term to detect"
+        assert naive < 0.01 * exact, (
+            f"the float route should have destroyed the signal, got {naive} "
+            f"against {exact}"
+        )
+
+    def test_ramanujan_and_non_ramanujan_separate_at_length_forty(self) -> None:
+        good = sb.riemann_hypothesis_test(
+            nx.random_regular_graph(14, 120, seed=1), max_length=40, spectral=True
+        )
+        bad = sb.riemann_hypothesis_test(
+            nx.circulant_graph(120, [1, 2, 3, 4, 5, 6, 7]),
+            max_length=40,
+            spectral=True,
+        )
+        assert good.is_ramanujan and not bad.is_ramanujan
+        assert good.growth == pytest.approx(1.0, abs=0.05)
+        assert bad.growth == pytest.approx(bad.predicted_growth, abs=0.05)
+        assert bad.growth > 3.0

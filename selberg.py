@@ -88,6 +88,7 @@ __all__ = [
     "graph_degree",
     "prime_geodesic_count",
     "prime_geodesic_counts",
+    "geodesic_counts_exact",
     "geodesic_counts_from_spectrum",
     "moebius",
     "zeta_series",
@@ -398,7 +399,14 @@ def prime_geodesic_counts(
     if spectral is None:
         spectral = 2 * graph.number_of_edges() > 400
     if spectral:
-        counts = geodesic_counts_from_spectrum(graph, max_length)
+        # Exact where the adjacency matrix is small enough to multiply in Python
+        # integers; the floating-point spectral route is the last resort, and
+        # carries a precision floor that the exact recurrence does not.
+        counts = (
+            geodesic_counts_exact(graph, max_length)
+            if graph.number_of_nodes() <= 400
+            else geodesic_counts_from_spectrum(graph, max_length)
+        )
     else:
         operator, _ = hashimoto_operator(graph)
         counts = {}
@@ -631,6 +639,62 @@ def dominant_nontrivial_radius(graph: nx.Graph, *, atol: float = 1e-8) -> float:
     return max(radii)
 
 
+def geodesic_counts_exact(graph: nx.Graph, max_length: int) -> dict[int, int]:
+    """``N_m`` in exact integers, without eigenvalues and without powering ``B``.
+
+    Each adjacency eigenvalue ``lambda`` contributes ``s_m = alpha^m + beta^m``
+    for the roots of ``x^2 - lambda x + q``, and those obey the three-term
+    recurrence
+
+        s_m = lambda s_{m-1} - q s_{m-2},   s_0 = 2,  s_1 = lambda .
+
+    Summing over the spectrum turns it into a recurrence in the *matrix*,
+
+        T_m(A) = A T_{m-1}(A) - q T_{m-2}(A),   T_0 = 2I,  T_1 = A ,
+
+    so that ``sum_j s_m^{(j)} = tr(T_m(A))``, and
+
+        N_m = tr(T_m(A)) + (r - 1)(1 + (-1)^m) .
+
+    This is the route that should have been used first.  It is exact, so it has
+    no precision floor at all -- unlike :func:`geodesic_counts_from_spectrum`,
+    whose guard caps the usable length at $11$ for a degree-14 graph and thereby
+    made the statistic unreliable.  And it costs ``max_length`` multiplications of
+    the ``|V| x |V|`` integer adjacency matrix rather than a ``2|E| x 2|E|``
+    matrix power, so it reaches graphs the direct route cannot: for the
+    ``120``-vertex LPS graph, ``2|E| = 1680`` is hopeless while ``|V| = 120`` is
+    routine.
+
+    Entries grow like ``degree^m``, so the arbitrary-precision integers get large
+    but stay exact; the cost is cubic in ``|V|`` and linear in ``max_length``.
+    """
+    if max_length < 1:
+        raise ValueError(f"max_length must be positive; got {max_length}")
+    degree = graph_degree(graph)
+    q = degree - 1
+    nodes = sorted(graph)
+    size = len(nodes)
+    rank = graph.number_of_edges() - size + 1
+    index = {node: i for i, node in enumerate(nodes)}
+    adjacency = np.zeros((size, size), dtype=object)
+    for u_node, v_node in graph.edges():
+        i, j = index[u_node], index[v_node]
+        adjacency[i, j] = 1
+        adjacency[j, i] = 1
+
+    previous = 2 * np.eye(size, dtype=object)  # T_0
+    current = adjacency.copy()  # T_1
+    counts: dict[int, int] = {}
+    for m in range(1, max_length + 1):
+        if m == 1:
+            term = current
+        else:
+            term = adjacency @ current - q * previous
+            previous, current = current, term
+        counts[m] = int(np.trace(term)) + (rank - 1) * (1 + (-1) ** m)
+    return counts
+
+
 def geodesic_counts_from_spectrum(
     graph: nx.Graph, max_length: int, *, relative_margin: float = 1e-3
 ) -> dict[int, int]:
@@ -783,9 +847,17 @@ def riemann_hypothesis_test(
     )
     if len(lengths) < 4:
         raise ValueError(f"need at least 4 usable lengths; got {len(lengths)}")
-    weight = 2.0 if bipartite else 1.0
+    # The subtraction must happen in exact integers.  pi(m) is of size q^m/m --
+    # about 10^44 at m = 40, q = 13 -- while the error being measured is only
+    # q^{m/2}, about 10^22.  Coercing pi(m) to a float to subtract a float main
+    # term destroys everything below 10^28, which silently annihilated the tail
+    # of every sequence and left a few spurious spikes where it did not.
+    # Multiplying through by m clears the denominator and keeps it integral:
+    #
+    #     R(m) = |pi(m) m - w q^m| / q^{m/2} .
+    weight = 2 if bipartite else 1
     normalised = tuple(
-        abs(counts[m] - weight * q**m / m) * m / q ** (m / 2.0) for m in lengths
+        float(abs(counts[m] * m - weight * q**m)) / q ** (m / 2.0) for m in lengths
     )
     return RiemannHypothesisTest(
         degree=degree,
