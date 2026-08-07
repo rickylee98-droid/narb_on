@@ -195,6 +195,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `test_selberg.py` | Selberg test suite (142 tests) |
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 | `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
+| `paper/fractal_stokes.tex` | Write-up of the fractal Stokes result (10 pp.) |
+| `paper/selberg_graphs.tex` | Write-up of the graph RH result (8 pp.) |
 
 ## Method notes
 
@@ -1478,6 +1480,9 @@ long-range agreement.
 
 ```bash
 python -c "import networkx as nx, selberg as sb; print(sb.riemann_hypothesis_test(nx.petersen_graph()).growth)"
+
+# The write-up
+make -C paper selberg_graphs.pdf
 ```
 
 ## Tests
