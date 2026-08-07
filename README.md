@@ -190,6 +190,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `spinfoam.py` | Exact Wigner 3j/6j, tetrahedron geometry, Ponzano-Regge limit |
 | `test_spinfoam.py` | Spin-foam test suite (45 tests) |
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
+| `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
 
 ## Method notes
 
