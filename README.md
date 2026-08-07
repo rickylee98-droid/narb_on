@@ -192,7 +192,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `fractal_stokes.py` | Hölder forms on Koch curves: resolution window, coherence exponent, (d, α) sweep |
 | `test_fractal_stokes.py` | Fractal Stokes test suite (174 tests) |
 | `selberg.py` | Ihara zeta, prime geodesics, graph trace formula, RH analogue |
-| `test_selberg.py` | Selberg test suite (109 tests) |
+| `test_selberg.py` | Selberg test suite (128 tests) |
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 | `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
 
@@ -1424,6 +1424,39 @@ This sandbox's egress policy blocks `arxiv.org`, `mathweb.ucsd.edu`, `its.caltec
 depends on that, because every identity is verified in code against an independent
 computation — but the standard references (Ihara, Bass, Hashimoto, Terras) could not be read
 directly, and the module is written so that no claim rests on a recollected formula.
+
+### How far the method reaches, and where it stops
+
+Scaling up to genuine LPS Ramanujan graphs — built by `arithmetic_que.py`, so *provably*
+Ramanujan — required a fast path, since the exact `tr(Bᵐ)` route needs a 2|E| × 2|E| matrix
+power in Python integers and 1680 directed edges is already hopeless.
+`geodesic_counts_from_spectrum` uses the trace formula instead, refereed against the exact
+route on every graph where both are affordable.
+
+It carries a precision guard, because R(m) is a cancellation between a main term ~qᵐ and an
+error ~q^(m/2). Eigenvalues good to machine precision inject roughly ε·m·q^(m−1)·|V| into N_m,
+and once that approaches q^(m/2) the measured error is the eigensolver's. The guard refuses
+rather than returning it.
+
+| LPS (p,q) | \|V\| | degree | worst \|λ\| | 2√q | max m | growth |
+| --- | --- | --- | --- | --- | --- | --- |
+| 13,5 | 120 | 14 | 4.000 | 7.211 | 11 | 0.830 |
+| 5,13 | 2184 | 6 | 4.250 | 4.472 | 18 | 1.054 |
+| 13,17 | 2448 | 14 | 7.090 | 7.211 | 11 | 0.811 |
+| 5,29 | 12180 | 6 | 4.442 | 4.472 | 17 | 1.119 |
+
+**These are consistent with bounded but they are not probative**, and a deliberate control
+says so. At degree 14 the guard permits only m ≤ 11, and at that range a random 14-regular
+graph on 120 vertices which *is* Ramanujan (worst |λ| = 6.613 ≤ 7.211) reads growth **1.575**
+against a prediction of 1.000. Only the grossly non-Ramanujan cases still separate — C₁₂₀(1..7)
+gives 3.34 against 3.49, C₁₂₀(1..3) gives 2.10 against 2.21 — while the marginal ones overlap
+the Ramanujan spread entirely.
+
+So the clean agreement in the table above holds at **max_length = 18 and not at 11**: the
+statistic needs a long baseline, double precision caps the baseline for high-degree graphs,
+and quoting it from a short one would turn noise into a claim. Reaching the LPS graphs
+properly needs high-precision eigenvalues, which is affordable at |V| = 120 and not at 12180.
+There are tests asserting both halves of this.
 
 ```bash
 python -c "import networkx as nx, selberg as sb; print(sb.riemann_hypothesis_test(nx.petersen_graph()).growth)"

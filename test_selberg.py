@@ -452,3 +452,71 @@ class TestHurwitz:
     def test_rejects_a_non_unit_generator(self) -> None:
         with pytest.raises(ValueError, match="not a Hurwitz unit"):
             sb.binary_tetrahedral_cayley([(Fraction(2), Fraction(0), Fraction(0), Fraction(0))])
+
+
+# --------------------------------------------------------------------------- #
+# The spectral fast path, and how far it reaches
+# --------------------------------------------------------------------------- #
+class TestSpectralRoute:
+    @pytest.mark.parametrize(
+        "name,graph",
+        REGULAR + [("2T", sb.binary_tetrahedral_cayley())],
+    )
+    def test_spectral_counts_match_the_exact_ones(self, name, graph) -> None:
+        """The fast path must reproduce ``tr(B^m)`` wherever both are affordable."""
+        spectral = sb.geodesic_counts_from_spectrum(graph, 12)
+        exact = sb.trace_formula_check(graph, 12).geodesic
+        assert [spectral[m] for m in range(1, 13)] == list(exact)
+
+    @pytest.mark.parametrize("name,graph", REGULAR)
+    def test_the_auto_switch_changes_no_answer(self, name, graph) -> None:
+        assert sb.prime_geodesic_counts(
+            graph, 12, spectral=False
+        ) == sb.prime_geodesic_counts(graph, 12, spectral=True)
+
+    def test_the_precision_guard_refuses_an_unreachable_length(self) -> None:
+        """The cancellation the guard protects.
+
+        The main term is ``q^m`` and the error being measured is ``q^{m/2}``, so
+        eigenvalues good to machine precision stop supporting the subtraction at
+        a length that depends on the degree and the order.  Past it the measured
+        error is the eigensolver's own.
+        """
+        graph = nx.random_regular_graph(14, 120, seed=0)
+        with pytest.raises(ValueError, match="round-off"):
+            sb.geodesic_counts_from_spectrum(graph, 40)
+
+    def test_the_guard_permits_a_short_range_on_the_same_graph(self) -> None:
+        graph = nx.random_regular_graph(14, 120, seed=0)
+        counts = sb.geodesic_counts_from_spectrum(graph, 10)
+        assert all(counts[m] >= 0 for m in counts)
+
+
+class TestReachOfTheRHTest:
+    """An honest bound on the method, found by a deliberate control."""
+
+    def test_a_short_length_range_cannot_separate_the_classes(self) -> None:
+        """The negative result.
+
+        With ``max_length = 18`` the measured growth tracks the spectral
+        prediction to ``0.08`` on every graph tested.  With ``max_length = 11``
+        -- which is all the precision guard permits at degree 14 -- a random
+        14-regular graph that *is* Ramanujan reads ``1.58`` against a prediction
+        of ``1.00``.  The statistic needs a long baseline, and quoting it from a
+        short one would turn noise into a claim.
+        """
+        graph = nx.random_regular_graph(14, 120, seed=1)
+        assert sb.ramanujan_report(graph).is_ramanujan
+        short = sb.riemann_hypothesis_test(
+            graph, max_length=11, min_length=4, spectral=True
+        )
+        assert short.predicted_growth == pytest.approx(1.0, abs=1e-9)
+        assert short.growth > 1.3, "expected the short range to mislead"
+        assert not short.agrees_with_spectrum
+
+    def test_the_long_range_verdict_is_the_one_to_trust(self) -> None:
+        long_run = sb.riemann_hypothesis_test(
+            nx.petersen_graph(), max_length=18, min_length=4
+        )
+        assert long_run.agrees_with_spectrum
+        assert len(long_run.lengths) >= 15

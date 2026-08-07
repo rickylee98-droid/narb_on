@@ -88,6 +88,7 @@ __all__ = [
     "graph_degree",
     "prime_geodesic_count",
     "prime_geodesic_counts",
+    "geodesic_counts_from_spectrum",
     "moebius",
     "zeta_series",
     "euler_product_series",
@@ -383,14 +384,28 @@ def prime_geodesic_count(counts: dict[int, int], length: int) -> int:
     return total // length
 
 
-def prime_geodesic_counts(graph: nx.Graph, max_length: int) -> dict[int, int]:
-    """``pi(m)`` for every ``m`` up to ``max_length``."""
-    operator, _ = hashimoto_operator(graph)
-    counts: dict[int, int] = {}
-    current = np.eye(operator.shape[0], dtype=object)
-    for length in range(1, max_length + 1):
-        current = current @ operator
-        counts[length] = int(np.trace(current))
+def prime_geodesic_counts(
+    graph: nx.Graph, max_length: int, *, spectral: bool | None = None
+) -> dict[int, int]:
+    """``pi(m)`` for every ``m`` up to ``max_length``.
+
+    ``spectral`` selects how the underlying ``N_m`` are obtained: the exact
+    ``tr(B^m)`` route, or :func:`geodesic_counts_from_spectrum`.  Left as ``None``
+    it picks the exact route while the edge operator is small enough to power in
+    Python integers and the spectral one beyond that, since the exact route costs
+    a ``2|E| x 2|E|`` matrix power and becomes hopeless in the low hundreds.
+    """
+    if spectral is None:
+        spectral = 2 * graph.number_of_edges() > 400
+    if spectral:
+        counts = geodesic_counts_from_spectrum(graph, max_length)
+    else:
+        operator, _ = hashimoto_operator(graph)
+        counts = {}
+        current = np.eye(operator.shape[0], dtype=object)
+        for length in range(1, max_length + 1):
+            current = current @ operator
+            counts[length] = int(np.trace(current))
     return {m: prime_geodesic_count(counts, m) for m in range(1, max_length + 1)}
 
 
@@ -616,6 +631,62 @@ def dominant_nontrivial_radius(graph: nx.Graph, *, atol: float = 1e-8) -> float:
     return max(radii)
 
 
+def geodesic_counts_from_spectrum(
+    graph: nx.Graph, max_length: int, *, relative_margin: float = 1e-3
+) -> dict[int, int]:
+    """``N_m`` from the adjacency spectrum, for graphs too large to power ``B``.
+
+    Each eigenvalue ``lambda`` contributes the power sums of the roots of
+    ``x^2 - lambda x + q``, and the ``(1-u^2)^{r-1}`` factor of Bass's formula
+    contributes at even lengths only:
+
+        N_m = sum_j (alpha_j^m + beta_j^m) + (r - 1)(1 + (-1)^m) .
+
+    The exact route through ``tr(B^m)`` costs a ``2|E| x 2|E|`` matrix power in
+    Python integers, which is hopeless past a few hundred edges; this costs one
+    eigendecomposition.  It is refereed against the exact route on every graph
+    small enough for both.
+
+    **Precision guard.**  The quantity this feeds is a cancellation: the main
+    term is ``q^m`` and the error being measured is ``q^{m/2}``, so eigenvalues
+    known to relative accuracy ``eps`` inject an absolute error of roughly
+    ``eps * m * q^{m-1} * |V|`` into ``N_m``.  Once that approaches ``q^{m/2}``
+    the measured error is the eigensolver's, and this function refuses rather
+    than returning it.
+    """
+    degree = graph_degree(graph)
+    q = degree - 1
+    size = graph.number_of_nodes()
+    rank = graph.number_of_edges() - size + 1
+    values = adjacency_spectrum(graph)
+    eps = 16.0 * float(np.finfo(np.float64).eps) * degree
+
+    counts: dict[int, int] = {}
+    for m in range(1, max_length + 1):
+        signal = q ** (m / 2.0)
+        noise = eps * m * q ** (m - 1.0) * size
+        if noise > relative_margin * signal:
+            raise ValueError(
+                f"at length {m} the eigenvalue round-off contributes about "
+                f"{noise:.3e} to N_m while the error term being measured is only "
+                f"{signal:.3e}; reduce max_length below {m} for this graph"
+            )
+        total = 0.0
+        for value in values:
+            discriminant = value * value - 4.0 * q
+            if discriminant >= 0.0:
+                root = math.sqrt(discriminant)
+                total += ((value + root) / 2.0) ** m + ((value - root) / 2.0) ** m
+            else:
+                # complex conjugate pair of modulus sqrt(q): the power sum is
+                # 2 q^{m/2} cos(m theta), evaluated without complex arithmetic
+                theta = math.atan2(math.sqrt(-discriminant), value)
+                total += 2.0 * q ** (m / 2.0) * math.cos(m * theta)
+        total += (rank - 1) * (1 + (-1) ** m)
+        counts[m] = int(round(total))
+    return counts
+
+
 @dataclass(frozen=True)
 class RiemannHypothesisTest:
     """The RH analogue as a boundedness statement, with no fitting.
@@ -679,7 +750,11 @@ class RiemannHypothesisTest:
 
 
 def riemann_hypothesis_test(
-    graph: nx.Graph, *, max_length: int = 18, min_length: int = 4
+    graph: nx.Graph,
+    *,
+    max_length: int = 18,
+    min_length: int = 4,
+    spectral: bool | None = None,
 ) -> RiemannHypothesisTest:
     """Normalised prime-geodesic error against the Ramanujan bound.
 
@@ -702,7 +777,7 @@ def riemann_hypothesis_test(
             "meaningless here"
         )
     bipartite = nx.is_bipartite(graph)
-    counts = prime_geodesic_counts(graph, max_length)
+    counts = prime_geodesic_counts(graph, max_length, spectral=spectral)
     lengths = tuple(
         m for m in range(min_length, max_length + 1) if not bipartite or m % 2 == 0
     )
