@@ -187,6 +187,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `arithmetic_que.py` | LPS Ramanujan graphs, Hecke operators, thin-set equidistribution |
 | `test_bootstrap.py` | Bootstrap test suite (60 tests) |
 | `test_arithmetic_que.py` | Arithmetic QUE test suite (84 tests) |
+| `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 
 ## Method notes
 

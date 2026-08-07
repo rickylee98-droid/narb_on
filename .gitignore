@@ -6,3 +6,9 @@ venv/
 results/
 *.csv
 *.json
+
+# LaTeX build products (the PDF itself is tracked; intermediates are not)
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.toc
