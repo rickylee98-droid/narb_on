@@ -195,6 +195,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `test_selberg.py` | Selberg test suite (142 tests) |
 | `detection.py` | Community detection via the non-backtracking spectrum |
 | `test_detection.py` | Detection test suite (59 tests) |
+| `adm.py` | Einstein constraint rank loss, KIDs, linearisation instability |
+| `test_adm.py` | ADM test suite (84 tests) |
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 | `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
 | `paper/fractal_stokes.tex` | Write-up of the fractal Stokes result (10 pp.) |
@@ -1567,6 +1569,97 @@ symmetry now.
 python -c "import detection as dt; [print(p.assortativity, round(p.nonbacktracking_overlap,3)) for p in dt.threshold_sweep([0.2,0.5,0.8], size=2000)]"
 ```
 
+## A seventh target: rank loss in the Einstein constraints
+
+`adm.py` — where the linearised constraint operator stops being surjective, and why a
+perturbation can then solve the linear problem without solving the real one.
+
+### The phenomenon
+
+Vacuum initial data is a pair (g, K) satisfying the constraints
+
+> H = R(g) − |K|² + (tr K)² = 0,  M^i = ∇_j(K^ij − g^ij tr K) = 0
+
+Write Φ(g,K) = (H, M). Where DΦ is *surjective*, the implicit function theorem says every
+solution of DΦ(h,k) = 0 integrates — it is tangent to an actual curve of solutions.
+Surjectivity fails exactly when the adjoint DΦ\* has a kernel, and those kernel elements are
+**KIDs** (Killing Initial Data), pairs (N, X) generating a spacetime Killing field. So
+**symmetry of the solution is the same thing as rank loss of the constraint map**, and where
+the rank drops the linear theory stops predicting the nonlinear one. That is linearisation
+instability, and the obstruction is second order: for each KID, ∫ N·Q(h,k) must vanish.
+
+### Why the flat torus makes it exact
+
+On T³ with the flat metric and K = 0, Fourier modes are indexed by **integer** vectors, so
+every mode matrix of DΦ is integral and its rank is a combinatorial fact — not a decision
+about how small a singular value must be before it counts as zero. Near a rank-loss point
+that distinction is the entire question.
+
+### The result
+
+Sweeping every mode in [−3,3]³, as exact integer ranks:
+
+| | modes | rank | deficiency | KID dimension |
+| --- | --- | --- | --- | --- |
+| k ≠ 0 | 342 | 4 (full) | 0 | 0 |
+| k = 0 | 1 | 0 | **4** | **4** |
+
+**Deficiency equals KID dimension at every single mode** — the Fischer–Marsden correspondence
+as an integer identity. The 4 is one constant lapse plus three translations.
+
+And rank loss is confined *entirely to the zero mode*. That is precisely why the obstruction
+is an **integral** over the torus rather than a pointwise condition — there is nowhere else
+for it to live.
+
+### The instability, exhibited
+
+For each k ≠ 0 there are exactly **two** transverse-traceless polarisations. With h = 0 they
+solve the linearised constraints *exactly* — trace-free and transverse kills both DH and DM
+identically. And the second-order obstruction on them reduces to
+
+> ∫[(tr k)² − |k|²] = −|k|² < 0
+
+strictly negative, never zero: −2, −4, −6, −7, −28/9 at k = (1,0,0), (1,1,0), (1,1,1),
+(2,−1,3), (3,1,−2). So these perturbations solve the linear problem and provably fail to be
+tangent to any solution. The linear theory predicts a deformation the nonlinear theory does
+not admit.
+
+The sign is genuinely about the TT sector, not an artefact: a pure-trace perturbation gives a
+*positive* value, and there is a test for that.
+
+### Two conventions that had to be pinned, not assumed
+
+**Gauge invariance is the sharp check.** A pure-gauge perturbation h = Lie_X δ must lie in the
+kernel of DΦ. Get any sign or index wrong and it doesn't. This passes for every mode and every
+shift vector, and there's a test confirming a generic perturbation is *not* in the kernel, so
+the check isn't vacuous.
+
+**The adjoint is not the transpose.** I first wrote `kid_matrix` as the naive transpose and
+the pairing identity failed with 900 mismatches. The reason is real: the natural inner product
+on symmetric tensors weights an off-diagonal slot by 2, since it stands for two entries, and
+the constraint matrix folds that weight into its own entries. The identity is
+
+> Σ_r (DΦh)_r u_r = Σ_slot mult(slot)·h_slot·(DΦ\*u)_slot
+
+with multiplicities explicit. A test asserts the naive transpose *fails*, so the distinction
+stays visible.
+
+Also fixed: `mode_report` originally transposed the adjoint before taking its kernel, computing
+the null space in the 12-dimensional target instead of the 4-dimensional source — the wrong
+space entirely.
+
+### What is deliberately not implemented
+
+The obstruction's metric term needs R⁽²⁾(h), the quadratic part of the scalar curvature, and
+this module has no independent way to referee that expansion. A formula that can't be checked
+shouldn't be used, so `obstruction_value` handles h = 0 only and says so. It costs nothing
+here: TT perturbations of the extrinsic curvature already solve the linearised constraints and
+already violate the obstruction, which is all that exhibiting the instability requires.
+
+```bash
+python -c "import adm; print([ (r.wave, r.rank, r.kid_dimension) for r in adm.sweep_modes(1) if r.loses_rank])"
+```
+
 ## Tests
 
 ```bash
@@ -1578,6 +1671,7 @@ python -m pytest test_spinfoam.py -v            # spin networks
 python -m pytest test_fractal_stokes.py -v      # fractal Stokes
 python -m pytest test_selberg.py -v             # graph Selberg trace formula
 python -m pytest test_detection.py -v           # community detection
+python -m pytest test_adm.py -v                 # ADM constraint rank loss
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
