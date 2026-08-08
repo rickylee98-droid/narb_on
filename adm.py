@@ -58,9 +58,21 @@ concentrated entirely in the zero mode, which is precisely the statement that
 the obstruction is an *integral* over the torus and not a pointwise condition.
 
 The second-order obstruction is then a quadratic form on the space of linearised
-solutions, and :func:`obstruction_value` evaluates it.  For the flat torus it is
-sign-definite modulo gauge, which is what makes the instability real: a non-gauge
-linearised solution cannot make it vanish, so it does not integrate.
+solutions, and :func:`obstruction_value` evaluates it.  Both of its terms are
+computed here: the extrinsic-curvature part directly, and the metric part
+``<R^{(2)}(h)>`` from an expansion of the scalar curvature that is refereed by
+reproducing ``DH`` at first order.
+
+The conclusion is the full rigidity of the flat torus.  On the eight-dimensional
+space of linearised solutions at each non-zero mode, the obstruction has inertia
+
+    (negative, zero, positive) = (4, 4, 0) ,
+
+and the four null directions are *exactly* the gauge span -- three shifts and one
+lapse.  So the form is negative definite on everything that is not pure gauge:
+every non-gauge linearised solution is strictly obstructed and none of them
+integrate.  This is stronger than the transverse-traceless statement, which only
+covered perturbations with ``h = 0``.
 """
 
 from __future__ import annotations
@@ -86,9 +98,14 @@ __all__ = [
     "sweep_modes",
     "lie_derivative_mode",
     "gauge_directions",
+    "metric_obstruction_term",
     "obstruction_value",
     "transverse_traceless_modes",
     "linearised_solutions",
+    "obstruction_form",
+    "lapse_gauge_direction",
+    "gauge_span",
+    "physical_signature",
 ]
 
 LOGGER = logging.getLogger(__name__)
@@ -388,34 +405,71 @@ def linearised_solutions(wave: Sequence[int]) -> list[list[Fraction]]:
 # --------------------------------------------------------------------------- #
 # The second-order obstruction
 # --------------------------------------------------------------------------- #
+def metric_obstruction_term(
+    wave: Sequence[int], slots: Sequence[Fraction | int]
+) -> Fraction:
+    """Torus average of ``R^{(2)}(h)`` for ``h = A cos(k . x)``, exactly.
+
+    Derived by expanding the scalar curvature of ``delta + epsilon A cos(k.x)``
+    to second order in ``epsilon`` symbolically and averaging over the torus,
+    then matching against the four quadratic invariants available.  The match is
+    exact -- residual identically zero -- and gives
+
+        <R^{(2)}> = -(1/8)|k|^2 |A|^2 - (1/8)|k|^2 (tr A)^2 + (1/4)|A k|^2 .
+
+    Note the absence of any ``(tr A)(k A k)`` term, which is not obvious in
+    advance and is what makes the four-invariant basis sufficient.
+
+    **How this is refereed.**  The same symbolic pipeline, taken to first order
+    instead of second, must reproduce ``DH`` from
+    :func:`linearised_constraint_matrix` -- and does, as an identical polynomial.
+    That check ties an independent computation of the Christoffel symbols, Ricci
+    tensor and contraction to an operator already pinned by gauge invariance, so
+    the second-order coefficient inherits the same standing.
+    """
+    if len(slots) != 6:
+        raise ValueError(f"metric mode {tuple(wave)} needs six slots; got {len(slots)}")
+    values = [Fraction(entry) for entry in slots]
+    square = sum(int(component) * int(component) for component in wave)
+    trace = sum(values[symmetric_index(i, i)] for i in range(3))
+    norm = sum(_multiplicity(slot) * values[slot] * values[slot] for slot in range(6))
+    contracted = Fraction(0)
+    for component in range(3):
+        entry = Fraction(0)
+        for other in range(3):
+            entry += values[symmetric_index(component, other)] * int(wave[other])
+        contracted += entry * entry
+    return (
+        -Fraction(1, 8) * square * norm
+        - Fraction(1, 8) * square * trace * trace
+        + Fraction(1, 4) * contracted
+    )
+
+
 def obstruction_value(
     curvature_modes: dict[tuple[int, int, int], Sequence[Fraction | int]],
+    metric_modes: dict[tuple[int, int, int], Sequence[Fraction | int]] | None = None,
 ) -> Fraction:
-    """The Taub obstruction for a perturbation of the extrinsic curvature alone.
+    """The Taub obstruction: the integral that a linearised solution must satisfy.
 
-    For the constant-lapse KID on the flat torus the second-order condition on a
-    linearised solution ``(h, k)`` reads
+    For the constant-lapse KID on the flat torus the second-order condition is
 
-        Integral over T^3 of  [ R^{(2)}(h) - |k|^2 + (tr k)^2 ]  =  0 ,
+        Integral over T^3 of  [ R^{(2)}(h) - |K|^2 + (tr K)^2 ]  =  0 ,
 
-    with ``R^{(2)}`` the quadratic part of the scalar curvature.  This function
-    computes it in the case ``h = 0``, where the metric term drops out entirely
-    and what remains is exact:
+    and by Parseval it is a sum over modes of a quadratic form in the
+    amplitudes, needing no spatial discretisation and no floating point.
 
-        Integral of  [ (tr k)^2 - |k|^2 ]  ,
+    Both terms are torus *averages*, which fixes their relative weight and is
+    easy to get wrong.  For ``K = B cos(k.x)`` the average of
+    ``(tr K)^2 - |K|^2`` carries a factor ``1/2`` from ``<cos^2> = 1/2``, while
+    :func:`metric_obstruction_term` already has its averaging built in.  An
+    earlier version omitted that half.  It made no difference to a claim about
+    the *sign* of the curvature term alone, since a positive rescaling cannot
+    change a sign, but it is wrong the moment the two terms are added, which is
+    exactly what this function now does.
 
-    which by Parseval is a sum over modes of a quadratic form in the amplitudes,
-    needing no spatial discretisation and no floating point.
-
-    **The metric term is deliberately not implemented.**  Getting ``R^{(2)}``
-    right requires an expansion that this module has no independent way to
-    referee, and a formula that cannot be checked is a formula that should not
-    be used.  Restricting to ``h = 0`` costs nothing for the purpose at hand:
-    transverse-traceless perturbations of the extrinsic curvature already solve
-    the linearised constraints exactly, and they already violate the obstruction,
-    which is all that is needed to exhibit the instability.
-
-    Amplitudes are taken real, one representative per ``+-k`` pair.
+    ``metric_modes`` may be omitted, recovering the extrinsic-curvature-only
+    case.  Amplitudes are real, one representative per ``+-k`` pair.
     """
     total = Fraction(0)
     for wave, slots in curvature_modes.items():
@@ -426,7 +480,9 @@ def obstruction_value(
         norm = Fraction(0)
         for slot in range(6):
             norm += _multiplicity(slot) * values[slot] * values[slot]
-        total += trace * trace - norm
+        total += Fraction(1, 2) * (trace * trace - norm)
+    for wave, slots in (metric_modes or {}).items():
+        total += metric_obstruction_term(wave, slots)
     return total
 
 
@@ -461,3 +517,145 @@ def transverse_traceless_modes(wave: Sequence[int]) -> list[list[Fraction]]:
                 row[slot] += vector[i]
         rows.append(row)
     return integer_kernel(rows)
+
+
+# --------------------------------------------------------------------------- #
+# The obstruction as a quadratic form, and its signature
+# --------------------------------------------------------------------------- #
+def obstruction_form(wave: Sequence[int]) -> list[list[Fraction]]:
+    """The obstruction at one mode as a symmetric ``12 x 12`` rational matrix.
+
+    Built by polarisation from :func:`obstruction_value` itself --
+    ``Q[a][b] = (f(e_a + e_b) - f(e_a) - f(e_b)) / 2`` -- rather than by writing
+    out index expressions a second time.  A hand-written matrix would be an
+    independent chance to misplace a multiplicity; this cannot disagree with the
+    function it is derived from.
+    """
+    size = 12
+
+    def evaluate(vector: Sequence[Fraction]) -> Fraction:
+        key = (int(wave[0]), int(wave[1]), int(wave[2]))
+        return obstruction_value({key: list(vector[6:])}, {key: list(vector[:6])})
+
+    basis = []
+    for index in range(size):
+        row = [Fraction(0)] * size
+        row[index] = Fraction(1)
+        basis.append(row)
+    diagonal = [evaluate(row) for row in basis]
+    form = [[Fraction(0)] * size for _ in range(size)]
+    for a in range(size):
+        form[a][a] = diagonal[a]
+        for b in range(a + 1, size):
+            combined = [basis[a][i] + basis[b][i] for i in range(size)]
+            off = (evaluate(combined) - diagonal[a] - diagonal[b]) / 2
+            form[a][b] = off
+            form[b][a] = off
+    return form
+
+
+def lapse_gauge_direction(wave: Sequence[int]) -> list[Fraction]:
+    """The time-gauge direction: ``h = 0``, ``k = Hess N``.
+
+    At ``K = 0`` a lapse perturbation moves the slice, changing the extrinsic
+    curvature by a Hessian while leaving the induced metric alone.  It solves the
+    linearised momentum constraint identically, since
+    ``partial_j (N_{,ij} - delta_ij Laplacian N)`` telescopes to zero, so it is a
+    genuine element of the kernel that carries no physics.
+    """
+    vector = [int(component) for component in wave]
+    slots = [Fraction(0)] * 12
+    for slot, (i, j) in enumerate(SYMMETRIC_PAIRS):
+        slots[6 + slot] = Fraction(-vector[i] * vector[j])
+    return slots
+
+
+def gauge_span(wave: Sequence[int]) -> list[list[Fraction]]:
+    """All four pure-gauge directions at one mode: three shifts and one lapse."""
+    span = [[Fraction(entry) for entry in row] for row in gauge_directions(wave)]
+    span.append(lapse_gauge_direction(wave))
+    return span
+
+
+def _congruence_signature(
+    matrix: Sequence[Sequence[Fraction]],
+) -> tuple[int, int, int]:
+    """Exact inertia ``(negative, zero, positive)`` by symmetric elimination.
+
+    Sylvester's law of inertia lets the signature be read off any congruent
+    diagonal form, and congruence by rational row/column operations keeps
+    everything in ``Q``.  Computing eigenvalues in floating point would report a
+    signature that depends on a tolerance, which for a form whose whole interest
+    is where it degenerates is exactly the wrong instrument.
+    """
+    rows = [[Fraction(entry) for entry in row] for row in matrix]
+    size = len(rows)
+    negative = positive = zero = 0
+    active = list(range(size))
+    while active:
+        pivot = None
+        for index in active:
+            if rows[index][index] != 0:
+                pivot = index
+                break
+        if pivot is None:
+            # No non-zero diagonal entry: either the whole block vanishes, or a
+            # hyperbolic pair hides in the off-diagonal and contributes one of
+            # each sign.
+            found = None
+            for a in active:
+                for b in active:
+                    if a != b and rows[a][b] != 0:
+                        found = (a, b)
+                        break
+                if found:
+                    break
+            if found is None:
+                zero += len(active)
+                break
+            a, b = found
+            for index in active:
+                rows[index][a] = rows[index][a] + rows[index][b]
+            for index in active:
+                rows[a][index] = rows[a][index] + rows[b][index]
+            continue
+        value = rows[pivot][pivot]
+        if value > 0:
+            positive += 1
+        else:
+            negative += 1
+        for other in active:
+            if other == pivot:
+                continue
+            factor = rows[other][pivot] / value
+            if factor:
+                for column in active:
+                    rows[other][column] -= factor * rows[pivot][column]
+                for row_index in active:
+                    rows[row_index][other] -= factor * rows[row_index][pivot]
+        active.remove(pivot)
+    return negative, zero, positive
+
+
+def physical_signature(wave: Sequence[int]) -> tuple[int, int, int]:
+    """Inertia of the obstruction restricted to linearised solutions.
+
+    Returns ``(negative, zero, positive)`` for the quadratic form on
+    ``ker DPhi``.  The zero count should be exactly the dimension of the gauge
+    span, since gauge directions change nothing physical and cannot contribute to
+    an obstruction; anything left over is genuine.
+    """
+    kernel = linearised_solutions(wave)
+    form = obstruction_form(wave)
+    reduced = [
+        [
+            sum(
+                left[a] * form[a][b] * right[b]
+                for a in range(12)
+                for b in range(12)
+            )
+            for right in kernel
+        ]
+        for left in kernel
+    ]
+    return _congruence_signature(reduced)

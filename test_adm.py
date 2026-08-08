@@ -278,11 +278,18 @@ class TestObstruction:
             value = adm.obstruction_value({wave: tensor})
             assert value < 0
 
-    def test_a_trace_free_perturbation_gives_minus_its_norm(self) -> None:
-        """With ``tr k = 0`` the obstruction reduces to ``-|k|^2`` exactly."""
+    def test_a_trace_free_perturbation_gives_minus_half_its_norm(self) -> None:
+        """With ``tr k = 0`` the obstruction is ``-|k|^2/2``, the half from ``<cos^2>``.
+
+        This test previously asserted ``-2``, the value before the torus average
+        was normalised. The half makes no difference to a claim about the sign of
+        this term alone, but it fixes the relative weight against the metric term
+        of :func:`adm.metric_obstruction_term`, which is what makes the two
+        addable.
+        """
         tensor = [Fraction(0), Fraction(1), Fraction(0), Fraction(0), Fraction(0), Fraction(0)]
-        # off-diagonal slot with multiplicity two
-        assert adm.obstruction_value({(1, 0, 0): tensor}) == -2
+        # one off-diagonal slot, multiplicity two, so |k|^2 = 2 and the value is -1
+        assert adm.obstruction_value({(1, 0, 0): tensor}) == -1
 
     def test_a_pure_trace_perturbation_gives_a_positive_value(self) -> None:
         """The form is not negative-definite on all tensors, only on trace-free ones.
@@ -317,3 +324,181 @@ class TestObstruction:
 
     def test_the_empty_perturbation_is_unobstructed(self) -> None:
         assert adm.obstruction_value({}) == 0
+
+
+# --------------------------------------------------------------------------- #
+# The metric term, and the full obstruction
+# --------------------------------------------------------------------------- #
+class TestMetricObstruction:
+    """``<R^{(2)}>`` derived symbolically and refereed at first order.
+
+    The expansion was obtained by computing the scalar curvature of
+    ``delta + eps A cos(k.x)`` to second order with a computer algebra system and
+    matching against the four quadratic invariants; the match is exact. The same
+    pipeline taken to *first* order reproduces ``DH`` from
+    :func:`adm.linearised_constraint_matrix` as an identical polynomial, which is
+    what gives the second-order coefficient its standing.
+    """
+
+    @pytest.mark.parametrize("wave", NONZERO_MODES)
+    def test_negative_on_transverse_traceless_metric_perturbations(
+        self, wave
+    ) -> None:
+        """With ``tr A = 0`` and ``A k = 0`` only the ``-|k|^2|A|^2/8`` term survives."""
+        for tensor in adm.transverse_traceless_modes(wave):
+            assert adm.metric_obstruction_term(wave, tensor) < 0
+
+    def test_matches_the_closed_form_on_a_trace_free_transverse_case(self) -> None:
+        wave = (1, 0, 0)
+        tensor = adm.transverse_traceless_modes(wave)[0]
+        norm = sum(
+            adm._multiplicity(slot) * tensor[slot] ** 2 for slot in range(6)
+        )
+        assert adm.metric_obstruction_term(wave, tensor) == -Fraction(1, 8) * 1 * norm
+
+    def test_vanishes_at_the_zero_mode(self) -> None:
+        tensor = [Fraction(1), Fraction(2), Fraction(0), Fraction(1), Fraction(0), Fraction(3)]
+        assert adm.metric_obstruction_term((0, 0, 0), tensor) == 0
+
+    def test_is_quadratic(self) -> None:
+        wave = (1, 2, 0)
+        tensor = [Fraction(1), Fraction(-1), Fraction(2), Fraction(0), Fraction(1), Fraction(3)]
+        single = adm.metric_obstruction_term(wave, tensor)
+        doubled = adm.metric_obstruction_term(wave, [3 * e for e in tensor])
+        assert doubled == 9 * single
+
+    def test_rejects_a_malformed_mode(self) -> None:
+        with pytest.raises(ValueError, match="six slots"):
+            adm.metric_obstruction_term((1, 0, 0), [1, 2, 3])
+
+
+class TestGaugeSpan:
+    @pytest.mark.parametrize("wave", NONZERO_MODES)
+    def test_the_lapse_direction_solves_the_constraints(self, wave) -> None:
+        matrix = adm.linearised_constraint_matrix(wave)
+        direction = adm.lapse_gauge_direction(wave)
+        image = [
+            sum(matrix[row][col] * direction[col] for col in range(12))
+            for row in range(4)
+        ]
+        assert image == [0, 0, 0, 0]
+
+    @pytest.mark.parametrize("wave", NONZERO_MODES)
+    def test_there_are_four_gauge_directions_inside_an_eight_dimensional_kernel(
+        self, wave
+    ) -> None:
+        span = adm.gauge_span(wave)
+        kernel = adm.linearised_solutions(wave)
+        assert len(span) == 4
+        assert len(kernel) == 8
+        assert adm.integer_rank([list(row) for row in span]) == 4
+
+    @pytest.mark.parametrize("wave", NONZERO_MODES)
+    def test_gauge_directions_lie_in_the_kernel(self, wave) -> None:
+        matrix = adm.linearised_constraint_matrix(wave)
+        for direction in adm.gauge_span(wave):
+            image = [
+                sum(matrix[row][col] * direction[col] for col in range(12))
+                for row in range(4)
+            ]
+            assert image == [0, 0, 0, 0]
+
+
+class TestObstructionForm:
+    @pytest.mark.parametrize("wave", NONZERO_MODES[:5])
+    def test_the_form_is_symmetric(self, wave) -> None:
+        form = adm.obstruction_form(wave)
+        for a in range(12):
+            for b in range(12):
+                assert form[a][b] == form[b][a]
+
+    @pytest.mark.parametrize("wave", NONZERO_MODES[:5])
+    def test_the_form_reproduces_the_value(self, wave) -> None:
+        """Polarisation must invert: the matrix and the function cannot disagree."""
+        rng = random.Random(hash(wave) & 0xFFFF)
+        form = adm.obstruction_form(wave)
+        for _ in range(5):
+            vector = [Fraction(rng.randint(-3, 3)) for _ in range(12)]
+            quadratic = sum(
+                vector[a] * form[a][b] * vector[b] for a in range(12) for b in range(12)
+            )
+            direct = adm.obstruction_value(
+                {wave: vector[6:]}, {wave: vector[:6]}
+            )
+            assert quadratic == direct
+
+    @pytest.mark.parametrize("wave", NONZERO_MODES[:5])
+    def test_gauge_lies_in_the_radical_on_the_solution_space(self, wave) -> None:
+        """Pure gauge changes nothing physical, so it cannot be obstructed."""
+        form = adm.obstruction_form(wave)
+        kernel = adm.linearised_solutions(wave)
+        for direction in adm.gauge_span(wave):
+            for solution in kernel:
+                paired = sum(
+                    direction[a] * form[a][b] * solution[b]
+                    for a in range(12)
+                    for b in range(12)
+                )
+                assert paired == 0
+
+
+class TestRigidity:
+    """The complete statement, which the extrinsic-curvature-only case could not reach."""
+
+    @pytest.mark.parametrize("wave", NONZERO_MODES)
+    def test_the_signature_is_negative_semi_definite_with_gauge_radical(
+        self, wave
+    ) -> None:
+        """Inertia ``(4, 4, 0)``: four negative directions, four null, none positive.
+
+        The four null directions are exactly the gauge span. So the obstruction
+        is strictly negative on every linearised solution that is not pure gauge,
+        and no such solution integrates. This is the full rigidity of the flat
+        torus, metric perturbations included -- the case the
+        curvature-only computation left open.
+        """
+        negative, zero, positive = adm.physical_signature(wave)
+        assert positive == 0
+        assert zero == len(adm.gauge_span(wave)) == 4
+        assert negative == 4
+        assert negative + zero == len(adm.linearised_solutions(wave))
+
+    @pytest.mark.parametrize("wave", NONZERO_MODES[:4])
+    def test_a_non_gauge_solution_is_strictly_obstructed(self, wave) -> None:
+        span = adm.gauge_span(wave)
+        base_rank = adm.integer_rank([list(row) for row in span])
+        for solution in adm.linearised_solutions(wave):
+            extended = [list(row) for row in span] + [list(solution)]
+            if adm.integer_rank(extended) > base_rank:
+                value = adm.obstruction_value(
+                    {wave: list(solution[6:])}, {wave: list(solution[:6])}
+                )
+                assert value < 0
+                return
+        pytest.fail("every kernel direction was gauge, which contradicts dim 8 > 4")
+
+    @pytest.mark.parametrize("wave", NONZERO_MODES[:4])
+    def test_pure_gauge_is_unobstructed(self, wave) -> None:
+        for direction in adm.gauge_span(wave):
+            value = adm.obstruction_value(
+                {wave: list(direction[6:])}, {wave: list(direction[:6])}
+            )
+            assert value == 0
+
+
+class TestSignatureHelper:
+    def test_known_inertias(self) -> None:
+        assert adm._congruence_signature([[Fraction(1)]]) == (0, 0, 1)
+        assert adm._congruence_signature([[Fraction(-1)]]) == (1, 0, 0)
+        assert adm._congruence_signature([[Fraction(0)]]) == (0, 1, 0)
+
+    def test_a_hyperbolic_pair_has_one_of_each_sign(self) -> None:
+        """No non-zero diagonal entry, yet the form is indefinite."""
+        matrix = [[Fraction(0), Fraction(1)], [Fraction(1), Fraction(0)]]
+        assert adm._congruence_signature(matrix) == (1, 0, 1)
+
+    def test_diagonal_matrices_are_read_off(self) -> None:
+        matrix = [[Fraction(0)] * 3 for _ in range(3)]
+        matrix[0][0] = Fraction(-2)
+        matrix[1][1] = Fraction(5)
+        assert adm._congruence_signature(matrix) == (1, 1, 1)

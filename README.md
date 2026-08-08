@@ -196,12 +196,12 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `detection.py` | Community detection via the non-backtracking spectrum |
 | `test_detection.py` | Detection test suite (59 tests) |
 | `adm.py` | Einstein constraint rank loss, KIDs, linearisation instability |
-| `test_adm.py` | ADM test suite (84 tests) |
+| `test_adm.py` | ADM test suite (154 tests) |
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 | `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
 | `paper/fractal_stokes.tex` | Write-up of the fractal Stokes result (10 pp.) |
 | `paper/selberg_graphs.tex` | Write-up of the graph RH result (8 pp.) |
-| `paper/adm_rank_loss.tex` | Write-up of the constraint rank-loss result (6 pp.) |
+| `paper/adm_rank_loss.tex` | Write-up of the constraint rank-loss result (7 pp.) |
 
 ## Method notes
 
@@ -1649,13 +1649,48 @@ Also fixed: `mode_report` originally transposed the adjoint before taking its ke
 the null space in the 12-dimensional target instead of the 4-dimensional source — the wrong
 space entirely.
 
-### What is deliberately not implemented
+### Closing the second-order term
 
-The obstruction's metric term needs R⁽²⁾(h), the quadratic part of the scalar curvature, and
-this module has no independent way to referee that expansion. A formula that can't be checked
-shouldn't be used, so `obstruction_value` handles h = 0 only and says so. It costs nothing
-here: TT perturbations of the extrinsic curvature already solve the linearised constraints and
-already violate the obstruction, which is all that exhibiting the instability requires.
+The obstruction's metric half needs R⁽²⁾(h). The first version of this module declined to
+implement it, on the grounds that an expansion with no independent referee shouldn't be used.
+It now has one.
+
+Expanding the curvature of δ + εA·cos(k·x) symbolically and averaging over the torus gives,
+with residual **identically zero** against the four available quadratic invariants:
+
+> ⟨R⁽²⁾⟩ = −⅛|k|²|A|² − ⅛|k|²(tr A)² + ¼|Ak|²
+
+(No (tr A)(kAk) term — not obvious in advance, and what makes four invariants enough.)
+
+**The referee:** the same symbolic pipeline taken to *first* order must reproduce DH from
+`linearised_constraint_matrix` — and does, as an identical polynomial. Since DH is
+independently pinned by the gauge check, the second-order coefficient inherits that standing.
+
+**A normalisation this exposed.** Both terms are torus *averages*, and ⟨cos²⟩ = ½ means the
+extrinsic-curvature term carries a half that the first version omitted. Immaterial to a claim
+about the sign of one term — a positive rescaling can't flip a sign — but wrong the moment the
+two are added, which is exactly what the full obstruction does.
+
+### The full result: rigidity
+
+With both halves, the obstruction is a quadratic form on the 8-dimensional solution space.
+Gauge there is 4-dimensional: three shifts, plus a lapse direction h = 0, k̂_ij = −k_i k_j N̂
+(which solves the momentum constraint identically, since ∂_j(N_,ij − δ_ij ΔN) telescopes).
+
+> **At every k ≠ 0 the inertia is (negative, zero, positive) = (4, 4, 0), and the four null
+> directions are exactly the gauge span.**
+
+So the form is negative definite modulo gauge: **every** non-gauge linearised solution is
+strictly obstructed and none integrate — metric perturbations included, not just the
+transverse-traceless ones. The TT result is now the special case h = 0.
+
+Inertia is computed by exact congruence over ℚ (symmetric Gaussian elimination, Sylvester's
+law), not from floating-point eigenvalues whose signature would depend on a tolerance — the
+wrong instrument for a form whose whole interest is where it degenerates.
+
+One subtlety worth recording: Q·g ≠ 0 as a vector in ℝ¹². The radical is a statement about the
+*restriction* to ker DΦ, and checking it on the full space reports a spurious failure. I hit
+that before pairing gauge against kernel vectors instead.
 
 ```bash
 python -c "import adm; print([ (r.wave, r.rank, r.kid_dimension) for r in adm.sweep_modes(1) if r.loses_rank])"
