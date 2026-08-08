@@ -201,6 +201,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
 | `paper/fractal_stokes.tex` | Write-up of the fractal Stokes result (10 pp.) |
 | `paper/selberg_graphs.tex` | Write-up of the graph RH result (8 pp.) |
+| `paper/adm_rank_loss.tex` | Write-up of the constraint rank-loss result (6 pp.) |
 
 ## Method notes
 
@@ -1658,6 +1659,9 @@ already violate the obstruction, which is all that exhibiting the instability re
 
 ```bash
 python -c "import adm; print([ (r.wave, r.rank, r.kid_dimension) for r in adm.sweep_modes(1) if r.loses_rank])"
+
+# The write-up
+make -C paper adm_rank_loss.pdf
 ```
 
 ## Tests
