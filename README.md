@@ -197,11 +197,6 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `test_detection.py` | Detection test suite (59 tests) |
 | `adm.py` | Einstein constraint rank loss, KIDs, linearisation instability |
 | `test_adm.py` | ADM test suite (154 tests) |
-| `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
-| `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
-| `paper/fractal_stokes.tex` | Write-up of the fractal Stokes result (10 pp.) |
-| `paper/selberg_graphs.tex` | Write-up of the graph RH result (9 pp.) |
-| `paper/adm_rank_loss.tex` | Write-up of the constraint rank-loss result (7 pp.) |
 
 ## Method notes
 
@@ -1449,8 +1444,6 @@ HTTPS only, so arXiv's documented `http://export.arxiv.org` API endpoint fails w
 ```bash
 python -c "import networkx as nx, selberg as sb; print(sb.riemann_hypothesis_test(nx.petersen_graph()).growth)"
 
-# The write-up
-make -C paper selberg_graphs.pdf
 ```
 
 ## An application: community detection as a failure of the Ramanujan bound
@@ -1658,8 +1651,6 @@ that before pairing gauge against kernel vectors instead.
 ```bash
 python -c "import adm; print([ (r.wave, r.rank, r.kid_dimension) for r in adm.sweep_modes(1) if r.loses_rank])"
 
-# The write-up
-make -C paper adm_rank_loss.pdf
 ```
 
 ## Tests
