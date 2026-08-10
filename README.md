@@ -200,7 +200,7 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `paper/arithmetic_que.tex` | Write-up of the AQUE result (12 pp., `make` to build) |
 | `paper/spin_networks.tex` | Write-up of the Ponzano-Regge result (9 pp.) |
 | `paper/fractal_stokes.tex` | Write-up of the fractal Stokes result (10 pp.) |
-| `paper/selberg_graphs.tex` | Write-up of the graph RH result (8 pp.) |
+| `paper/selberg_graphs.tex` | Write-up of the graph RH result (9 pp.) |
 | `paper/adm_rank_loss.tex` | Write-up of the constraint rank-loss result (7 pp.) |
 
 ## Method notes
@@ -1424,64 +1424,27 @@ The 24 units are the vertices of the 24-cell and form the binary tetrahedral gro
 double cover of the tetrahedron's rotation group — which is where this meets the packing
 problem the project started from.
 
-### A note on literature access
+### Literature access, and what it confirmed
 
-This sandbox's egress policy blocks `arxiv.org`, `mathweb.ucsd.edu`, `its.caltech.edu` and
-`en.wikipedia.org`; web search works but full-text fetch does not. Nothing in this module
-depends on that, because every identity is verified in code against an independent
-computation — but the standard references (Ihara, Bass, Hashimoto, Terras) could not be read
-directly, and the module is written so that no claim rests on a recollected formula.
+This sandbox initially blocked `arxiv.org`, `wikipedia.org` and the journal hosts, so the
+module was written to take no formula on authority — every identity verified in code against
+an independent computation. Access has since been opened, and the standard statements were
+then checked against it. All of them hold as used:
 
-### Scaling up: LPS graphs, and two bugs found on the way
+- **Ihara's formula** ζ_G(u) = 1/[(1−u²)^(r−1)·det(I − Au + qu²I)] — matches exactly,
+  including the exponent r−1. Ihara (1966); the graph-theoretic reformulation is Sunada
+  (1986), following a suggestion of Serre; the determinant formula over the adjacency matrix
+  is Bass (1992); the edge operator is Hashimoto's.
+- **Ramanujan ⟺ RH** for the Ihara zeta — the equivalence this whole paper measures — is due
+  to **Sunada**, an attribution the first draft did not have.
+- **r−1 = (q−1)n/2** for connected (q+1)-regular graphs on n vertices, which the literature
+  states and which we verify on six graphs as an extra consistency check.
 
-Scaling to genuine LPS Ramanujan graphs — built by `arithmetic_que.py`, so *provably*
-Ramanujan — needed a faster route than `tr(Bᵐ)`, since 1680 directed edges already makes a
-Python-integer matrix power hopeless. Two were tried.
-
-**The wrong one first.** `geodesic_counts_from_spectrum` uses floating-point eigenvalues, and
-carries a precision guard because R(m) is a cancellation between a main term ~qᵐ and an error
-~q^(m/2). The guard caps the usable length at m ≤ 11 for a degree-14 graph, and at that range
-the statistic is unreliable: LPS(13,5) reads 0.830 against a prediction of 1.000.
-
-**The right one.** No eigenvalues are needed at all. The power sum α^m + β^m obeys
-s_m = λ s_(m−1) − q s_(m−2), so summing over the spectrum gives a recurrence in the *integer*
-adjacency matrix:
-
-> T_m(A) = A·T_(m−1)(A) − q·T_(m−2)(A), T₀ = 2I, T₁ = A, and N_m = tr(T_m(A)) + (r−1)(1+(−1)ᵐ)
-
-`geodesic_counts_exact` — exact, no precision floor, and m multiplications of a |V| × |V|
-matrix instead of a 2|E| matrix power. It matches `tr(Bᵐ)` on every graph where both run, and
-reaches m = 40 where the float route refuses.
-
-**Then a second bug, which had corrupted everything long.** π(m) reaches 10⁴⁴ at m = 40, q = 13
-while the error being measured is only 10²². Subtracting a *float* main term coerces the exact
-count to a float and destroys everything below 10²⁸ — the normalised error came out as an
-unbroken run of exact zeros with occasional spurious spikes. Multiplying through by m keeps
-the whole quantity integral:
-
-> R(m) = |π(m)·m − w·qᵐ| / q^(m/2)
-
-With both fixed, at m = 40:
-
-| graph | \|V\| | deg | Ramanujan | growth | predicted |
-| --- | --- | --- | --- | --- | --- |
-| LPS(13,5) | 120 | 14 | yes | 1.0141 | 1.0000 |
-| random 14-reg ×3 | 120 | 14 | yes | 1.0276, 0.9857, 0.9885 | 1.0000 |
-| random 6-reg | 120 | 6 | yes | 1.0208 | 1.0000 |
-| Petersen / Heawood / 2T | 10 / 14 / 24 | 3 / 3 / 4 | yes | 1.0026, 0.9959, 1.0177 | 1.0000 |
-| C₁₂₀(1..7) | 120 | 14 | **no** | 3.4731 | 3.4908 |
-| C₁₂₀(1..3) | 120 | 6 | **no** | 2.1839 | 2.2146 |
-| Circular ladder 60 | 120 | 3 | **no** | 1.3810 | 1.3985 |
-
-Every row within 0.031, including the provably-Ramanujan LPS graph at degree 14.
-
-An earlier version of this section reported that the method could not reach the LPS graphs,
-on the strength of a control in which a random 14-regular Ramanujan graph read 1.58. That
-control was measuring the float bugs above; corrected, the same graph reads 0.9857. What
-survives is narrower and still worth stating: **a short length range is genuinely
-insufficient** — at m ≤ 11 even exact counts give 0.83 for LPS — so the statistic needs
-m ≳ 20 regardless of arithmetic. Tests assert both the short-range failure and the
-long-range agreement.
+Two things worth recording about the access itself. The proxy answers blocked hosts with
+**HTTP 200 and an error page in the body**, so a status-code reachability probe reports
+success for hosts that are still blocked — the body has to be inspected. And the proxy serves
+HTTPS only, so arXiv's documented `http://export.arxiv.org` API endpoint fails while the
+`https://` form works; that produced a second wrong diagnosis before the first was corrected.
 
 ```bash
 python -c "import networkx as nx, selberg as sb; print(sb.riemann_hypothesis_test(nx.petersen_graph()).growth)"
