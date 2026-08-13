@@ -1918,6 +1918,109 @@ shrinks and the symmetry conditions disappear.
 python -c "import graviton as g; [print(c) for c in g.check_dispersion((2,-1,3))]"
 ```
 
+## An eleventh target: where the massive w₁₊∞ action breaks
+
+`celestial.py` — celestial holography, and an exact obstruction at integer conformal weight.
+
+### The state of the problem
+
+An infinite tower of soft graviton modes generates the wedge algebra of w₁₊∞,
+[w^p_m, w^q_n] = [m(q−1) − n(p−1)] w^{p+q−2}_{m+n}. On **massless** hard particles this is the
+Poisson algebra of polynomial area-preserving diffeomorphisms of a two-plane, acting on the
+point of that plane which is the particle's momentum spinor.
+
+The massive case is **not open**. Himwich and Pate ([arXiv:2312.08597](https://arxiv.org/abs/2312.08597),
+JHEP 07 (2024) 180) derived the action on massive scalars from the soft theorems and proved it
+closes on w₁₊∞. Their generators for p > 2 contain inverse powers of the momentum operator,
+evaluated by a Schwinger parametrisation they describe as formal; the action mixes infinitely
+many conformal families. They close by asking whether **a discrete basis at integer Δ produces
+any simplification.** That is the question attacked here.
+
+### The answer: the inverse does not exist there, and exactly there
+
+Massive celestial primaries are integrals of the hyperbolic bulk-to-boundary propagator
+G_Δ = (−p̂·q̂)^{−Δ}. Multiplication by momentum is a differential operator in the celestial
+coordinates plus a shift of Δ, and the module it acts on is spanned by
+**|Δ; i, j; a, b⟩ = z^a z̄^b ∂_z^i ∂_z̄^j G_Δ** — the derivatives fall on the propagator, not on
+any polynomial prefactor.
+
+**Step 1 — the operator, derived not quoted.** Expanding p̂ in the frame (q̂, ∂_zq̂, ∂_z̄q̂, n)
+and trading u = −p̂·q̂ for weight shifts needs exactly one identity,
+
+> **u·u_zz̄ − u_z·u_z̄ = 1**
+
+which is the statement that G_Δ is a genuine hyperbolic propagator. Everything else is the
+chain rule. The result agrees with Himwich–Pate's equation (6.1).
+
+**Step 2 — the referee.** On this module **p̂·p̂ = −1 exactly**, on every basis element and every
+Δ, and the four components commute. The operator carries a frame expansion, two weight shifts
+and an ordering of derivative against prefactor; the mass shell is one scalar identity that
+fails if any of them is wrong — and it did fail on the first version, which applied the
+operator to the prefactor as well. The four components also come out carrying the **boost and
+spin weights of a four-vector** under two gradings, N = Δ+i+j−a−b and M = (a−i)−(b−j), that the
+module was built without reference to.
+
+**Step 3 — bidiagonality.** The component whose inverse powers define the p > 2 generators is
+−n·p̂, and it has **exactly two terms**:
+
+    −n·p̂ |Δ; i, j⟩ = (Δ−1)^{−2} |Δ−1; i+1, j+1⟩ + Δ(Δ−1)^{−1} |Δ+1; i, j⟩
+
+with (a, b) spectators, because q̂^{++} = 2 is constant. Inverting a bidiagonal operator is a
+one-step recursion, not a continued fraction.
+
+**Step 4 — the organising structure.** The image is the arithmetic progression
+Δ−1, Δ−3, Δ−5, … with derivative orders climbing in lockstep, and the coefficients telescope
+into a falling factorial:
+
+> **v_k = (−1)^k (Δ − 2k − 2) / [(Δ−1)(Δ−2)···(Δ−2k−1)]**
+
+So the infinite mixing is one-dimensional and explicit. Applying the operator back to the
+truncated series leaves **exactly one term** — the truncation tail — everything else cancelling
+in exact rational arithmetic.
+
+**Step 5 — the obstruction.** That denominator vanishes exactly when Δ is an integer in
+[1, 2k+1], and the numerator (zero only at Δ = 2k+2) can never cancel it. So:
+
+> **(−n·p̂)^{−1} exists if and only if Δ is not a positive integer**, and at positive integer Δ
+> it fails at step ⌈(Δ−1)/2⌉.
+
+| Δ | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| first singular k | 0 | 1 | 1 | 2 | 2 | 3 | 3 | 4 |
+
+The whole principal series Δ = 1 + iλ, λ ≠ 0, is unobstructed — the progression never meets an
+integer. **The discrete integer basis does not simplify the massive action; it destroys it.**
+
+The two forbidden values are not arbitrary: Δ = 1 is the principal-series midpoint where the
+(Δ−1) denominators of the momentum operator itself blow up, and Δ = 0 is where it acquires a
+kernel. The obstruction is invisible before the inverse is taken, which is why the p ≤ 2
+generators — Poincaré, carrying (−n·P)^{−(2p−4)} with a non-positive exponent — are unaffected.
+The failure begins at p = 5/2, exactly where Himwich–Pate's Schwinger prescription does.
+
+### Referees
+
+- **The mass shell**, above: one scalar identity over three independent ingredients.
+- **Four-vector weights** under two gradings, free to fail and didn't.
+- **Two routes to the coefficients.** The recursion and the closed form are separate
+  computations that must agree wherever both are defined — and they disagree in a specific way
+  where they do not. At even Δ the recursion produces 0 × ∞ (β₀ infinite, v₀ zero) while the
+  closed form is finite and locates the true pole one step later. That is what sets the
+  obstruction at Δ = 2 to k = 1 rather than k = 0; the naive reading was wrong.
+- **The wedge is the polynomial condition.** |m| ≤ p−1 is exactly the statement that
+  λ₀^{p−1+m}λ₁^{p−1−m} has no pole at the origin of the plane — where a zero-energy massless
+  particle sits. Jacobi holds exactly on 6000 triples; the Poisson realisation reproduces the
+  structure constants exactly, and doubling the bracket normalisation breaks it.
+
+**Prior work.** The algebra is Strominger's and Guevara–Himwich–Pate–Strominger's; the massive
+action, its closure and the Schwinger prescription are Himwich–Pate's; the hyperbolic primary
+basis is Pasterski–Shao. New here: the module structure that makes the operator bidiagonal, the
+closed form for the family mixing, and the exact statement of when the inverse exists — a
+negative answer, with a precise obstruction, to the question that paper closes on.
+
+```bash
+python -c "import celestial as c; from fractions import Fraction as F; print(c.inversion_report(F(7,2))); print(c.inversion_report(F(5)))"
+```
+
 ## Tests
 
 ```bash
@@ -1933,6 +2036,7 @@ python -m pytest test_adm.py -v                 # ADM constraint rank loss
 python -m pytest test_fermat_hodge.py -v        # Hodge conjecture / Fermat
 python -m pytest test_platycosm.py -v           # flat 3-manifolds / instability
 python -m pytest test_graviton.py -v            # obstruction = Friedmann constraint
+python -m pytest test_celestial.py -v           # massive w_1+inf / celestial obstruction
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
