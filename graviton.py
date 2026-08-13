@@ -99,6 +99,25 @@ and they constrain the wave momenta rather than the energy.  The balance is
 therefore the irreducible content of linearisation stability on a compact flat
 slice: what survives when every symmetry that could be averaged over is gone.
 
+A remark on the quantum condition, not a derivation
+---------------------------------------------------
+Moncrief's proposal is to impose the stability condition as an operator equation
+on physical states.  Read per-mode it says ``Hhat_graviton |psi> = 0``, which
+before normal ordering no state satisfies and after normal ordering only the Fock
+vacuum does.  Read globally it says instead
+
+    6 Hhat^2  -  |sigma hat|^2  =  Hhat_graviton ,
+
+relating the graviton number operator to the momenta conjugate to the flat
+moduli, whose spectrum is continuous and unbounded above.  Every graviton state
+then has a partner expansion rate rather than being excluded, and the condition
+becomes a normalisation on the homogeneous sector.  The one thing it does not
+survive is the zero-point sum: on the un-normal-ordered vacuum the right-hand
+side diverges and no finite expansion rate pays for it, so an ordering
+prescription is doing real work here rather than being a convention.  This
+paragraph is a reading of the classical identity above, not a result computed by
+this module.
+
 Prior work
 ----------
 None of the physical ingredients are new.  The linearisation-stability framework

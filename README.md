@@ -1879,6 +1879,18 @@ all, the Friedmann balance is the **only** second-order condition there is — t
 extra conditions constrain wave momenta, not energy. The balance is what survives when every
 symmetry that could be averaged over is gone.
 
+### A remark on the quantum condition, not a derivation
+
+Moncrief's proposal imposes the condition as an operator equation on physical states. Read
+per-mode it says Ĥ_graviton|ψ⟩ = 0 — before normal ordering no state satisfies it, after normal
+ordering only the Fock vacuum does. Read globally it says 6Ĥ² − |σ̂|² = Ĥ_graviton, relating the
+graviton number operator to the momenta conjugate to the flat moduli, whose spectrum is
+continuous and unbounded above. Every graviton state then has a partner expansion rate rather
+than being excluded. What does not survive is the zero-point sum: on the un-normal-ordered
+vacuum the right side diverges and no finite expansion pays for it, so the ordering
+prescription is doing real work rather than being a convention. This is a reading of the
+classical identity, not something computed here.
+
 ### Referees
 
 - **The moduli spaces.** The invariant homogeneous momenta count 6, 4, 2, 3 — the classical
