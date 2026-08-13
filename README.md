@@ -199,6 +199,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `test_adm.py` | ADM test suite (154 tests) |
 | `fermat_hodge.py` | Shioda's reduction of the Hodge Conjecture; phi(m) via Hilbert bases |
 | `test_fermat_hodge.py` | Fermat/Hodge test suite (78 tests) |
+| `platycosm.py` | Linearisation instability on the compact flat 3-manifolds |
+| `test_platycosm.py` | Platycosm test suite (51 tests) |
 
 ## Method notes
 
@@ -1720,6 +1722,70 @@ pushed to 343 while m = 48 = 2⁴·3 could not be finished at all.
 python -c "import fermat_hodge as f; r=f.phi_report(121); print(r.phi, r.conjectured, r.matches_conjecture)"
 ```
 
+## A ninth target: linearisation instability beyond the torus
+
+`platycosm.py` — quantum gravity on compact flat slices that are **not** the 3-torus.
+
+### The question
+
+Fischer–Marsden–Moncrief: a spacetime with a compact Cauchy surface and a Killing field is
+linearisation unstable — a solution of the linearised constraints must satisfy one integral
+condition per KID to extend to a real solution. Moncrief worked this out in detail for flat
+spacetime with **toroidal** spatial sections, and showed quantum-mechanically that physical
+states must be invariant under the symmetries those conditions generate. Group averaging
+reproduces it.
+
+But T³ is only one of six orientable compact flat 3-manifolds — the *platycosms* — and the
+others carry strictly less symmetry. A search for "Bieberbach" + "general relativity" returns
+nothing; the case appears unexamined.
+
+It matters because the standard slogan is *symmetry ⟹ instability*, and the quantum version is
+*states must be symmetry-invariant*. Both suggest the effect should weaken as symmetry is
+removed. The platycosms test that, because holonomy progressively kills the translations.
+
+### What was computed
+
+| | manifold | \|point group\| | Killing fields | KIDs | b₁ | rigid |
+| --- | --- | --- | --- | --- | --- | --- |
+| G1 | 3-torus | 1 | 3 | 4 | 3 | yes |
+| G2 | half-turn (dicosm) | 2 | 1 | 2 | 1 | yes |
+| G4 | quarter-turn (tetracosm) | 4 | 1 | 2 | 1 | yes |
+| G6 | **Hantzsche–Wendt** | 4 | **0** | **1** | **0** | **yes** |
+
+The Hantzsche–Wendt manifold has holonomy ℤ₂×ℤ₂ fixing no direction, so **no Killing vector
+fields at all** and b₁ = 0. Yet the constant lapse is a KID on *every* flat compact slice,
+since Hess N − (ΔN)δ vanishes for constant N. So G6 is linearisation unstable with **zero
+spatial symmetry** — nothing for a symmetry group to average over — and one stability
+condition where the torus has four.
+
+And it is still **rigid**. The obstruction form is negative definite modulo gauge on the
+covering torus (`adm.py`'s (4,4,0)); restricting a negative semi-definite form to the invariant
+subspace keeps it so, and a single condition then forces any solution satisfying it to be pure
+gauge. **The torus's three translational KIDs are redundant for rigidity — only the lapse does
+work.**
+
+### Three referees
+
+- **Betti numbers.** For compact flat manifolds b₁ = dim Fix(holonomy). The module computes
+  the invariant subspace from the point group and never mentions homology, yet returns
+  3, 1, 1, 0 — the classical b₁ of these four platycosms.
+- **The Bieberbach condition is checked, not assumed.** `is_bieberbach` verifies the action is
+  free. It **rejected my first Hantzsche–Wendt presentation**: a half-turn about x whose
+  translation part had no x-component is a rotation about a shifted axis rather than a screw,
+  so it has genuine fixed points and the quotient is an orbifold. The corrected generators are
+  screws about their own axes. There is a test asserting the bad presentation fails.
+- **G1 must reproduce `adm.py`** exactly, inertia (4,4,0) included.
+
+**Limits.** G3 and G5 need a hexagonal lattice, so their point groups aren't integer matrices
+on ℤ³ and the exact-integer mode analysis doesn't apply unchanged; their KID dimension is
+nonetheless 2 by the same fixed-subspace argument. And this is a *classical* computation — the
+quantum consequence (that the states surviving one condition with a definite form are far more
+constrained than group-averaging over a symmetry suggests) is stated, not derived.
+
+```bash
+python -c "import platycosm as p; [print(p.analyse(s)) for s in p.PLATYCOSMS]"
+```
+
 ## Tests
 
 ```bash
@@ -1733,6 +1799,7 @@ python -m pytest test_selberg.py -v             # graph Selberg trace formula
 python -m pytest test_detection.py -v           # community detection
 python -m pytest test_adm.py -v                 # ADM constraint rank loss
 python -m pytest test_fermat_hodge.py -v        # Hodge conjecture / Fermat
+python -m pytest test_platycosm.py -v           # flat 3-manifolds / instability
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
