@@ -180,12 +180,16 @@ class TestModeOrbits:
 class TestRigidity:
     @pytest.mark.parametrize("space", pc.PLATYCOSMS, ids=lambda s: s.label)
     def test_every_platycosm_is_rigid(self, space) -> None:
-        """The obstruction is negative definite modulo gauge on the covering torus.
+        """The obstruction is negative definite modulo gauge at each ``k != 0``.
 
         Restricting a negative semi-definite form to the invariant subspace keeps
         it negative semi-definite, so one condition already forces any linearised
-        solution satisfying it to be pure gauge. Rigidity descends to every
-        quotient regardless of how much symmetry was removed.
+        solution satisfying it *mode by mode* to be pure gauge. That much
+        descends to every quotient regardless of how much symmetry was removed.
+
+        The global condition is weaker, because the homogeneous mode contributes
+        a positive direction; see :mod:`graviton` and
+        :class:`test_graviton.TestBalance`.
         """
         report = pc.analyse(space)
         assert report.rigid

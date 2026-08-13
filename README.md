@@ -1778,12 +1778,132 @@ work.**
 
 **Limits.** G3 and G5 need a hexagonal lattice, so their point groups aren't integer matrices
 on ℤ³ and the exact-integer mode analysis doesn't apply unchanged; their KID dimension is
-nonetheless 2 by the same fixed-subspace argument. And this is a *classical* computation — the
-quantum consequence (that the states surviving one condition with a definite form are far more
-constrained than group-averaging over a symmetry suggests) is stated, not derived.
+nonetheless 2 by the same fixed-subspace argument.
+
+**Correction.** The rigidity above is a statement about *one mode at a time*, at k ≠ 0. The
+actual stability condition is a single integral over the whole slice, and summing across the
+origin changes the answer — see the next section, which is where that was found.
 
 ```bash
 python -c "import platycosm as p; [print(p.analyse(s)) for s in p.PLATYCOSMS]"
+```
+
+## A tenth target: what the obstruction actually is
+
+`graviton.py` — identifying the second-order obstruction term by term.
+
+### The gap
+
+`adm.py` computes a quadratic form and finds it negative definite modulo gauge. `platycosm.py`
+shows that survives to manifolds with no symmetry. Neither says what the form *is*. The
+previous section closed with the admission that the physical consequence was "stated, not
+derived." This derives it.
+
+### Step one: the inhomogeneous modes are gravitons, and they are massless
+
+On the transverse-traceless sector at a mode k, with h = A cos(k·x) and K = B cos(k·x),
+
+    Q_k = −(1/8)|k|²|A|² − (1/2)|B|²
+
+ADM at unit lapse gives ḣ = 2K, so B = Ȧ/2 and −Q_k = (1/8)(Ȧ² + |k|²A²): a harmonic
+oscillator. Reading its frequency off the **exact rational form** gives
+
+| k | (1,0,0) | (1,1,0) | (1,1,1) | (2,0,0) | (2,2,1) | (2,−1,3) | (3,1,−2) | (4,−3,1) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ω² | 1 | 2 | 3 | 4 | 9 | 14 | 14 | 26 |
+| \|k\|² | 1 | 2 | 3 | 4 | 9 | 14 | 14 | 26 |
+
+**ω = \|k\| exactly, at every mode and both polarisations.** The massless dispersion is an
+*output* of the constraint algebra, not an input — nothing in `adm.py` mentions propagation.
+
+Two controls make the extraction mean something. The pure-trace mode returns
+ω² = −(5/3)\|k\|² with a *negative* kinetic coefficient — the conformal factor problem, not a
+graviton — so the method does not hand back \|k\|² for every tensor. And dropping the ḣ = 2K
+factor gives ω = \|k\|/2, so the one physical input is load-bearing rather than decorative.
+
+### Step two: the coefficient is Isaacson's
+
+−Q_k is not merely proportional to the gravitational wave energy. Against the Isaacson
+effective density ρ = (1/64π)⟨ḣ_ij ḣ^ij + ∂_l h_ij ∂^l h^ij⟩,
+
+    −Q_k = 16π ρ   exactly, at every mode and every amplitude.
+
+`adm.py` knows nothing about 1/32π; the factor arrives from the second-order expansion of the
+scalar curvature.
+
+### Step three: the homogeneous mode pays for it — and the answer is Friedmann
+
+The obstruction is **not** negative definite overall. At k = 0 the metric term vanishes and the
+momentum term has inertia **(5, 0, 1)** — exactly one positive direction, the isotropic one.
+Writing B₀ = −Hδ + σ,
+
+    Q₀ = 6H² − |σ|²
+
+Summing over all modes, Q = 0 reads
+
+    6H² − |σ|² = Σ_{k≠0} (−Q_k) = 16πρ    ⟺    3H² = 8πρ + ½ σ_ij σ^ij
+
+**the Friedmann constraint with shear, sourced by the graviton energy.** Every coefficient in
+it — the 6, the 16π, the ½ on the shear — is computed output, not supplied.
+
+So linearisation instability on a compact flat slice is *not* a prohibition on gravitational
+waves. It is the statement that their energy must be paid for by expansion at precisely the
+Friedmann rate. A linearised solution with waves and no expansion does not integrate; one with
+the matching expansion does, at this order.
+
+### What this corrected
+
+Read per-mode, Q_k < 0 at every k ≠ 0 and the obvious conclusion — the one this README drew in
+the previous section — is that the condition kills the graviton sector outright. That is wrong,
+and the reason is **a factor of two**: the averaging weight is ⟨cos²(k·x)⟩ = ½ away from the
+origin but ⟨1⟩ = 1 at it. The distinction is invisible to any single-mode statement (a positive
+rescaling moves no sign and no signature) and it is exactly what sets the relative weight once
+the two sectors are added. `adm.obstruction_value` now carries it; every per-mode result stands
+unchanged, which is precisely why the bug survived.
+
+### The platycosms, sharpened
+
+δ is invariant under every holonomy group, so the direction that pays for the waves exists on
+every compact flat manifold. What holonomy cuts is the **shear** budget:
+
+| | manifold | invariant homogeneous momenta | of which trace-free |
+| --- | --- | --- | --- |
+| G1 | 3-torus | 6 | 5 |
+| G2 | dicosm | 4 | 3 |
+| G4 | tetracosm | 2 | 1 |
+| G6 | Hantzsche–Wendt | 3 | 2 |
+
+Shear enters with the sign *opposite* to expansion, so less holonomy means more ways to fail
+the condition, not more ways to satisfy it. And on Hantzsche–Wendt, with no Killing fields at
+all, the Friedmann balance is the **only** second-order condition there is — the torus's three
+extra conditions constrain wave momenta, not energy. The balance is what survives when every
+symmetry that could be averaged over is gone.
+
+### Referees
+
+- **The moduli spaces.** The invariant homogeneous momenta count 6, 4, 2, 3 — the classical
+  dimensions of the moduli spaces of flat metrics on these four platycosms. The computation
+  builds the point-group action on symmetric tensors and never mentions moduli.
+- **A raw sum over modes.** `balance()` splits the homogeneous momentum and halves velocities
+  itself; the test recomputes the same number by calling `adm.obstruction_value` mode by mode
+  with none of that bookkeeping, and the two agree exactly.
+- **Gauge invariance at second order.** h_ij = k_i ξ_j + k_j ξ_i returns exactly zero potential
+  energy at every k and every ξ. `metric_obstruction_term` was matched against four quadratic
+  invariants without any reference to gauge, so this was free to fail.
+- **Normalisation independence.** `transverse_traceless_modes` returns an unnormalised rational
+  basis, so the individual coefficients differ mode to mode; only their ratio is meaningful,
+  and it is invariant under rescaling.
+
+**Prior work.** None of the physical ingredients are new: the linearisation-stability framework
+is Fischer–Marsden and Moncrief, the necessity of Killing fields is Arms–Marsden, the effective
+energy density is Isaacson's, and second-order back-reaction of waves on a homogeneous
+background is standard cosmological perturbation theory. What is done here is to obtain the
+identity between them as exact computed output of one constraint calculation, with no
+coefficient supplied by hand, and to push it onto the flat manifolds where the shear budget
+shrinks and the symmetry conditions disappear.
+
+```bash
+python -c "import graviton as g; [print(c) for c in g.check_dispersion((2,-1,3))]"
 ```
 
 ## Tests
@@ -1800,6 +1920,7 @@ python -m pytest test_detection.py -v           # community detection
 python -m pytest test_adm.py -v                 # ADM constraint rank loss
 python -m pytest test_fermat_hodge.py -v        # Hodge conjecture / Fermat
 python -m pytest test_platycosm.py -v           # flat 3-manifolds / instability
+python -m pytest test_graviton.py -v            # obstruction = Friedmann constraint
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};

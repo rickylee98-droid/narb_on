@@ -468,6 +468,13 @@ def obstruction_value(
     change a sign, but it is wrong the moment the two terms are added, which is
     exactly what this function now does.
 
+    The averaging weight is ``<cos^2(k.x)> = 1/2`` for ``k != 0`` but ``<1> = 1``
+    at the homogeneous mode, where the amplitude is a constant rather than an
+    oscillation.  The distinction is invisible to any per-mode statement -- a
+    positive rescaling moves no sign and no signature -- but it is exactly what
+    fixes the relative weight when homogeneous and inhomogeneous modes are added
+    against each other, which is the content of :func:`graviton.balance`.
+
     ``metric_modes`` may be omitted, recovering the extrinsic-curvature-only
     case.  Amplitudes are real, one representative per ``+-k`` pair.
     """
@@ -480,7 +487,8 @@ def obstruction_value(
         norm = Fraction(0)
         for slot in range(6):
             norm += _multiplicity(slot) * values[slot] * values[slot]
-        total += Fraction(1, 2) * (trace * trace - norm)
+        weight = Fraction(1) if tuple(wave) == (0, 0, 0) else Fraction(1, 2)
+        total += weight * (trace * trace - norm)
     for wave, slots in (metric_modes or {}).items():
         total += metric_obstruction_term(wave, slots)
     return total

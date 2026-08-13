@@ -329,14 +329,23 @@ class PlatycosmReport:
 
     @property
     def rigid(self) -> bool:
-        """Whether every non-gauge linearised solution is obstructed.
+        """Whether every non-gauge *inhomogeneous* linearised solution is obstructed.
 
-        The obstruction form on the covering torus is negative semi-definite
-        with radical exactly the gauge span, and restricting such a form to the
-        invariant subspace keeps it negative semi-definite.  A single condition
-        with a negative definite form therefore already forces any solution
-        satisfying it to be pure gauge -- so rigidity holds as soon as there is
-        at least one KID, which there always is.
+        The obstruction form on the covering torus is negative semi-definite at
+        each ``k != 0`` with radical exactly the gauge span, and restricting such
+        a form to the invariant subspace keeps it negative semi-definite.  A
+        single condition therefore already forces any solution satisfying it
+        mode by mode to be pure gauge -- so this rigidity holds as soon as there
+        is at least one KID, which there always is.
+
+        **The restriction to one mode at a time is essential.**  The stability
+        condition is a single integral over the whole slice, and the homogeneous
+        mode is not negative: its inertia is ``(5, 0, 1)``, the positive
+        direction being isotropic expansion.  Summed over all modes the
+        condition is not rigidity but a balance, and :mod:`graviton` shows it is
+        the Friedmann constraint with the wave energy as its source.  Read
+        globally, a linearised solution with gravitational waves is obstructed
+        only if it lacks the matching expansion.
         """
         negative, _, positive = self.torus_inertia
         return positive == 0 and negative > 0 and self.kid_dimension >= 1
