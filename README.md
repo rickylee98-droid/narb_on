@@ -197,6 +197,8 @@ dominated by the Monte Carlo search — roughly 90 seconds at 4 restarts × 1500
 | `test_detection.py` | Detection test suite (59 tests) |
 | `adm.py` | Einstein constraint rank loss, KIDs, linearisation instability |
 | `test_adm.py` | ADM test suite (154 tests) |
+| `fermat_hodge.py` | Shioda's reduction of the Hodge Conjecture; phi(m) via Hilbert bases |
+| `test_fermat_hodge.py` | Fermat/Hodge test suite (78 tests) |
 
 ## Method notes
 
@@ -1653,6 +1655,71 @@ python -c "import adm; print([ (r.wave, r.rank, r.kid_dimension) for r in adm.sw
 
 ```
 
+## An eighth target: the Hodge Conjecture, via Shioda's reduction
+
+`fermat_hodge.py` — **not** a proof of anything. It computes a combinatorial invariant that a
+published paper explicitly asks for and could not push far, and tests a conjecture stated
+there at values outside its range.
+
+### The reduction
+
+For the Fermat variety Xⁿₘ, Shioda showed the Hodge Conjecture becomes a *finite combinatorial
+statement*. Primitive cohomology splits into 1-dimensional character eigenspaces V(α), and the
+primitive Hodge classes are indexed by
+
+> Bⁿₘ = { α ∈ (ℤₘ)^(n+2) : all aᵢ ≠ 0, Σaᵢ ≡ 0, and |t·α| = p+1 for **all** t ∈ ℤ*ₘ }
+
+with Cⁿₘ ⊆ Bⁿₘ indexing the algebraic ones. **HC for Xⁿₘ ⟺ Cⁿₘ = Bⁿₘ.** The quantifier over
+all units is the rationality condition — at t = 1 alone you'd only get Hodge *type*.
+
+Shioda encodes this in the semigroup M_m = {(x₁…x_{m−1}; y) ≥ 0 : Σᵢ⟨ti⟩xᵢ = my ∀t ∈ ℤ*ₘ},
+where decomposability means the class comes from the inductive structure of Fermat varieties,
+hence is algebraic. The controlling invariant is
+
+> **φ(m) = max{ y : (x; y) indecomposable in M_m }**
+
+and da Silva's Prop 3.7 makes it load-bearing: if HC holds for Xⁿₘ at every n ≤ 2(φ(m)−1), it
+holds for **all** n. So φ(m) is exactly how many dimensions must be checked at degree m. Since
+y = 0 forces x = 0, the cone is pointed and the indecomposables are its Hilbert basis.
+
+### Three referees, none of them self-referential
+
+- **Fermat surface Picard numbers.** |B²ₘ| must equal ρ − 1. Computed: 6, 19, 36, 85, 90 for
+  m = 3…7, against classical ρ = 7, 20, 37, 86, 91. The m = 4 case is the maximal K3 with
+  ρ = 20; m = 3 is the cubic surface, a plane blown up at six points.
+- **Two constructions that share no code.** Bⁿₘ enumerated from the character criterion must
+  land inside M_m — cut out by different equations — at height exactly n/2+1. It does.
+- **The published table.** φ(m) for 20 ≤ m ≤ 43 is in the literature; all **24 values
+  reproduced exactly**. That agreement is what licenses anything computed outside the range.
+
+### What was computed
+
+The published data stops at m < 48 ("computations become more and more time consuming"). The
+conjecture stated there is φ(pᵏ) = (p^(k−1)+1)/2 for odd p, φ(2ˡ) = 2^(l−2)+1 for l > 2 —
+formulated from the prime powers available below 48, namely 4, 8, 9, 16, 25, 27, 32.
+
+**Confirmed at eight prime powers outside that range:**
+
+| m | 49 | 64 | 81 | 121 | 125 | 169 | 289 | 343 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| | 7² | 2⁶ | 3⁴ | 11² | 5³ | 13² | 17² | 7³ |
+| φ(m) computed | 4 | 17 | 14 | 6 | 13 | 7 | 9 | 25 |
+| conjecture | 4 | 17 | 14 | 6 | 13 | 7 | 9 | 25 |
+
+Spanning five primes and exponents k = 2, 3, 4, 6 — a single prime or a single exponent would
+have been weak evidence. Every prime tested from 47 to 109 gives φ = 1, consistent with
+Shioda's theorem that prime degree implies HC.
+
+**Honest limits.** This is verification of someone else's conjecture, not a new theorem, and it
+says nothing about HC beyond what Shioda and da Silva already established. The general table
+past m = 47 stayed out of reach: the Hilbert basis explodes with distinct prime factors
+(45,655 elements at m = 42 = 2·3·7 versus 21 at m = 43), which is why prime powers could be
+pushed to 343 while m = 48 = 2⁴·3 could not be finished at all.
+
+```bash
+python -c "import fermat_hodge as f; r=f.phi_report(121); print(r.phi, r.conjectured, r.matches_conjecture)"
+```
+
 ## Tests
 
 ```bash
@@ -1665,6 +1732,7 @@ python -m pytest test_fractal_stokes.py -v      # fractal Stokes
 python -m pytest test_selberg.py -v             # graph Selberg trace formula
 python -m pytest test_detection.py -v           # community detection
 python -m pytest test_adm.py -v                 # ADM constraint rank loss
+python -m pytest test_fermat_hodge.py -v        # Hodge conjecture / Fermat
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
