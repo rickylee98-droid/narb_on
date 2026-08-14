@@ -2597,6 +2597,92 @@ blow-up is a theorem.
 python -c "import averaging as a; print(a.scale_invariance_residual(), a.fit_penalty(), a.slowdown_factor())"
 ```
 
+## An eighteenth target: the quantum coordination boundary in markets
+
+`quantumcoord.py` — what's real, how big it is, and who can see it.
+
+### Where the literature actually is
+
+Two of the three usually-stated open problems have papers from **this year**:
+
+- **Latency vs decoherence.** [arXiv:2604.07451](https://arxiv.org/abs/2604.07451) (Li, Kikura,
+  Goban, Yamasaki, Sunami — April 2026) gives operational criteria for quantum advantage in
+  latency-constrained tacit coordination, with finite operation times, finite entanglement rates,
+  statistical certification, and hardware numbers: microsecond latency, 8×10³ decisions/s, 50 km
+  metro network. The "critical latency threshold" is a framework, not a gap.
+- **Many entangled agents.** [arXiv:2602.06367](https://arxiv.org/abs/2602.06367) (Hymas et al. —
+  February 2026) builds a quantum stock market with RL agents and finds entanglement **stabilises**
+  prices, removing the pathological pure-strategy Nash equilibrium that drives speculative
+  collapse. Opposite to the usual guess that markets go chaotic.
+- **Forensic detectability** is the one still open. That's what this attacks.
+
+*(The Abushaqra "Quantum Time Dilation" reference is a March 2025 SSRN preprint, not a 2026
+framework. And QAOA for triangular arbitrage can't beat classical "in real time" — negative-cycle
+detection is exactly solvable in polynomial time by Bellman–Ford.)*
+
+### A correction to the conjecture itself
+
+"QCE ⊋ CCE" is **false** for complete-information games, in one line: a correlated equilibrium is
+a distribution over action profiles obeying incentive constraints; a quantum device produces a
+distribution over action profiles; if it obeys the constraints it *is* a classical CE, realisable
+by a mediator who samples it and whispers recommendations. So QCE ⊆ CCE.
+
+The advantage is real but lives elsewhere — **Bayesian games with private types and no mediator**,
+where the classical resource is shared randomness and gives exactly the local (Bell) polytope. The
+two-servers-see-a-local-signal story *is* that setting, so the mechanism survives; the label
+doesn't.
+
+Computed exactly: the CE polytope of the Prisoner's Dilemma has **1 vertex** (defect–defect,
+uniquely) and a coordination game has 5. The local polytope, built from nothing but the 16
+deterministic strategies, comes out with **24 facets in dimension 8** — 16 positivity + the 8 CHSH
+inequalities, the textbook answer.
+
+### How big the rent is: exactly √2, or exactly nothing
+
+CHSH classical **3/4** (enumerated), quantum **(2+√2)/4 ≈ 0.8536** (derived from the distribution).
+But the useful statement is across *all* such games. A two-input XOR game is a sign matrix M;
+classical bias maximises over sign vectors, quantum bias is Tsirelson's. Over all 16:
+
+> **8 of 16 admit advantage, every one at ratio exactly √2. The other 8 admit none, ratio exactly
+> 1. The split is precisely rank-2 vs rank-1.**
+
+There is **no continuum of quantum rents.** A market payoff is either rank-2 — in which case it's
+CHSH in disguise and the bias improves by √2 — or it's worth exactly zero. Whether real order flow
+presents rank-2 payoffs is an empirical question about markets, not about quantum mechanics, and
+it's the question that decides whether any of this pays.
+
+*(A bug the tests caught: I first used the nuclear norm as the quantum bias. It agrees at rank 2 —
+giving CHSH's 2√2 — and fails at rank 1, returning **less** than classical, which is impossible
+since quantum strategies include classical ones. The correct closed form is
+max_c Σ_y √(2 + 2 s_y c) with s_y = M_{0y}M_{1y}.)*
+
+### The forensic result
+
+**From outcomes alone: detection is impossible, provably.** No-signalling forces the quantum
+marginals to be independent of the other party's input, and for optimal CHSH every single-party
+marginal is exactly **1/2**. A classical pair using one shared fair coin — "both act on the same
+random bit" — wins 3/4 with *the same* marginals, exactly 1/2. The KL divergence between what a
+one-sided observer sees is **exactly zero**. Not small. Zero. No quantity of order-book data
+separates them; it's an identity, not a statistical difficulty.
+
+**From joint statistics: easy.** With the private signals reconstructible, the divergence from the
+quantum point to the whole local polytope is **0.0321 nats/round**, so decisive evidence needs
+~**215 rounds** at 1e-3 and ~**431** at 1e-6 — under a second of tape at thousands of events/s.
+
+> So the regulatory problem is not "can quantum collusion be detected". It is **"can the private
+> inputs be reconstructed"** — an ordinary question about market data with no quantum content. If
+> the trigger is a public event both servers saw, detection is easy. If genuinely private,
+> impossible in principle.
+
+**Scope.** Two parties, two inputs, two outputs — where the polytopes are exactly computable and
+the XOR classification is complete. Polytope, game values and the marginal identity are exact; the
+detection divergence is a numerical convex optimisation and is labelled as such. Nothing here
+models an order book, and no claim is made that real markets present rank-2 payoffs.
+
+```bash
+python -c "import quantumcoord as q; print(q.marginal_divergence(), q.detection_divergence(), q.rounds_to_detect(1e-3))"
+```
+
 ## Tests
 
 ```bash
@@ -2619,6 +2705,7 @@ python -m pytest test_embedding.py -v           # Euler triad gate / Tao's step 
 python -m pytest test_coherence.py -v           # mode architecture / interaction graph
 python -m pytest test_cascade.py -v             # Euler transport on the architecture
 python -m pytest test_averaging.py -v           # the averaging estimate
+python -m pytest test_quantumcoord.py -v        # quantum coordination / Bell polytopes
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
