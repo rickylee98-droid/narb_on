@@ -2327,6 +2327,99 @@ scope stays attached to the code.
 python -c "import embedding as e, math; print(e.gate_efficiency(math.pi/4, 1e5))"
 ```
 
+## A fifteenth target: coherence — many gates at once
+
+`coherence.py` — an explicit mode architecture whose *entire* triad list is the Obukhov graph.
+
+### The problem
+
+`embedding.py` settles one gate. The reason Step 2 is hard is that a shell model prescribes a
+very sparse **interaction graph** — shell j talks to j−1 and j+1 and nothing else — while the
+true nonlinearity couples every triple of modes that closes. An embedding must suppress:
+
+- **local triads** (j,j,j) — these drive the turbulent cascade that makes the Katz–Pavlović and
+  exponential-shell Obukhov models globally regular;
+- **long-range triads** (i,j,j) with i ≤ j−2 — pure error.
+
+### The reduction
+
+Reality forces S_j = −S_j, so S_j + S_j = S_j − S_j =: D_j, and all three requirements become
+statements about **one difference set**:
+
+| requirement | condition |
+|---|---|
+| no local triads | D_j ∩ S_j = ∅ |
+| the gate exists | D_j ∩ S_{j−1} ≠ ∅ |
+| no long-range triads | D_j ∩ S_i = ∅ for i ≤ j−2 |
+
+The middle line supplies the model's *other* interaction free of charge. A triad
+k_{j−1} + k_j + k′_j = 0 is simultaneously the amplification of the high pair and the drain of
+the low mode — **Palasek's two Obukhov terms are the two ends of one triad**, which is why they
+conserve energy against each other. There is nothing separate to arrange.
+
+### The architecture
+
+Two directions per shell suffice. Take d, e integer, orthogonal, equal length, and iterate
+
+    p = A(d + e),   q = p − d,   (d, e) ← (p, A(e − d))
+
+The recursion is closed in **closed form** — (d+e)·(e−d) = |e|² − |d|² = 0 — so no search for a
+perpendicular partner is ever needed. Then S_j = {±p, ±q}, and by construction p − q = d is a
+mode of shell j−1 (the gate), and angle(p, d) = **45° exactly** (the optimal efficiency).
+
+Seeded with d = (3,4,0), e = (0,0,5), exhaustive search over all fourteen modes of a four-shell
+instance finds **six closing triads, all six nearest-neighbour gates**:
+
+> **local: 0.  long-range: 0.  gate: 2 per adjacent pair.**
+
+The interaction graph is exactly the Obukhov graph. Nothing is filtered — every unordered triple
+is examined, so an unwanted triad could not hide.
+
+*(One overclaim I had to walk back: not every gate is at exactly 45°. One high mode is; the
+other is q = p − d and misses by O(N_{j−1}/N_j) — 4.4° at separation ratio 10, 0.004° at 10⁴.
+The two high modes differ by the low one, so they cannot both meet it at the same angle. Since
+the model needs super-exponential separation anyway, the gap closes faster than any requirement
+on it.)*
+
+### How wide may a shell be? Sharp answer: 30°
+
+Two modes per shell is space-filling, α = 1 — the wrong end of the intermittency range. Widening
+a shell reintroduces local triads, and the threshold is **not** the obvious one.
+
+For |a| = |b| = N, the sum a+b returns to the shell exactly at a **120°** opening. A cap of
+half-angle φ spans pairwise angles [0, 2φ], suggesting φ < 60°. **That's wrong** — reality adds
+the antipodal cap, contributing [180−2φ, 180], which reaches 120° already at φ = 30°. So:
+
+> **a shell inside a cap of half-angle < 30° carries no local triads, and 30° is sharp.**
+
+The reasoning that gives 60° was my first answer and it is wrong for a reason worth keeping: a
+real velocity field cannot populate a cap without populating its antipode. Both are tests.
+
+### The mode budget saturates exactly at α = 5/2
+
+Concentrating a field onto volume fraction μ costs ~1/μ Fourier modes, and the intermittency
+dictionary sets μ_k = N_k^{−2(α−1)}, so a shell needs **M_k ~ N_k^{2(α−1)}** modes. A dyadic
+shell holds ~N_k³ lattice points and a 30° cap keeps a fixed fraction, so there is room exactly
+when 2(α−1) < 3 — that is **α < 5/2**, saturating at 5/2. That is the top of the
+three-dimensional intermittency range, which the model derives instead from the uncertainty
+principle. Two unrelated routes to one endpoint.
+
+### What this settles, and what it doesn't
+
+**Settled:** the interaction graph. An explicit, exhaustively verified family of integer mode
+sets whose complete triad list is the Obukhov graph and nothing else, every gate at the optimal
+angle up to O(N_{j−1}/N_j), plus a sharp rule for how wide a shell may be.
+
+**Not settled: everything analytic.** Which triads *exist* is not what the amplitudes *do*. Time
+dependence, the Leray projection acting on products of non-monochromatic fields, the errors from
+a solution not being a finite set of exact modes, and whether the resulting system reproduces
+the Obukhov coefficients with the right signs throughout the evolution — none of it is here.
+This is the combinatorial half of the coherence problem. The analytic half is the hard one.
+
+```bash
+python -c "import coherence as c; a=c.architecture((3,4,0),(0,0,5),[70]*3); print(c.triad_census(a))"
+```
+
 ## Tests
 
 ```bash
@@ -2346,6 +2439,7 @@ python -m pytest test_celestial.py -v           # massive w_1+inf / celestial ob
 python -m pytest test_cosmopolytope.py -v       # cosmological polytope / mass resummation
 python -m pytest test_shell.py -v               # Obukhov shell model / blow-up window
 python -m pytest test_embedding.py -v           # Euler triad gate / Tao's step 2
+python -m pytest test_coherence.py -v           # mode architecture / interaction graph
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
