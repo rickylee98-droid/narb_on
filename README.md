@@ -2420,6 +2420,80 @@ This is the combinatorial half of the coherence problem. The analytic half is th
 python -c "import coherence as c; a=c.architecture((3,4,0),(0,0,5),[70]*3); print(c.triad_census(a))"
 ```
 
+## A sixteenth target: the analytic half — what the amplitudes do
+
+`cascade.py` — the exact Euler ODE system on the architecture, integrated and measured.
+
+### Why this is answerable at all
+
+`coherence.py` says which triads *exist*. The shell model is a statement about what the
+amplitudes *do*. But because the triad list is finite and exactly known, **the Euler equations
+restricted to the architecture are a finite ODE system** — writable, integrable, measurable.
+Divergence-free condition, reality, Leray projection, true nonlinearity, nothing imposed.
+
+### Three measurements
+
+**1. The construction is sound.** Energy conserved to **1.8 × 10⁻¹²** over hundreds of turnover
+times, and transport runs up the chain from shell 0 outward.
+
+**2. The chain is what makes the cascade one-way.** A single gate is a triad, and triads are
+integrable — they oscillate and give the energy back. Adding shells lets energy escape before it
+can return. Fraction of exported energy recovered:
+
+| shells | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|
+| recovered | **0.66** | 0.26 | 0.16 | **0.14** |
+
+So the cascade is a property of the **chain**, not of any gate. That's the mechanism the shell
+model abstracts, seen here in the true equations.
+
+**3. But the flux is not coherent — and that's the obstruction.** The instantaneous flux through
+the bottom gate reverses sign after **0.8** time units against a turnover time of **0.22**, and
+it reverses for *every* seed tried. Matched initial data diverges from the Obukhov trajectory by
+5% within about one turnover.
+
+### The surprise
+
+Optimising the initial phases to maximise exported energy gains **0.08%**. The net transport is
+essentially phase-independent. That cuts both ways and both are worth saying:
+
+- **Against the shell model:** the Obukhov system describes *coherent* transfer and the embedded
+  system does not transfer coherently. **The shell model is not a trajectory-wise description of
+  the embedded dynamics.**
+- **For the embedding:** the transport is **robust, not fine-tuned**. Over ~90 turnover times the
+  bottom shell exports 10% of its energy regardless of how the phases are set. The cascade is a
+  slow drift riding on a fast oscillation.
+
+### Where that leaves Step 2
+
+The three pieces together now say: the coefficient is right (`embedding`), the interaction graph
+is right (`coherence`), and the transport is real and robust but **not pointwise Obukhov**. So an
+embedding cannot proceed by matching trajectories to the shell model —
+
+> it has to control a **time-averaged** flux, treating the oscillation as something to average
+> over rather than something to suppress.
+
+That is a sharper statement of the open problem than "the analytic half is hard", and it is the
+useful output. It is **not** a solution: averaging arguments need error control over the
+averaging window, uniformly in the shell index, and nothing here supplies that.
+
+One further point the numerics make concrete: even with phases locked, a single gate reverses
+once its low mode is exhausted — the amplitude equation drives the low amplitude through zero
+and the signs flip. Sustained cascade needs the bottom shell **replenished**. That is exactly
+why Palasek's viscous theorem carries an external force, and why his Remark 1.4 records that
+forcing is *necessary*. Here it shows up as a property of the true Euler dynamics rather than of
+the model.
+
+**Scope.** Finite Galerkin truncations of Euler conserve energy and cannot blow up, so nothing
+here tests blow-up — it tests transport: direction, reversibility, phase sensitivity. Time
+integration is floating point, unlike the exact arithmetic elsewhere in this repo, because the
+object measured is a trajectory; the conservation check at 10⁻¹² is what licenses reading
+anything off it.
+
+```bash
+python -c "import cascade as c; print({n: round(c.return_fraction(n,600.0),3) for n in (2,3,4,5)})"
+```
+
 ## Tests
 
 ```bash
@@ -2440,6 +2514,7 @@ python -m pytest test_cosmopolytope.py -v       # cosmological polytope / mass r
 python -m pytest test_shell.py -v               # Obukhov shell model / blow-up window
 python -m pytest test_embedding.py -v           # Euler triad gate / Tao's step 2
 python -m pytest test_coherence.py -v           # mode architecture / interaction graph
+python -m pytest test_cascade.py -v             # Euler transport on the architecture
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
