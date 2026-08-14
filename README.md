@@ -2021,6 +2021,97 @@ negative answer, with a precise obstruction, to the question that paper closes o
 python -c "import celestial as c; from fractions import Fraction as F; print(c.inversion_report(F(7,2))); print(c.inversion_report(F(5)))"
 ```
 
+## A twelfth target: mass and the cosmological polytope
+
+`cosmopolytope.py` — the wavefunction of the universe as the volume of a static shape, and
+what mass actually does to it.
+
+### The setting
+
+Arkani-Hamed, Benincasa and Postnikov ([arXiv:1709.02813](https://arxiv.org/abs/1709.02813))
+attach to every Feynman graph a convex polytope in P^{V+E−1}: three vertices per edge,
+x_i + x_j − y_e and its two sign flips. Its **canonical form is the flat-space wavefunction**,
+and its **facets are the subgraph energies** — the boundaries of a static convex body are the
+physical singularities. No time, no evolution.
+
+The construction is for massless (conformally coupled) scalars. The usual statement of the wall
+is that mass introduces branch cuts, curves the facets, and wrecks the triangulations.
+
+**That is not quite where the frontier is.** Benincasa
+([arXiv:1909.02517](https://arxiv.org/abs/1909.02517)) already showed in 2019 that treating mass
+as a perturbative two-point coupling gives, order by order, a *degenerate limit of the canonical
+form of a cosmological polytope* — the graph with two-valent sites inserted on the massive line.
+What he leaves open, twice in the same paper, is the **resummation**: *"the study of a possible
+closed form for the re-summed two-site graph is postponed to future work"*, and *"it would be
+astonishing if the peculiar structure of this perturbative expansion would allow us to re-sum
+it."* That is the target here.
+
+### The result: in flat space it resums, and the geometry never deformed
+
+Let ψ_a be the canonical form of the polytope of the chain with a two-valent sites inserted, in
+the degenerate limit where those sites carry zero external energy and every subdivided edge
+carries the same y. Then
+
+> **Σ_{a≥0} (−m²/2)^a ψ_a = ψ_G evaluated at y → √(y² + m²)**
+
+The same polytope, the same canonical form, a different point. **Mass does not deform the
+geometry at all** — it changes only the map from the polytope's edge variable to the physical
+one, replacing the linear y = |k| by the quadric y² = k² + m². Verified exactly through m⁶,
+with one constant fitted at order m² and then predicted at m⁴ and m⁶.
+
+For the two-site chain the resummed function is explicitly algebraic of degree two, with exactly
+one square root:
+
+    ψ = 2[E² + x₁x₂ − (x₁+x₂)E] / [(x₁+x₂)(E² − x₁²)(E² − x₂²)],   E = √(y² + m²)
+
+So the branch cut is real — but it lives in the **kinematic map, not the geometry**. In the
+energy variable E the singularities are the same three hyperplanes as in the massless case; in
+the momentum variable they are those hyperplanes seen through E² = k² + m². **A facet does not
+curve. It is a flat facet seen through a quadratic change of variables.**
+
+### Why the poles looked like they were proliferating
+
+Each ψ_a has high-order poles because facets collapse onto each other in the degenerate limit:
+the a+1 intervals of the subdivided chain touching the left endpoint all carry x₁+y, likewise on
+the right, and the a(a+1)/2 interior intervals all carry 2y. Summing a tower of poles of growing
+order at x+y is what produces a **simple pole at the shifted location** x + √(y²+m²). The
+proliferation is an artefact of expanding a shifted pole around the wrong point.
+
+**A prediction that failed.** I first predicted the pole orders as the count of collapsing
+facets. That is only an upper bound. At a = 3 six facets collapse onto 2y and the pole is of
+order **five**, not six — coincident facets bound the order but do not fix it, because a higher
+pole only appears where the coincident facets meet inside a common simplex. The correct orders
+follow from the resummation instead, since [m^{2a}]√(y²+m²) ∝ y^{1−2a}:
+
+| a | 0 | 1 | 2 | 3 |
+|---|---|---|---|---|
+| collapsing facets on 2y | 0 | 1 | 3 | **6** |
+| actual pole order | 0 | 1 | 3 | **5** |
+
+The polytope computation refuted the guess at the first value where the two counts differ. Both
+functions are kept, and the disagreement is a test.
+
+### Referees
+
+- **The facet theorem, on loops.** Facets from Normaliz vs. an independent subgraph enumeration,
+  matching exactly on 7 graphs — including the bubble, triangle and box, where the rule genuinely
+  differs (an edge left out of a subgraph with *both* endpoints inside contributes 2y_e).
+  Checking only trees would have been vacuous; there's a test asserting that.
+- **Published wavefunctions.** The 2-site, 3-site and one-loop bubble canonical forms come out
+  right, and the residue on the total-energy pole is the flat-space amplitude 2/(y²−x²).
+- **One constant, three tests.** The insertion weight −1/2 is fitted at m² and then predicts m⁴
+  and m⁶, the last requiring the five-site polytope in P⁸ with fifteen facets.
+
+**Scope.** Flat space only. In a genuine FRW background each inserted site carries ω^{2α−1} and
+an integral over ω, so the tower's terms are integrals of canonical forms rather than canonical
+forms, and produce polylogarithms; that is the case Benincasa poses and it is **not** settled
+here. What the flat-space result does say is where to look: the obstruction is not that the
+polytope must curve, because in the flat limit it demonstrably does not.
+
+```bash
+python -c "import cosmopolytope as c; print(c.facet_theorem_residual(c.BOX)); print(c.resummation_residual(2))"
+```
+
 ## Tests
 
 ```bash
@@ -2037,6 +2128,7 @@ python -m pytest test_fermat_hodge.py -v        # Hodge conjecture / Fermat
 python -m pytest test_platycosm.py -v           # flat 3-manifolds / instability
 python -m pytest test_graviton.py -v            # obstruction = Friedmann constraint
 python -m pytest test_celestial.py -v           # massive w_1+inf / celestial obstruction
+python -m pytest test_cosmopolytope.py -v       # cosmological polytope / mass resummation
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
