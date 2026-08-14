@@ -148,6 +148,7 @@ __all__ = [
     "reparameterisation_obstruction",
     "degenerate_facets",
     "frw_alphabet",
+    "letters_from_facets",
 ]
 
 LOGGER = logging.getLogger(__name__)
@@ -678,3 +679,34 @@ def degenerate_facets(insertions: int, x1, x2, y) -> set:
 def frw_alphabet(x1, x2, y) -> set:
     """Arguments of the logarithms in the first-order de Sitter term."""
     return {sp.expand(atom.args[0]) for atom in frw_first_order(x1, x2, y).atoms(sp.log)}
+
+
+def letters_from_facets(graph: Graph, values: Sequence, variable) -> set:
+    """Facets that involve ``variable``, evaluated with it set to zero.
+
+    This is the rule that governs the alphabet.  Integrating an inserted site's
+    energy picks up one residue per pole in that energy, and the poles are
+    exactly the facets whose linear form contains it; the resulting logarithm
+    has as its argument that facet with the integrated energy removed.  Facets
+    independent of the variable never become logarithms -- they stay rational
+    prefactors.
+
+    At one insertion the two sets coincide, because every facet of the
+    three-site polytope that survives the degenerate limit also happens to
+    involve the inserted energy.  At two they do not: the four-site polytope has
+    seven surviving facets and only six of them contain the integrated energy,
+    so ``x1 + y`` is a prefactor rather than a letter.  Reading the one-insertion
+    coincidence as the general rule was this module's second wrong guess.
+    """
+    if len(values) != graph.dimension:
+        raise ValueError(
+            f"expected {graph.dimension} kinematic variables; got {len(values)}"
+        )
+    letters = set()
+    for facet in support_hyperplanes(graph):
+        form = sp.expand(
+            sum(sp.Integer(c) * value for c, value in zip(facet, values))
+        )
+        if form.has(variable):
+            letters.add(sp.expand(form.subs(variable, 0)))
+    return letters

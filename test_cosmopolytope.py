@@ -351,28 +351,77 @@ class TestReparameterisationObstruction:
 class TestGeometrySurvivesAsAlphabet:
     """What the polytope still controls once it stops computing the volume."""
 
-    def test_the_logarithm_letters_are_the_facets(self) -> None:
+    def test_the_logarithm_letters_are_the_facets_that_carry_the_energy(self) -> None:
         """The sharp statement about de Sitter.
 
         The first-order term is no longer a canonical form -- it is not even
-        rational -- but its four logarithms are exactly the four distinct facets
-        that survive the degenerate limit. The geometry stops giving the volume
-        and starts giving the alphabet.
+        rational -- but its four logarithms are exactly the facets containing the
+        integrated energy, with that energy set to zero. The geometry stops
+        giving the volume and starts giving the alphabet.
         """
-        assert cp.frw_alphabet(X1, X2, Y) == cp.degenerate_facets(1, X1, X2, Y)
+        omega = sp.Symbol("w", positive=True)
+        letters = cp.letters_from_facets(cp.CHAIN(3), [X1, omega, X2, Y, Y], omega)
+        assert letters == cp.frw_alphabet(X1, X2, Y)
+        assert letters == {X1 + X2, X1 + Y, X2 + Y, 2 * Y}
 
-    def test_there_are_exactly_four_surviving_facets(self) -> None:
-        facets = cp.degenerate_facets(1, X1, X2, Y)
-        assert facets == {X1 + X2, X1 + Y, X2 + Y, 2 * Y}
+    def test_the_rule_holds_at_the_second_insertion(self) -> None:
+        """Six letters, computed from the integration and from the facets.
 
-    def test_the_undegenerate_polytope_has_more_facets_than_letters(self) -> None:
-        """Six facets collapse to four letters, so the count is not a coincidence."""
-        assert len(cp.support_hyperplanes(cp.CHAIN(3))) == 6
-        assert len(cp.degenerate_facets(1, X1, X2, Y)) == 4
+        The right-hand set is what the energy integral actually produced: the
+        poles in the integrated energy, read off the four-site canonical form.
+        """
+        w1 = sp.Symbol("w1", positive=True)
+        w2 = sp.Symbol("w2", positive=True)
+        letters = cp.letters_from_facets(cp.CHAIN(4), [X1, w1, w2, X2, Y, Y, Y], w2)
+        observed = {
+            sp.expand(form)
+            for form in [
+                w1 + X2 + Y,
+                X2 + Y,
+                w1 + 2 * Y,
+                2 * Y,
+                w1 + X1 + X2,
+                w1 + X1 + Y,
+            ]
+        }
+        assert letters == observed
 
-    @pytest.mark.parametrize("insertions", [0, 1, 2, 3])
-    def test_the_surviving_facets_are_always_the_same_four(self, insertions) -> None:
-        """Independent of how many sites are inserted, which is why the tower's
-        terms keep the same alphabet while their transcendental weight grows."""
-        facets = cp.degenerate_facets(insertions, X1, X2, Y)
-        assert facets <= {X1 + X2, X1 + Y, X2 + Y, 2 * Y}
+    def test_facets_not_carrying_the_energy_are_not_letters(self) -> None:
+        """The correction, kept as a test.
+
+        At one insertion every surviving facet happens to contain the integrated
+        energy, so "letters are the surviving facets" and "letters are the facets
+        containing the energy" agree. At two they do not: the four-site polytope
+        has seven surviving facets and only six become logarithms, ``x1 + y``
+        staying a rational prefactor. Reading the one-insertion coincidence as
+        the general rule was wrong.
+        """
+        w1 = sp.Symbol("w1", positive=True)
+        w2 = sp.Symbol("w2", positive=True)
+        values = [X1, w1, w2, X2, Y, Y, Y]
+        surviving = {
+            sp.expand(sum(sp.Integer(c) * v for c, v in zip(facet, values)))
+            for facet in cp.support_hyperplanes(cp.CHAIN(4))
+        }
+        surviving = {sp.expand(form.subs(w2, 0)) for form in surviving}
+        letters = cp.letters_from_facets(cp.CHAIN(4), values, w2)
+        assert len(surviving) == 7
+        assert len(letters) == 6
+        assert letters < surviving
+        assert (X1 + Y) in surviving and (X1 + Y) not in letters
+
+    def test_the_one_insertion_case_is_where_the_two_rules_coincide(self) -> None:
+        omega = sp.Symbol("w", positive=True)
+        values = [X1, omega, X2, Y, Y]
+        surviving = {
+            sp.expand(
+                sum(sp.Integer(c) * v for c, v in zip(facet, values)).subs(omega, 0)
+            )
+            for facet in cp.support_hyperplanes(cp.CHAIN(3))
+        }
+        assert cp.letters_from_facets(cp.CHAIN(3), values, omega) == surviving
+
+    def test_a_wrong_variable_count_is_refused(self) -> None:
+        omega = sp.Symbol("w", positive=True)
+        with pytest.raises(ValueError, match="kinematic variables"):
+            cp.letters_from_facets(cp.CHAIN(3), [X1, omega], omega)

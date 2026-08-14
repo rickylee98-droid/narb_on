@@ -2146,12 +2146,22 @@ non-vanishing coefficients. So:
 > transcendence of the first term — nothing to do with facets curving, which in flat space they
 > demonstrably do not do at all.
 
-**But the geometry does not vanish — it changes job.** The four logarithms in ψ₁^dS have as
-their arguments *exactly* the four distinct facets that survive the degenerate limit:
-{x₁+x₂, x₁+y, x₂+y, 2y}. The three-site polytope has six facets; they collapse to four, and
-those four are the alphabet. So in FRW the polytope stops giving the volume and starts giving
-the **letters** — the answer is no longer a canonical form, is not even rational, and its
-singularity structure is still dictated by the same convex body.
+**But the geometry does not vanish — it changes job.** Integrating an inserted site's energy
+picks up one residue per pole, and the poles are exactly the **facets containing that energy**;
+the resulting logarithm's argument is that facet with the energy removed. So:
+
+> the polylogarithmic **alphabet is the facet set**, while facets not carrying the integrated
+> energy stay rational prefactors.
+
+At one insertion this gives {x₁+x₂, x₁+y, x₂+y, 2y} — matching ψ₁^dS exactly. At two it gives
+six letters, matching the six poles the actual integration produced. In FRW the polytope stops
+computing the answer and starts supplying the letters: the result is no longer a canonical form,
+is not even rational, and its singularity structure is still dictated by the same convex body.
+
+*(A guess I had to correct: at one insertion every surviving facet happens to contain the
+integrated energy, so "letters = surviving facets" and "letters = facets carrying the energy"
+agree. At two they don't — seven surviving facets, six letters, with x₁+y staying a prefactor.
+The one-insertion coincidence is not the rule.)*
 
 At second order the first energy integral leaves six independent ω-dependent logarithmic
 letters, so the next integration is genuinely dilogarithmic: the transcendentality is not
