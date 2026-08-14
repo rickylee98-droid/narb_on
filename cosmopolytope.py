@@ -146,6 +146,8 @@ __all__ = [
     "flat_numerator",
     "unphysical_branch_residual",
     "reparameterisation_obstruction",
+    "degenerate_facets",
+    "frw_alphabet",
 ]
 
 LOGGER = logging.getLogger(__name__)
@@ -652,3 +654,27 @@ def reparameterisation_obstruction(x1, x2, y) -> dict:
         "log(x2 + y)": sp.cancel(-4 * C / denominator),
         "log(2y)": sp.cancel(4 * D / denominator),
     }
+
+
+def degenerate_facets(insertions: int, x1, x2, y) -> set:
+    """The distinct facet forms of the tower's polytope in the degenerate limit.
+
+    The subdivided chain has one facet per interval, but under the substitution
+    that defines the tower -- inserted sites at zero energy, every edge at the
+    same ``y`` -- they collapse onto far fewer distinct linear forms.  For one
+    insertion the four survivors are ``x1 + x2``, ``x1 + y``, ``x2 + y`` and
+    ``2y``.
+    """
+    graph = subdivided_chain(insertions)
+    values = [x1] + [sp.Integer(0)] * insertions + [x2] + [y] * (insertions + 1)
+    return {
+        sp.expand(
+            sum(sp.Integer(c) * value for c, value in zip(facet, values))
+        )
+        for facet in support_hyperplanes(graph)
+    }
+
+
+def frw_alphabet(x1, x2, y) -> set:
+    """Arguments of the logarithms in the first-order de Sitter term."""
+    return {sp.expand(atom.args[0]) for atom in frw_first_order(x1, x2, y).atoms(sp.log)}

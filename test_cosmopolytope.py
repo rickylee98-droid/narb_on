@@ -346,3 +346,33 @@ class TestReparameterisationObstruction:
             term = cp.tower_term(insertions, X1, X2, Y)
             assert term.free_symbols <= {X1, X2, Y}
             assert not term.atoms(sp.log)
+
+
+class TestGeometrySurvivesAsAlphabet:
+    """What the polytope still controls once it stops computing the volume."""
+
+    def test_the_logarithm_letters_are_the_facets(self) -> None:
+        """The sharp statement about de Sitter.
+
+        The first-order term is no longer a canonical form -- it is not even
+        rational -- but its four logarithms are exactly the four distinct facets
+        that survive the degenerate limit. The geometry stops giving the volume
+        and starts giving the alphabet.
+        """
+        assert cp.frw_alphabet(X1, X2, Y) == cp.degenerate_facets(1, X1, X2, Y)
+
+    def test_there_are_exactly_four_surviving_facets(self) -> None:
+        facets = cp.degenerate_facets(1, X1, X2, Y)
+        assert facets == {X1 + X2, X1 + Y, X2 + Y, 2 * Y}
+
+    def test_the_undegenerate_polytope_has_more_facets_than_letters(self) -> None:
+        """Six facets collapse to four letters, so the count is not a coincidence."""
+        assert len(cp.support_hyperplanes(cp.CHAIN(3))) == 6
+        assert len(cp.degenerate_facets(1, X1, X2, Y)) == 4
+
+    @pytest.mark.parametrize("insertions", [0, 1, 2, 3])
+    def test_the_surviving_facets_are_always_the_same_four(self, insertions) -> None:
+        """Independent of how many sites are inserted, which is why the tower's
+        terms keep the same alphabet while their transcendental weight grows."""
+        facets = cp.degenerate_facets(insertions, X1, X2, Y)
+        assert facets <= {X1 + X2, X1 + Y, X2 + Y, 2 * Y}

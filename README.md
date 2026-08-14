@@ -2146,6 +2146,13 @@ non-vanishing coefficients. So:
 > transcendence of the first term — nothing to do with facets curving, which in flat space they
 > demonstrably do not do at all.
 
+**But the geometry does not vanish — it changes job.** The four logarithms in ψ₁^dS have as
+their arguments *exactly* the four distinct facets that survive the degenerate limit:
+{x₁+x₂, x₁+y, x₂+y, 2y}. The three-site polytope has six facets; they collapse to four, and
+those four are the alphabet. So in FRW the polytope stops giving the volume and starts giving
+the **letters** — the answer is no longer a canonical form, is not even rational, and its
+singularity structure is still dictated by the same convex body.
+
 At second order the first energy integral leaves six independent ω-dependent logarithmic
 letters, so the next integration is genuinely dilogarithmic: the transcendentality is not
 bounded. What that leaves is the reading that the FRW resummation must shift a *transcendental*
