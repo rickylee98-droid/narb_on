@@ -213,3 +213,47 @@ class TestDetectionThreshold:
             qc.detection_threshold(bad)
         with pytest.raises(ValueError, match="pi/4"):
             qc.quantum_advantage(bad)
+
+
+class TestTheRentDoesNotScale:
+    """Enlarging the coordination game shrinks the edge."""
+
+    def test_the_optimiser_reproduces_chsh(self) -> None:
+        """The licence for reading anything off the census: exact ``2 sqrt 2``."""
+        import numpy as np
+
+        chsh = np.array([[1.0, 1.0], [1.0, -1.0]])
+        assert qc.classical_bias(chsh) == pytest.approx(2.0)
+        assert qc.tsirelson_bias(chsh) == pytest.approx(2 * math.sqrt(2), abs=1e-9)
+
+    def test_two_inputs_max_at_root_two(self) -> None:
+        assert qc.max_ratio(2) == pytest.approx(qc.MAX_RATIO_TWO_INPUTS, abs=1e-7)
+
+    def test_three_inputs_max_at_six_fifths(self) -> None:
+        assert qc.max_ratio(3) == pytest.approx(qc.MAX_RATIO_THREE_INPUTS, abs=1e-5)
+
+    def test_the_rent_falls_with_game_size(self) -> None:
+        """The finding, and it runs against scaling intuition."""
+        assert qc.max_ratio(3) < qc.max_ratio(2)
+        assert qc.MAX_RATIO_THREE_INPUTS < qc.MAX_RATIO_TWO_INPUTS
+
+    def test_everything_sits_under_the_grothendieck_ceiling(self) -> None:
+        """A universal cap on the rent for XOR games of any size."""
+        assert qc.MAX_RATIO_TWO_INPUTS < qc.GROTHENDIECK_CEILING
+        assert qc.MAX_RATIO_THREE_INPUTS < qc.GROTHENDIECK_CEILING
+        assert qc.MAX_RATIO_TWO_INPUTS / qc.GROTHENDIECK_CEILING > 0.75
+
+    def test_the_quantum_bias_never_falls_below_the_classical_one(self) -> None:
+        """Quantum strategies include classical ones -- the check that caught the
+        nuclear-norm bug, applied to the general-size optimiser."""
+        import itertools
+
+        import numpy as np
+
+        for entries in itertools.product((-1, 1), repeat=4):
+            matrix = np.array(entries, dtype=float).reshape(2, 2)
+            assert qc.tsirelson_bias(matrix) >= qc.classical_bias(matrix) - 1e-9
+
+    def test_an_unenumerated_size_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="two or three"):
+            qc.max_ratio(4)

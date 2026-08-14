@@ -58,7 +58,18 @@ sixteen two-by-two sign matrices (:func:`xor_game_census`):
     the other 8 admit none, with ratio exactly 1.
 
 and the split is precisely **rank two versus rank one**.  There is no continuum
-of quantum rents.  A market coordination payoff either has a rank-two structure,
+of quantum rents.
+
+**Nor does a bigger game buy a bigger rent.**  Enumerating all ``512`` sign
+matrices at three inputs (:func:`max_ratio`) gives a maximum ratio of exactly
+``6/5``, attained at rank three -- strictly *below* the two-input maximum of
+``sqrt 2``.  The spectrum there is ``{1, 1.0102, 1.2}``, still discrete but no
+longer a dichotomy.  So the largest rent in this family sits at the *smallest*
+game, and enlarging the coordination problem shrinks the edge rather than growing
+it.  Larger ratios need weighted rather than sign payoffs, and even then
+Grothendieck's constant caps every XOR game at any size:
+``K_G <= 1.7822`` (:data:`GROTHENDIECK_CEILING`).  There is a universal ceiling on
+the quantum rent, and CHSH already sits within twenty-five percent of it.  A market coordination payoff either has a rank-two structure,
 in which case it is CHSH in disguise and the bias improves by ``sqrt(2)``, or it
 does not, in which case entanglement is worth exactly zero.  Whether a real order
 flow presents a rank-two payoff is an empirical question about markets, not a
@@ -165,6 +176,12 @@ __all__ = [
     "quantum_advantage",
     "frontier",
     "frontier_is_monotone",
+    "MAX_RATIO_TWO_INPUTS",
+    "MAX_RATIO_THREE_INPUTS",
+    "GROTHENDIECK_CEILING",
+    "classical_bias",
+    "tsirelson_bias",
+    "max_ratio",
 ]
 
 LOGGER = logging.getLogger(__name__)
@@ -628,3 +645,79 @@ def frontier_is_monotone(thetas: Sequence[float] | None = None) -> bool:
     return all(
         later >= earlier - 1e-9 for earlier, later in zip(thresholds, thresholds[1:])
     )
+
+
+# --------------------------------------------------------------------------- #
+# Does a bigger game buy a bigger rent?  No.
+# --------------------------------------------------------------------------- #
+#: Maximum quantum/classical bias ratio over all ``2x2`` sign matrices: ``sqrt 2``.
+MAX_RATIO_TWO_INPUTS = math.sqrt(2)
+
+#: Maximum over all ``3x3`` sign matrices: ``6/5``, attained at rank three.
+#: Strictly *below* the two-input maximum -- enlarging the coordination game
+#: shrinks the available rent rather than growing it.
+MAX_RATIO_THREE_INPUTS = 1.2
+
+#: Grothendieck's constant bounds the ratio for XOR games of any size, with any
+#: real payoff weights: ``K_G <= 1.7822``.  A universal ceiling on the rent.
+GROTHENDIECK_CEILING = 1.7822
+
+
+def classical_bias(matrix: np.ndarray) -> float:
+    """``max_{s,t in {+-1}} s^T M t``, by enumeration over one side."""
+    size = matrix.shape[0]
+    return max(
+        float(np.abs(np.array(signs) @ matrix).sum())
+        for signs in itertools.product((-1, 1), repeat=size)
+    )
+
+
+def tsirelson_bias(matrix: np.ndarray, *, restarts: int = 20, iterations: int = 500,
+                   seed: int = 1) -> float:
+    """``max sum M_xy <u_x, v_y>`` over unit vectors, by alternating maximisation.
+
+    Given ``U`` the optimal ``v_y`` is the normalised ``(M^T U)_y``, so the value
+    is the sum of the row norms of ``M^T U``; alternating the two sides increases
+    it monotonically.  Non-convex, hence the restarts, but it reproduces CHSH's
+    ``2 sqrt 2`` exactly, which is what licenses reading the census off it.
+    """
+    generator = np.random.default_rng(seed)
+    size = matrix.shape[0]
+    best = 0.0
+    for _ in range(restarts):
+        left = generator.normal(size=(size, size))
+        left /= np.linalg.norm(left, axis=1, keepdims=True)
+        previous = -1.0
+        for _ in range(iterations):
+            transported = matrix.T @ left
+            value = float(np.linalg.norm(transported, axis=1).sum())
+            right = transported / np.maximum(
+                np.linalg.norm(transported, axis=1, keepdims=True), 1e-15
+            )
+            left = matrix @ right
+            left /= np.maximum(np.linalg.norm(left, axis=1, keepdims=True), 1e-15)
+            if abs(value - previous) < 1e-14:
+                break
+            previous = value
+        best = max(best, float(np.linalg.norm(matrix.T @ left, axis=1).sum()))
+    return best
+
+
+def max_ratio(size: int, *, restarts: int = 8, iterations: int = 300) -> float:
+    """Largest quantum/classical bias ratio over all sign matrices of this size.
+
+    ``sqrt 2`` at two inputs, ``6/5`` at three.  The rent **falls** as the game
+    grows, which is the opposite of what scaling intuition suggests and is the
+    practically relevant fact: a market cannot buy a larger edge by enlarging the
+    coordination problem.  Larger ratios exist only for weighted payoffs at large
+    size, and even then Grothendieck's constant caps them at
+    :data:`GROTHENDIECK_CEILING`.
+    """
+    if size not in (2, 3):
+        raise ValueError("the census is enumerated only for two or three inputs")
+    best = 0.0
+    for entries in itertools.product((-1, 1), repeat=size * size):
+        matrix = np.array(entries, dtype=float).reshape(size, size)
+        quantum = tsirelson_bias(matrix, restarts=restarts, iterations=iterations)
+        best = max(best, quantum / classical_bias(matrix))
+    return best

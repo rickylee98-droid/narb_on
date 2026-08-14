@@ -2651,6 +2651,22 @@ CHSH in disguise and the bias improves by √2 — or it's worth exactly zero. W
 presents rank-2 payoffs is an empirical question about markets, not about quantum mechanics, and
 it's the question that decides whether any of this pays.
 
+**And a bigger game does not buy a bigger rent.** Enumerating all 512 sign matrices at three
+inputs gives a maximum ratio of exactly **6/5**, attained at rank 3 — strictly *below* the
+two-input maximum of √2. The spectrum is {1, 1.0102, 1.2}: still discrete, no longer a dichotomy.
+
+| inputs | max ratio |
+|---|---|
+| 2 | **√2 ≈ 1.4142** |
+| 3 | **6/5 = 1.2** |
+| any, weighted payoffs | ≤ K_G ≈ 1.7822 |
+
+So the largest rent in this family sits at the *smallest* game — enlarging the coordination
+problem shrinks the edge. Larger ratios need weighted rather than sign payoffs, and even then
+Grothendieck's constant caps every XOR game at any size. There is a **universal ceiling** on the
+quantum rent, and CHSH already sits within 25% of it. (The optimiser is licensed by reproducing
+CHSH's 2√2 exactly.)
+
 *(A bug the tests caught: I first used the nuclear norm as the quantum bias. It agrees at rank 2 —
 giving CHSH's 2√2 — and fails at rank 1, returning **less** than classical, which is impossible
 since quantum strategies include classical ones. The correct closed form is
