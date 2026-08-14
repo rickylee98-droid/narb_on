@@ -163,3 +163,53 @@ class TestTheCorrelatedEquilibriumCorrection:
         of a complete-information game, and must come from removing the mediator.
         """
         assert qc.quantum_point_is_classically_realisable()
+
+
+class TestDetectionThreshold:
+    """The second threshold: how much of the tape must be visible."""
+
+    def test_the_maximal_case_is_exactly_two_root_two_minus_one(self) -> None:
+        """``2(sqrt 2 - 1)``, bisected to eight digits against the closed form."""
+        assert qc.detection_threshold() == pytest.approx(qc.MAXIMAL_THRESHOLD, abs=1e-8)
+        assert qc.MAXIMAL_THRESHOLD == pytest.approx(2 / (1 + math.sqrt(2)))
+
+    def test_the_maximal_advantage_is_tsirelson(self) -> None:
+        assert qc.quantum_advantage() == pytest.approx(
+            qc.quantum_chsh_value() - 0.75, abs=1e-6
+        )
+
+    @pytest.mark.parametrize("theta", [0.5, 0.3, 0.1])
+    def test_weaker_entanglement_lowers_the_threshold(self, theta) -> None:
+        assert qc.detection_threshold(theta) < qc.MAXIMAL_THRESHOLD
+
+    def test_the_threshold_approaches_the_eberhard_floor(self) -> None:
+        """``2/3`` in the vanishing-entanglement limit, and never below it."""
+        near = qc.detection_threshold(0.02)
+        assert near > qc.EBERHARD_FLOOR
+        assert near - qc.EBERHARD_FLOOR < 0.01
+
+    def test_the_frontier_is_monotone(self) -> None:
+        """The practical content: effect size and observation quality move together.
+
+        There is no state in the family that is both very profitable and cheap to
+        catch, so a regulator cannot trade one against the other.
+        """
+        assert qc.frontier_is_monotone()
+
+    def test_the_cheap_to_catch_end_is_worthless(self) -> None:
+        """At the Eberhard end the advantage is negligible."""
+        _, threshold, advantage = qc.frontier([0.02])[0]
+        assert threshold < 0.68
+        assert advantage < 1e-3
+
+    def test_the_profitable_end_needs_most_of_the_tape(self) -> None:
+        _, threshold, advantage = qc.frontier([math.pi / 4])[0]
+        assert threshold > 0.82
+        assert advantage > 0.10
+
+    @pytest.mark.parametrize("bad", [0.0, -0.1, 1.0, 2.0])
+    def test_an_out_of_range_state_is_refused(self, bad) -> None:
+        with pytest.raises(ValueError, match="pi/4"):
+            qc.detection_threshold(bad)
+        with pytest.raises(ValueError, match="pi/4"):
+            qc.quantum_advantage(bad)

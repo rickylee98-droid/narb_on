@@ -2674,6 +2674,29 @@ quantum point to the whole local polytope is **0.0321 nats/round**, so decisive 
 > the trigger is a public event both servers saw, detection is easy. If genuinely private,
 > impossible in principle.
 
+### And a second threshold, which bites harder
+
+A regulator doesn't see every decision — only those that reach the tape. Model that as a
+visibility η, unseen events recorded as a default. Then a violation is certifiable only above a
+critical visibility, and **below it a local model reproduces the record exactly** — the evidence
+isn't weak, it's absent. For the maximally entangled strategy the threshold is exactly
+
+> **η\* = 2(√2 − 1) = 0.82842712…**
+
+bisected to eight digits against the closed form. Over partially entangled states it falls toward
+Eberhard's 2/3 — but the advantage falls with it:
+
+| θ | π/4 | 0.5 | 0.3 | 0.1 | 0.02 |
+|---|---|---|---|---|---|
+| threshold η\* | 0.8284 | 0.7597 | 0.7183 | 0.6824 | 0.6697 |
+| advantage | +0.1036 | +0.0767 | +0.0371 | +0.0049 | +0.0002 |
+
+The two move together, **monotonically**. A regulator cannot trade effect size against
+observation quality: certifying the ten-percentage-point strategy needs **82.8%** of the
+coordination events visible, and an observer limited to 2/3 can certify nothing whose advantage
+isn't already negligible. That — not anything about quantum mechanics — is the binding constraint
+on forensic finance here.
+
 **Scope.** Two parties, two inputs, two outputs — where the polytopes are exactly computable and
 the XOR classification is complete. Polytope, game values and the marginal identity are exact; the
 detection divergence is a numerical convex optimisation and is labelled as such. Nothing here

@@ -96,6 +96,30 @@ about market data, with no quantum content.  If the triggering signal is a publi
 event both servers observed, it can, and detection is easy.  If the signal is
 genuinely private, detection is impossible in principle.
 
+**And there is a second threshold, which bites harder.**  A regulator does not
+see every decision -- only the ones that reach the tape.  Model that as a
+visibility ``eta``, with unseen events recorded as a default.  Then a violation
+can be certified only above a critical visibility, and below it a local model
+reproduces the record exactly, so the evidence is not weak but absent.  For the
+maximally entangled strategy the threshold is exactly
+
+    eta*  =  2 (sqrt 2 - 1)  =  0.82842712...        (:data:`MAXIMAL_THRESHOLD`)
+
+Over the family of partially entangled states the threshold falls, reaching
+Eberhard's ``2/3`` in the limit -- but the advantage falls with it
+(:func:`frontier`):
+
+    theta      pi/4      0.5       0.3       0.1       0.02
+    threshold  0.8284    0.7597    0.7183    0.6824    0.6697
+    advantage  +0.1036   +0.0767   +0.0371   +0.0049   +0.0002
+
+The two move together, monotonically (:func:`frontier_is_monotone`).  **A
+regulator cannot trade effect size against observation quality.**  Certifying the
+ten-percentage-point strategy requires seeing ``82.8%`` of the coordination
+events; an observer who sees only ``2/3`` can certify nothing whose advantage is
+not already negligible.  That, rather than any statement about quantum mechanics,
+is the binding constraint on forensic finance here.
+
 Scope
 -----
 Two parties, two inputs, two outputs, which is where the polytopes are small
@@ -135,6 +159,12 @@ __all__ = [
     "XOR_ADVANTAGE_RATIO",
     "correlated_equilibrium_polytope",
     "quantum_point_is_classically_realisable",
+    "MAXIMAL_THRESHOLD",
+    "EBERHARD_FLOOR",
+    "detection_threshold",
+    "quantum_advantage",
+    "frontier",
+    "frontier_is_monotone",
 ]
 
 LOGGER = logging.getLogger(__name__)
@@ -488,3 +518,113 @@ def quantum_point_is_classically_realisable() -> bool:
             if abs(block - 1.0) > 1e-12:
                 return False
     return True
+
+
+# --------------------------------------------------------------------------- #
+# How much of the tape must be visible: the detection-efficiency threshold
+# --------------------------------------------------------------------------- #
+#: Fraction of coordination events that must appear in the record before a
+#: maximally entangled strategy can be certified at all: ``2 (sqrt 2 - 1)``.
+#: Below it a local model reproduces everything observed, so the evidence is not
+#: weak -- it is absent.
+MAXIMAL_THRESHOLD = 2 * (math.sqrt(2) - 1)
+
+#: The floor over all entangled states, approached as the entanglement vanishes.
+#: Eberhard's ``2/3``.
+EBERHARD_FLOOR = 2 / 3
+
+
+def _chsh_observed(settings: Sequence[float], theta: float, efficiency: float) -> float:
+    """CHSH value seen by an observer who misses a fraction of the events.
+
+    State ``cos(theta)|00> + sin(theta)|11>``, settings in the x-z plane.  A
+    missed event is recorded as the default outcome, so with efficiency ``eta``
+
+        S_obs = eta^2 S + 2 eta (1 - eta) (<A_0> + <B_0>) + 2 (1 - eta)^2 ,
+
+    the cross terms surviving only on the settings that appear with the same sign
+    in both of their CHSH terms.  Violation means ``S_obs > 2``.
+    """
+    first, second, third, fourth = settings
+    pair = math.sin(2 * theta)
+    bias = math.cos(2 * theta)
+    correlate = lambda a, b: math.cos(a) * math.cos(b) + pair * math.sin(a) * math.sin(b)
+    raw = (
+        correlate(first, third)
+        + correlate(first, fourth)
+        + correlate(second, third)
+        - correlate(second, fourth)
+    )
+    marginal = bias * (math.cos(first) + math.cos(third))
+    return (
+        efficiency**2 * raw
+        + 2 * efficiency * (1 - efficiency) * marginal
+        + 2 * (1 - efficiency) ** 2
+    )
+
+
+def _best_chsh(theta: float, efficiency: float) -> float:
+    from scipy.optimize import minimize
+
+    result = minimize(
+        lambda settings: -(_chsh_observed(settings, theta, efficiency) - 2),
+        [0.0, math.pi / 2, math.pi / 4, -math.pi / 4],
+        method="Nelder-Mead",
+        options={"maxiter": 20000, "fatol": 1e-14, "xatol": 1e-12},
+    )
+    return -float(result.fun)
+
+
+def detection_threshold(theta: float = math.pi / 4, *, steps: int = 60) -> float:
+    """Smallest visible fraction at which the strategy can be certified at all.
+
+    Bisected on the largest achievable ``S_obs - 2``.  At maximal entanglement it
+    returns :data:`MAXIMAL_THRESHOLD`; as the entanglement vanishes it falls to
+    :data:`EBERHARD_FLOOR`.
+    """
+    if not 0 < theta <= math.pi / 4:
+        raise ValueError("theta parameterises the state in (0, pi/4]")
+    low, high = 0.5, 1.0
+    for _ in range(steps):
+        middle = (low + high) / 2
+        if _best_chsh(theta, middle) > 0:
+            high = middle
+        else:
+            low = middle
+    return high
+
+
+def quantum_advantage(theta: float = math.pi / 4) -> float:
+    """Excess win probability over the classical ``3/4`` at full visibility."""
+    if not 0 < theta <= math.pi / 4:
+        raise ValueError("theta parameterises the state in (0, pi/4]")
+    return 0.5 + _best_chsh(theta, 1.0) / 8 + 2 / 8 - 0.75
+
+
+def frontier(thetas: Sequence[float] | None = None) -> list[tuple[float, float, float]]:
+    """``(theta, threshold, advantage)`` along the detectability frontier.
+
+    The two move together: every state that is harder to catch is also more
+    profitable.  There is no corner of the family offering a large effect at a
+    loose observation requirement, which is the practical content of the whole
+    forensic question.
+    """
+    if thetas is None:
+        thetas = [math.pi / 4, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02]
+    return [(t, detection_threshold(t), quantum_advantage(t)) for t in thetas]
+
+
+def frontier_is_monotone(thetas: Sequence[float] | None = None) -> bool:
+    """Whether threshold and advantage rise together along the family.
+
+    They do.  A regulator cannot trade effect size against observation quality:
+    catching the ``+10`` percentage point strategy requires seeing ``82.8%`` of
+    events, and an observer limited to ``2/3`` can only certify strategies whose
+    advantage is essentially zero.
+    """
+    rows = frontier(thetas)
+    ordered = sorted(rows, key=lambda row: row[2])
+    thresholds = [row[1] for row in ordered]
+    return all(
+        later >= earlier - 1e-9 for earlier, later in zip(thresholds, thresholds[1:])
+    )
