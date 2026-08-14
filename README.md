@@ -2494,9 +2494,9 @@ anything off it.
 python -c "import cascade as c; print({n: round(c.return_fraction(n,600.0),3) for n in (2,3,4,5)})"
 ```
 
-## A seventeenth target: closing the averaging estimate
+## A seventeenth target: the averaging estimate — half closed
 
-`averaging.py` — the coherence penalty is **uniform in the shell index**.
+`averaging.py` — the shell-index dependence is eliminated exactly; the phase tail is not.
 
 ### The gap that was left
 
@@ -2540,31 +2540,53 @@ Measuring ρ(r) across separations 2.8 → 141 gives a clean two-parameter fit, 
 ρ **decreases** toward its limit, so ρ(r) > ρ∞ at every finite ratio — the limit is a genuine
 lower bound, not just an asymptote. And it is **positive**.
 
-### The estimate
+### What this gives, and what it doesn't
 
-    τ_j = τ_j^coherent / ρ(r_j) ≤ τ_j^coherent / ρ∞      uniformly in j
+The penalty depends on two things: **ρ_j = ρ(r_j, φ_j)** — the separation ratio and the phase
+configuration.
 
-hence
+**The ratio dependence is eliminated, exactly.** Scale invariance makes it one function, the same
+at every shell, approaching a positive limit from above. The shell index drops out of the
+problem — which is precisely what "uniform in j" was asking for, and it is a theorem, not a fit.
 
-> **Σ_j τ_j ≤ (1/ρ∞) Σ_j τ_j^coherent**
+**The phase dependence is not.** I first reported this as closed. It isn't, and the measurement
+that settles it is the one I'd flagged as the thing to watch. Running the transfer-time
+estimator — which cannot go negative, unlike the rate fit — over eight phase draws:
 
-**The incoherent cascade reaches infinite shell index in finite time whenever the coherent shell
-model does, and takes at most 1/ρ∞ ≈ 11.5 times longer.** Incoherence costs a *constant factor,
-not a divergence*. That is the uniform-in-shell-index control the averaging argument needed, and
-it is why the oscillation `cascade.py` found is something to average over rather than an
-obstruction.
+| separation | draws reaching target | min | median |
+|---|---|---|---|
+| 11.3 | 4/8 | 0.0632 | 0.0874 |
+| 28.3 | 7/8 | 0.0423 | 0.0660 |
+| 84.9 | 7/8 | 0.0433 | 0.0684 |
+| **212.1** | **8/8** | **0.0078** | 0.0670 |
 
-### Proved / measured / still open
+Medians are stable across a 20× range of separation — consistent with scale invariance, typical
+behaviour is scale free. **Minima are not.** In the only sample where *every* draw reached the
+target, the minimum is 0.0078: five times below what the incomplete samples showed, and an order
+of magnitude below its own median.
+
+That gap is exactly the bias `transfer_time_penalty` returns `None` to expose — the draws that
+fail to reach the gain are the slow ones, so a sample that drops them reports a floor that
+doesn't exist. **Reading the incomplete rows would have given me a uniform bound that isn't
+there.**
+
+So the estimate reads
+
+> **Σ_j τ_j ≤ Σ_j τ_j^coherent / ρ(r_j, φ_j)**
+
+with the r-dependence removed and the φ-dependence outstanding. Finite *provided* the phase
+configurations at successive gates don't repeatedly land in the low tail. Controlling that tail —
+not the typical value, which is fine — is what remains.
+
+### Proved / measured / refuted
 
 - **Proved:** ρ depends only on the separation ratio. Euler's scale invariance on a self-similar
-  architecture; the residual is 6 × 10⁻¹¹, not a small number that needs interpreting.
-- **Measured:** ρ(r) and its limit ρ∞ ≈ 0.0869. A proof needs a lower bound derived from the
-  equations, not a fit.
-- **Still open:** a bound uniform over initial **phases**. An early-window fit scatters from
-  −0.01 to 0.22 across random phase draws, so individual configurations can transiently transfer
-  backwards. Crucially this does *not* touch the separation-independence, which holds draw by
-  draw — so uniformity in j survives. What's missing is a lower bound after averaging over
-  phases. That is a different and smaller question than the one closed here.
+  architecture; residual 6 × 10⁻¹¹, not a small number needing interpretation.
+- **Measured:** ρ(r) and its limit ρ∞ ≈ 0.0869, at fixed phase draw.
+- **Refuted:** that ρ is bounded below uniformly over phases. The complete-sample minimum is
+  0.0078 and the apparent floor at 0.043 was an artefact of dropped runs. The
+  separation-independence survives untouched, since it holds draw by draw — but the sum bound is
+  now conditional on the phases rather than unconditional.
 
 **Scope.** Two modes per shell (α = 1, the inviscid regime of Palasek's Theorem 1.8, which needs
 only α ≥ 1). Galerkin truncation, not the PDE. Nothing here exhibits a blow-up — finite
