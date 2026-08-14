@@ -2255,6 +2255,78 @@ the trade-off exactly. It does not resolve it.
 python -c "import shell; from fractions import Fraction as F; print(shell.kolmogorov_exponent(1,1), shell.viscous_window(F(5,2)), shell.separation_budget(F(5,2)))"
 ```
 
+## A fourteenth target: the open step — the amplifier gate in real Euler
+
+`embedding.py` — Step 2 of Tao's program, for one gate.
+
+### The question
+
+Palasek's case for his model being embeddable rests on its two interactions being ones the real
+Euler nonlinearity contains. One, `P_k div(u_{k+1}⊗u_{k+1})`, he calls harnessable by convex
+integration. The other he flags as the hard one:
+
+> *"The other Obukhov interaction, N_{k−1}^α X_{k−1}X_k, is **more difficult to harness**, but
+> nonetheless is easily understood as the nonlinear interaction u_k·∇u_{k−1}."*
+
+The worry is a coefficient mismatch. A triad k₁+k₂+k₃ = 0 with one low mode and two high ones
+carries interaction coefficients of size |k_high| — for widely separated shells, enormous
+compared with the |k_low| the Obukhov gate asks for. If that survived, the gate would be
+unrealisable.
+
+### It doesn't survive: the transport cancels identically
+
+In the helical basis the Euler nonlinearity gives a₁′ = c₁ ā₂ā₃ cyclically, with
+**c_j = −½·g·(s_{j+1}|k_{j+1}| − s_{j+2}|k_{j+2}|)** and a single geometric factor g shared by
+all three. Energy conservation gives c₂ + c₃ = −c₁, so the **high pair's** energy moves at a
+rate governed by c₁ alone — and c₁ sees the two high wavenumbers **only through their
+difference**. The O(|k_high|) parts cancel identically (verified as an exact symbolic residual,
+not asserted). Since k₂ + k₃ = −k₁, what remains is bounded by |k₁|.
+
+That cancellation *is* the statement that the leading non-local interaction is pure transport —
+it moves a small eddy without amplifying it. The residue is the low mode's **strain**, which is
+exactly what the Obukhov gate needs.
+
+### The gate law
+
+In the scale-separated limit with the high pair carrying the **same helicity**:
+
+> **|c₁| / |k₁| = |sin θ·cos θ| = |sin 2θ| / 2**,  maximised at **θ = 45°, efficiency exactly ½**
+
+θ is the angle between the low mode and the high pair. Both factors are forced and pull against
+each other: the wavenumber difference → |k₁||cos θ|, largest when the triad is collinear, while
+the geometric factor → 2|sin θ| and **vanishes** for collinear triads — the classical fact that
+collinear triads don't interact, since a divergence-free mode is orthogonal to its own
+wavevector. Neither factor alone locates the optimum; only the product does.
+
+Verified: the finite-wavenumber coefficient converges to the law (errors strictly decreasing at
+Q = 10³, 10⁴, 10⁵), and the maximiser is located by search rather than read off the formula.
+
+### What this settles, and what it doesn't
+
+**Settled:** the coefficient question for one gate. There is no |k_high| mismatch to overcome;
+the |k_low| the Obukhov model wants is exactly what Euler supplies, with a computable constant
+of ½ and an explicit optimal geometry. The remaining N_{k−1}^α rather than N_{k−1} comes from
+intermittency — the volume fraction N_k^{−2(α−1)} of Palasek's §2 — not from the triad.
+
+**Not settled:** anything else. A real embedding needs this gate to act coherently across
+infinitely many shells at once, with the errors from every *other* triad — the ones this module
+deliberately examines one at a time — controlled. That is the open problem and nothing here
+closes it. There is a test asserting the module contains no `embed` and no `blowup`, so the
+scope stays attached to the code.
+
+### Referees
+
+- **Energy and helicity** conserved exactly and symbolically on every triad and every helicity
+  assignment — the two identities that pin the coefficient convention, since nothing else here
+  fixes it.
+- **Collinear triads are inert** (g = 0), with a control confirming non-collinear ones aren't.
+- **The transport cancellation** stated as a residual that must vanish, not as an assertion.
+- **|‖k₂‖ − ‖k₃‖| ≤ ‖k₁‖** — the triangle inequality is what caps the gate at the low wavenumber.
+
+```bash
+python -c "import embedding as e, math; print(e.gate_efficiency(math.pi/4, 1e5))"
+```
+
 ## Tests
 
 ```bash
@@ -2273,6 +2345,7 @@ python -m pytest test_graviton.py -v            # obstruction = Friedmann constr
 python -m pytest test_celestial.py -v           # massive w_1+inf / celestial obstruction
 python -m pytest test_cosmopolytope.py -v       # cosmological polytope / mass resummation
 python -m pytest test_shell.py -v               # Obukhov shell model / blow-up window
+python -m pytest test_embedding.py -v           # Euler triad gate / Tao's step 2
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
