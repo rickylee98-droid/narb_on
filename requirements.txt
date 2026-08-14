@@ -23,4 +23,5 @@ mpmath>=1.3
 
 # Test suite only.
 pytest>=7.0
-PyNormaliz>=2.18   # Hilbert bases for Shioda's semigroup (fermat_hodge)
+PyNormaliz>=2.18   # Hilbert bases for Shioda's semigroup (fermat_hodge); facets and
+                   # dual-cone triangulations for the cosmological polytopes
