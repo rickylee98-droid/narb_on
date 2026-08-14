@@ -2174,6 +2174,87 @@ established here**, and the FRW resummation remains open.
 python -c "import cosmopolytope as c, sympy as sp; x1,x2,y=sp.symbols('x1 x2 y',positive=True); print(sp.simplify(c.frw_first_order(x1,x2,y)))"
 ```
 
+## A thirteenth target: the shell-model route to Navier-Stokes
+
+`shell.py` — the parameter geometry of the current best blow-up candidate.
+
+### Where the problem actually stands
+
+Global regularity for 3D Navier–Stokes is open, and the standard route to a counterexample is
+Tao's two-step program: build a shell model that blows up, then embed it in the true equations.
+Step 1 has a short and very recent history:
+
+| model | inviscid | viscous (3D parameters) |
+|---|---|---|
+| Katz–Pavlović | blow-up | **regular** |
+| Obukhov, exponential shells N_k = λ^k | **regular** | **regular** |
+| Tao's model | blow-up | blow-up, but interactions have no Euler counterpart |
+| **Obukhov, super-exponential N_k = N₀^{b^k}** | blow-up (α ≥ 1) | blow-up (α > 2, smooth forcing) |
+
+That last line is [Palasek, arXiv:2605.13827](https://arxiv.org/abs/2605.13827), **May 2026** —
+three months old, and now the leading candidate for Step 2 because its interactions
+(`u_k·∇u_{k−1}` and `P_k div u_{k+1}⊗u_{k+1}`) do appear in the real Euler nonlinearity.
+
+**I am not contributing to the Navier–Stokes problem.** The open step is the embedding, which
+is a PDE construction and is untouched here. What follows is exact arithmetic on that model's
+parameter geometry.
+
+### The cascade exponent, for arbitrary shell separation
+
+The model has an exact power-law stationary state X_k = c·N_k^{−γ}, and solving the fixed-point
+equation gives
+
+> **γ = α / (2b + 1)**
+
+verified as an identity between *exponents* in rational arithmetic, not numerically. At b = 1
+(exponential shells) this is α/3, and at α = 1 that is **Kolmogorov's 1/3** — an anchor the
+derivation was not fitted to.
+
+The consequence is the point: **γ decreases in b.** Wider shell separation flattens the cascade
+state that regularises the model, and as b → ∞ it flattens away entirely. That is the mechanism
+by which super-exponential separation buys blow-up, compressed into one exponent. I have not
+found this written down for b > 1.
+
+### The trapping region sits above the cascade
+
+Palasek's barriers are A_k = N_k^β in the rescaled variable, where the cascade state sits at
+N_k^{2αb/(2b+1)}. His viscous constraint β > 2b clears it exactly when
+
+    2b + 1 ≥ α
+
+which is automatic for b > 1 whenever α ≤ 3 — hence throughout the three-dimensional window,
+and unconditionally in the inviscid case. So the blow-up is an **escape above** the regularising
+cascade, not a competition with it.
+
+### A tension in the parameters worth naming
+
+The viscous theorem needs b ∈ (1, α/2), which is non-empty **exactly when α > 2** — recovering
+the sharpness of his hypothesis by counting an interval, where the paper gets it independently
+from energy criticality. But the physically relevant intermittency range in 3D is α ∈ [1, 5/2],
+so the candidate window is α ∈ (2, 5/2] and there
+
+> **b < 5/4.**
+
+The shells are super-exponential but *barely*. Section 4 of the paper argues that wide
+separation is precisely what would make an embedding tractable, since it suppresses cross-scale
+errors — and the physically relevant window is where that margin is thinnest. The module states
+the trade-off exactly. It does not resolve it.
+
+### Referees
+
+- **Kolmogorov's 1/3** falls out of the cascade formula at α = b = 1, with a negative control
+  showing a perturbed exponent breaks the fixed-point identity.
+- **The energy identity telescopes to exactly zero** in rational arithmetic, for arbitrary
+  amplitudes and arbitrary shells — including 10^{2^k} — since no property of N_k is used.
+- **Truncation invariance** (Palasek's Remark 1.10, and why his blow-up is unstable in every
+  C^s) checked as an exact property of the vector field, with a control showing untruncated
+  high shells do move.
+- **The α > 2 threshold** obtained twice by unrelated routes.
+
+```bash
+python -c "import shell; from fractions import Fraction as F; print(shell.kolmogorov_exponent(1,1), shell.viscous_window(F(5,2)), shell.separation_budget(F(5,2)))"
+```
+
 ## Tests
 
 ```bash
@@ -2191,6 +2272,7 @@ python -m pytest test_platycosm.py -v           # flat 3-manifolds / instability
 python -m pytest test_graviton.py -v            # obstruction = Friedmann constraint
 python -m pytest test_celestial.py -v           # massive w_1+inf / celestial obstruction
 python -m pytest test_cosmopolytope.py -v       # cosmological polytope / mass resummation
+python -m pytest test_shell.py -v               # Obukhov shell model / blow-up window
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
