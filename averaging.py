@@ -122,6 +122,7 @@ __all__ = [
     "slowdown_factor",
     "blowup_time_bound",
     "penalty_is_bounded_below",
+    "transfer_time_penalty",
 ]
 
 LOGGER = logging.getLogger(__name__)
@@ -275,3 +276,45 @@ def penalty_is_bounded_below(ratio: float) -> bool:
     asymptote.
     """
     return penalty_model(ratio) > PENALTY_LIMIT
+
+
+def transfer_time_penalty(
+    growth: int,
+    *,
+    seed: int = 3,
+    gain: float = 100.0,
+    duration: float = 1500.0,
+    samples: int = 30000,
+    upper_fraction: float = 1e-3,
+) -> float | None:
+    """``rho`` estimated from the *transfer time* rather than an instantaneous rate.
+
+    The time for the upper shell's energy to reach ``gain`` times its initial
+    value, against the time the coherent shell model would need for the same
+    gain.  Returns ``None`` if the gain is not reached inside ``duration``,
+    which must be checked rather than silently dropped: the runs that fail to
+    reach it are precisely the slow ones, so discarding them biases the minimum
+    upward.
+
+    This is the better-founded estimator of the two.  The instantaneous rate used
+    by :func:`coherence_penalty` is fitted in a window where the mode may be
+    mid-oscillation, so it can come out negative for particular phases even when
+    the transfer is proceeding; the transfer time cannot, because it is the
+    quantity the cascade estimate actually needs.  The cost is that it needs a
+    long integration, since the slowest phase draws take many oscillations to
+    accumulate the gain.
+    """
+    if gain <= 1:
+        raise ValueError("the gain must exceed one")
+    arch = co.architecture(ca.SEED_VECTOR, ca.SEED_PARTNER, [growth])
+    times, energies = _shell_energies_over_time(
+        arch, seed, upper_fraction, duration, samples
+    )
+    target = gain * energies[0, 1]
+    if energies[:, 1].max() < target:
+        return None
+    reached = times[int(np.argmax(energies[:, 1] > target))]
+    lower_amplitude = np.sqrt(2 * energies[0, 0])
+    coherent_rate = 0.5 * arch.radius(0) * lower_amplitude / np.sqrt(2)
+    coherent_time = np.log(gain) / (2 * coherent_rate)
+    return float(coherent_time / reached)

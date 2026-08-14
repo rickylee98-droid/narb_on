@@ -117,3 +117,31 @@ class TestTheEstimate:
             sum(coherent_terms) / av.PENALTY_LIMIT
         )
         assert np.isfinite(embedded_bound)
+
+
+class TestTransferTimeEstimator:
+    """The better-founded estimator, added because the rate fit can go negative."""
+
+    def test_it_agrees_with_the_rate_estimator_in_order_of_magnitude(self) -> None:
+        rate_based = av.coherence_penalty(20)[1]
+        time_based = av.transfer_time_penalty(20, duration=300.0, samples=6000)
+        assert time_based is not None
+        assert 0.3 < time_based / rate_based < 3.0
+
+    def test_it_is_positive(self) -> None:
+        """Unlike the instantaneous rate, a transfer time cannot come out negative."""
+        value = av.transfer_time_penalty(20, duration=300.0, samples=6000)
+        assert value is not None and value > 0
+
+    def test_an_unreached_gain_returns_none_rather_than_a_number(self) -> None:
+        """Silently dropping slow runs would bias the minimum upward.
+
+        The runs that fail to reach the gain are exactly the slow ones, so a
+        sample that discards them overstates the lower bound. The ``None`` makes
+        that visible to the caller instead of hiding it.
+        """
+        assert av.transfer_time_penalty(20, duration=0.05, samples=50) is None
+
+    def test_a_degenerate_gain_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="gain must exceed one"):
+            av.transfer_time_penalty(20, gain=1.0)
