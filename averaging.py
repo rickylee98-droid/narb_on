@@ -57,22 +57,40 @@ two-parameter fit (:func:`fit_penalty`, residual ``1.8e-3``):
 ratio, and the limit is positive.  Since the model requires super-exponentially
 growing shells, ``r_j -> infinity`` and the penalty settles at ``rho_inf``.
 
-The estimate
-------------
-Putting the two together: the time for the cascade to cross gate ``j`` is
+What this does and does not give
+---------------------------------
+The penalty at gate ``j`` depends on two things, the separation ratio and the
+phase configuration:  ``rho_j = rho(r_j, phi_j)``.
 
-    tau_j  =  tau_j^coherent / rho(r_j)  <=  tau_j^coherent / rho_inf ,
+**The ratio dependence is eliminated, exactly.**  Scale invariance makes it one
+function, the same at every shell, and measurement shows that function
+approaches a positive limit from above.  So the shell index drops out of the
+problem entirely -- which is what "uniform in ``j``" was asking for, and it is a
+theorem rather than a fit.
 
-uniformly in ``j``.  Therefore
+**The phase dependence is not.**  Measured with the transfer-time estimator over
+eight phase draws, the penalty's *median* is stable across separations --
+``0.087, 0.066, 0.068, 0.067`` at ratios ``11, 28, 85, 212`` -- consistent with
+scale invariance.  But its *minimum* is not bounded away from zero by anything
+measured here.  In the one sample where every draw reached the target, at ratio
+``212``, the minimum is ``0.0078``: more than five times below what the
+incomplete samples suggested, and an order of magnitude below the median.
 
-    sum_j tau_j  <=  (1 / rho_inf) sum_j tau_j^coherent ,
+That gap between ``0.043`` and ``0.0078`` is exactly the bias
+:func:`transfer_time_penalty` returns ``None`` to expose.  The draws that fail to
+reach the gain inside the window are the slow ones, so a sample that drops them
+reports a minimum that is too high.  Reading the incomplete rows would have given
+a uniform bound that does not exist.
 
-so **the incoherent cascade reaches infinite shell index in finite time whenever
-the coherent shell model does, and takes at most ``1/rho_inf`` -- about eleven times
--- longer** (:func:`blowup_time_bound`).  Incoherence costs a constant factor,
-not a divergence.  That is the uniform-in-shell-index control the averaging
-argument needed, and it is the reason the oscillation seen in :mod:`cascade` is
-something to average over rather than an obstruction.
+So the estimate reads
+
+    sum_j tau_j  <=  sum_j tau_j^coherent / rho(r_j, phi_j) ,
+
+with the ``r`` dependence removed and the ``phi`` dependence outstanding.  It is
+finite provided the phase configurations at successive gates do not repeatedly
+land in the low tail.  Controlling that tail -- not the typical value, which is
+fine -- is what remains.  :func:`blowup_time_bound` uses the median-scale
+constant and is therefore a statement about typical phases, not a bound.
 
 What is proved and what is measured
 ------------------------------------
@@ -83,14 +101,13 @@ What is proved and what is measured
 * **Measured:** the function ``rho(r)`` and its limit ``rho_inf ~ 0.0869``.  A
   proof would need a lower bound on ``rho`` derived from the equations, not a
   fit.
-* **Not established:** a bound uniform over initial *phases*.  Estimating the
-  penalty by an early-window exponential fit gives a spread of roughly
-  ``-0.01`` to ``0.22`` across random phase draws, so individual configurations
-  can transiently transfer backwards.  The separation-independence -- the part
-  that carries uniformity in ``j`` -- is unaffected by this, because it holds
-  draw by draw; what is not established is a lower bound after averaging over
-  phases.  That is now the remaining gap, and it is a different and smaller
-  question than the one this module closes.
+* **Refuted:** the hope that the penalty is bounded below uniformly over phases.
+  The transfer-time estimator, which cannot go negative and is the quantity the
+  cascade estimate needs, drops to ``0.0078`` on a complete sample.  An earlier
+  incomplete sample suggested a floor near ``0.043`` and that floor is an
+  artefact of dropped runs.  The separation-independence is unaffected, since it
+  holds draw by draw, but the sum bound is now conditional on the phases rather
+  than unconditional.
 
 Scope
 -----
@@ -256,12 +273,14 @@ def slowdown_factor() -> float:
 
 
 def blowup_time_bound(coherent_time: float) -> float:
-    """Bound on the embedded cascade time given the shell model's.
+    """Embedded cascade time at the *typical* penalty, given the shell model's.
 
-    ``sum_j tau_j <= (1 / rho_inf) sum_j tau_j^coherent``, since
-    ``rho(r) > rho_inf`` at every finite ratio.  Finite on the right gives finite
-    on the left: the incoherent cascade reaches infinite shell index in finite
-    time whenever the coherent one does.
+    ``tau^coherent / rho_inf``.  This is **not** a bound: ``rho_inf`` is the
+    large-separation limit of the penalty at a fixed phase draw, and the penalty
+    varies over phases with a low tail reaching at least ``0.0078``.  It is the
+    right scale for typical phase configurations and the wrong one for the tail,
+    which is the part still uncontrolled.  Named for what it was intended to be
+    and documented for what it is.
     """
     if coherent_time <= 0:
         raise ValueError("the coherent cascade time is positive")

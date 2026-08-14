@@ -145,3 +145,49 @@ class TestTransferTimeEstimator:
     def test_a_degenerate_gain_is_refused(self) -> None:
         with pytest.raises(ValueError, match="gain must exceed one"):
             av.transfer_time_penalty(20, gain=1.0)
+
+
+class TestThePhaseTailIsNotControlled:
+    """The measurement that refuted the uniform-in-phase reading.
+
+    Recorded because the failure mode is subtle: an incomplete sample of phase
+    draws reports a minimum that is too high, since the draws it loses are
+    precisely the slow ones.
+    """
+
+    #: Transfer-time penalty over eight phase draws. The last row is the only
+    #: sample in which every draw reached the target, and its minimum is more
+    #: than five times below the others.
+    MEASURED = {
+        11.3: ("4/8", 0.0632, 0.0874),
+        28.3: ("7/8", 0.0423, 0.0660),
+        84.9: ("7/8", 0.0433, 0.0684),
+        212.1: ("8/8", 0.0078, 0.0670),
+    }
+
+    def test_the_median_is_stable_across_separations(self) -> None:
+        """Consistent with scale invariance: typical behaviour is scale free."""
+        medians = [median for _, _, median in self.MEASURED.values()]
+        assert max(medians) / min(medians) < 1.4
+
+    def test_the_minimum_is_not(self) -> None:
+        """The complete sample sits an order of magnitude below its own median."""
+        _, minimum, median = self.MEASURED[212.1]
+        assert minimum < median / 5
+
+    def test_incomplete_samples_overstate_the_floor(self) -> None:
+        """The bias, quantified: 0.043 from 7/8 against 0.0078 from 8/8."""
+        incomplete = [m for reached, m, _ in self.MEASURED.values() if reached != "8/8"]
+        (complete,) = [m for reached, m, _ in self.MEASURED.values() if reached == "8/8"]
+        assert min(incomplete) > 5 * complete
+
+    def test_the_module_does_not_claim_a_uniform_floor(self) -> None:
+        """The docstring must record the refutation, not the hope."""
+        import averaging
+
+        text = averaging.__doc__ or ""
+        assert "Refuted" in text
+        assert "0.0078" in text
+        doc = averaging.blowup_time_bound.__doc__ or ""
+        assert "**not** a bound" in doc
+        assert "typical" in doc
