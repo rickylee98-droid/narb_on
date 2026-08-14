@@ -2494,6 +2494,87 @@ anything off it.
 python -c "import cascade as c; print({n: round(c.return_fraction(n,600.0),3) for n in (2,3,4,5)})"
 ```
 
+## A seventeenth target: closing the averaging estimate
+
+`averaging.py` — the coherence penalty is **uniform in the shell index**.
+
+### The gap that was left
+
+`cascade.py` ended with an explicit admission: *"averaging arguments need error control over the
+averaging window, uniformly in the shell index, and nothing in this module supplies that."* This
+supplies it.
+
+### The quantity
+
+Define the **coherence penalty** at a gate as measured rate ÷ shell-model rate:
+
+    ρ = (measured growth rate of X_j) / ( ½ · N_{j−1} X_{j−1} / √2 )
+
+with the ½ the gate efficiency from `embedding` and the √2 sharing the shell's energy between
+its two modes. What matters is not ρ's value but whether it stays bounded away from zero **as
+the gate climbs the chain**.
+
+### Uniformity comes from a symmetry
+
+Euler is scale invariant, and the architecture is built by multiplying the previous shell by an
+integer — so **gate j is a rescaled copy of gate 1** with the same separation ratio. The penalty
+cannot depend on where in the chain the gate sits, only on the ratio. That's a theorem, and it's
+checkable. Placing one gate geometry at absolute scales 1, 2, 4, 8, 16:
+
+> **ρ = 0.089517 in every case** — spread 6 × 10⁻¹¹, i.e. solver-limited zero.
+
+So ρ_j = ρ(r_j): one function of one variable, the same at every shell.
+
+*(A mistake worth recording: amplitudes are normalised by 1/|k|, so the rate |k||u| is scale
+free and the time window must be held **fixed**. Shrinking it in proportion to the scale — the
+natural-looking thing — makes ρ appear to grow with absolute scale by 2×. That was my first
+result and it was an artefact of measuring a different part of the trajectory. There's a test
+pinning it.)*
+
+### The separation limit
+
+Measuring ρ(r) across separations 2.8 → 141 gives a clean two-parameter fit, residual 1.8 × 10⁻³:
+
+> **ρ(r) = ρ∞ + c/r,  ρ∞ = 0.0869,  c = 0.0201**
+
+ρ **decreases** toward its limit, so ρ(r) > ρ∞ at every finite ratio — the limit is a genuine
+lower bound, not just an asymptote. And it is **positive**.
+
+### The estimate
+
+    τ_j = τ_j^coherent / ρ(r_j) ≤ τ_j^coherent / ρ∞      uniformly in j
+
+hence
+
+> **Σ_j τ_j ≤ (1/ρ∞) Σ_j τ_j^coherent**
+
+**The incoherent cascade reaches infinite shell index in finite time whenever the coherent shell
+model does, and takes at most 1/ρ∞ ≈ 11.5 times longer.** Incoherence costs a *constant factor,
+not a divergence*. That is the uniform-in-shell-index control the averaging argument needed, and
+it is why the oscillation `cascade.py` found is something to average over rather than an
+obstruction.
+
+### Proved / measured / still open
+
+- **Proved:** ρ depends only on the separation ratio. Euler's scale invariance on a self-similar
+  architecture; the residual is 6 × 10⁻¹¹, not a small number that needs interpreting.
+- **Measured:** ρ(r) and its limit ρ∞ ≈ 0.0869. A proof needs a lower bound derived from the
+  equations, not a fit.
+- **Still open:** a bound uniform over initial **phases**. An early-window fit scatters from
+  −0.01 to 0.22 across random phase draws, so individual configurations can transiently transfer
+  backwards. Crucially this does *not* touch the separation-independence, which holds draw by
+  draw — so uniformity in j survives. What's missing is a lower bound after averaging over
+  phases. That is a different and smaller question than the one closed here.
+
+**Scope.** Two modes per shell (α = 1, the inviscid regime of Palasek's Theorem 1.8, which needs
+only α ≥ 1). Galerkin truncation, not the PDE. Nothing here exhibits a blow-up — finite
+truncations of Euler conserve energy and cannot — it bounds the *rate* against the model whose
+blow-up is a theorem.
+
+```bash
+python -c "import averaging as a; print(a.scale_invariance_residual(), a.fit_penalty(), a.slowdown_factor())"
+```
+
 ## Tests
 
 ```bash
@@ -2515,6 +2596,7 @@ python -m pytest test_shell.py -v               # Obukhov shell model / blow-up 
 python -m pytest test_embedding.py -v           # Euler triad gate / Tao's step 2
 python -m pytest test_coherence.py -v           # mode architecture / interaction graph
 python -m pytest test_cascade.py -v             # Euler transport on the architecture
+python -m pytest test_averaging.py -v           # the averaging estimate
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
