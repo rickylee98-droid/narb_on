@@ -137,6 +137,15 @@ __all__ = [
     "collapsing_facet_counts",
     "pole_orders",
     "measured_pole_orders",
+    "frw_measure_power",
+    "mellin_simple",
+    "subgraph_letters",
+    "frw_first_order",
+    "frw_first_order_by_integration",
+    "frw_first_order_numerator",
+    "flat_numerator",
+    "unphysical_branch_residual",
+    "reparameterisation_obstruction",
 ]
 
 LOGGER = logging.getLogger(__name__)
@@ -489,3 +498,157 @@ def measured_pole_orders(insertions: int) -> dict[str, int]:
             if sp.simplify(base - target) == 0:
                 orders[name] = int(exponent)
     return orders
+
+
+# --------------------------------------------------------------------------- #
+# The FRW tower: where the flat-space mechanism stops working
+# --------------------------------------------------------------------------- #
+#: In a background ``a(eta) = (-eta)^{-alpha}`` the two-point mass coupling is
+#: time dependent, and in the energy representation each inserted site carries a
+#: measure ``omega^{2 alpha - 1} d omega`` rather than sitting at zero energy.
+#: Flat space is ``alpha = 0``, where the coupling is constant in time and the
+#: measure collapses to ``delta(omega)`` -- which is exactly the degenerate limit
+#: :func:`tower_term` takes.  De Sitter is ``alpha = 1``, measure ``omega
+#: d omega``.
+def frw_measure_power(alpha: int) -> int:
+    """Exponent ``2 alpha - 1`` of the energy measure at an inserted site."""
+    return 2 * int(alpha) - 1
+
+
+def mellin_simple(expression, variable, power: int = 1):
+    """``int_0^inf w^power f(w) dw`` for a rational ``f`` with simple poles.
+
+    By residues: writing ``w^p f = sum_i r_i / (w + p_i)``, convergence forces
+    ``sum_i r_i = 0`` and the integral is ``- sum_i r_i log p_i``.  The assertion
+    that the residues sum to zero is not decoration -- it is the convergence
+    condition, and a tower term that failed it would be telling us the insertion
+    measure is wrong.
+    """
+    integrand = sp.cancel(sp.together(variable**power * expression))
+    _, denominator = sp.fraction(integrand)
+    poles = []
+    for base, multiplicity in sp.factor_list(denominator)[1]:
+        polynomial = sp.Poly(base, variable)
+        if polynomial.degree() == 0:
+            continue
+        if polynomial.degree() != 1 or multiplicity != 1:
+            raise ValueError(f"pole {base}^{multiplicity} is not simple")
+        slope, constant = polynomial.all_coeffs()
+        poles.append(sp.cancel(constant / slope))
+    residues = [
+        (sp.simplify(sp.cancel(integrand * (variable + pole)).subs(variable, -pole)), pole)
+        for pole in poles
+    ]
+    total = sp.simplify(sum(coefficient for coefficient, _ in residues))
+    if total != 0:
+        raise ValueError(f"the integral diverges: residues sum to {total}")
+    return sp.simplify(-sum(coefficient * sp.log(pole) for coefficient, pole in residues))
+
+
+def subgraph_letters(x1, x2, y):
+    """The four energies that survive the degenerate limit of the tower.
+
+    ``A = x1 + x2`` (total), ``B = x1 + y`` and ``C = x2 + y`` (partial), and
+    ``D = 2y`` (an interior site).  They obey one relation, ``A + D = B + C``,
+    which is what makes the weight-one combination below scale invariant: a
+    common rescaling of all four letters shifts it by ``log(lambda)`` times
+    ``A - B - C + D = 0``.
+    """
+    return x1 + x2, x1 + y, x2 + y, 2 * y
+
+
+def frw_first_order(x1, x2, y):
+    """The ``a = 1`` de Sitter tower term, in closed form.
+
+    Integrating the three-site canonical form against ``omega d omega`` gives
+
+        4 [ A log A - B log B - C log C + D log D ]
+        / [ (x1^2 - y^2) (x2^2 - y^2) ] .
+
+    This is Benincasa's equation (4.10), rederived; what the form above makes
+    visible is the denominator.  It is not a product of the *linear* subgraph
+    energies but of the four **quadrics** ``x_i^2 - y^2`` -- exactly the loci
+    ``E^2 = x_i^2`` that the flat-space resummation produces, evaluated at
+    ``m = 0``.  The quadrics that the flat-space answer only reaches after
+    summing the whole tower are already present in de Sitter at first order.
+
+    The numerator is weight one and pure: four logarithms, coefficients
+    ``+1, -1, -1, +1`` on the four subgraph energies, with the single relation
+    ``A + D = B + C`` making it scale invariant.
+    """
+    A, B, C, D = subgraph_letters(x1, x2, y)
+    numerator = A * sp.log(A) - B * sp.log(B) - C * sp.log(C) + D * sp.log(D)
+    return 4 * numerator / ((x1**2 - y**2) * (x2**2 - y**2))
+
+
+def frw_first_order_by_integration(x1, x2, y):
+    """The same term, computed from the polytope rather than quoted.
+
+    Builds the three-site canonical form with the inserted site at energy
+    ``omega`` and does the ``omega`` integral by :func:`mellin_simple`.  Shares
+    no code with :func:`frw_first_order`, so agreement is a check on both.
+    """
+    omega = sp.Symbol("_omega", positive=True)
+    integrand = canonical_form(CHAIN(3), [x1, omega, x2, y, y])
+    return mellin_simple(integrand, omega, frw_measure_power(1))
+
+
+def frw_first_order_numerator(x1, x2, y):
+    """The weight-one numerator ``A log A - B log B - C log C + D log D``."""
+    A, B, C, D = subgraph_letters(x1, x2, y)
+    return A * sp.log(A) - B * sp.log(B) - C * sp.log(C) + D * sp.log(D)
+
+
+def flat_numerator(x1, x2, energy):
+    """Numerator of the resummed flat-space answer, ``E^2 + x1 x2 - (x1+x2) E``."""
+    return energy**2 + x1 * x2 - (x1 + x2) * energy
+
+
+def unphysical_branch_residual(numerator, variable, value):
+    """Value of a numerator on the unphysical branch of a quadric denominator.
+
+    Both closed forms in this module carry denominators that factor into
+    quadrics -- ``(x_i^2 - y^2)`` in de Sitter at first order, ``(E^2 - x_i^2)``
+    in the resummed flat-space answer -- and each quadric has two branches, only
+    one of which is a subgraph energy.  The other, ``x_i = y`` respectively
+    ``E = x_i``, is not a facet of any cosmological polytope, so a pole there
+    would be a singularity the positive geometry does not predict.
+
+    It is not one: the numerator vanishes on that branch, in both cases.  This
+    function returns the value that must be zero, and is the sharpest check in
+    the module -- neither numerator was constructed with it in mind.
+    """
+    return sp.simplify(numerator.subs(variable, value))
+
+
+def reparameterisation_obstruction(x1, x2, y) -> dict:
+    """Why the flat-space mechanism cannot survive into de Sitter.
+
+    Suppose the de Sitter tower resummed the same way the flat-space one does,
+    by a reparameterisation ``sum_a t^a psi_a = psi_0(x, f(y, t))`` with
+    ``f(y, 0) = y``.  Since ``psi_0`` is a *rational* function of its arguments,
+    every Taylor coefficient in ``t`` would be a rational function of ``x``,
+    ``y`` and the derivatives of ``f`` at ``t = 0``.  In particular every
+    ``psi_a`` would be rational in ``y``.
+
+    It is not.  Already at first order the de Sitter term carries four
+    logarithms with non-vanishing coefficients, returned here.  So no
+    reparameterisation of the edge variable -- no ``y -> sqrt(y^2 + m^2)`` and no
+    replacement of it -- can generate the de Sitter tower.  The obstruction is
+    transcendence of the first term, and it is independent of anything to do with
+    the shape of the polytope: the facets do not have to curve for the mechanism
+    to fail, and in flat space they demonstrably do not curve at all.
+
+    What this leaves is the reading that the de Sitter resummation must shift a
+    *transcendental* label rather than a kinematic one -- the Bessel index of the
+    mode functions, elementary only on a half-integer sublattice, which is where
+    Benincasa's light states live.  That reading is not established here.
+    """
+    A, B, C, D = subgraph_letters(x1, x2, y)
+    denominator = (x1**2 - y**2) * (x2**2 - y**2)
+    return {
+        "log(x1 + x2)": sp.cancel(4 * A / denominator),
+        "log(x1 + y)": sp.cancel(-4 * B / denominator),
+        "log(x2 + y)": sp.cancel(-4 * C / denominator),
+        "log(2y)": sp.cancel(4 * D / denominator),
+    }

@@ -2112,6 +2112,51 @@ polytope must curve, because in the flat limit it demonstrably does not.
 python -c "import cosmopolytope as c; print(c.facet_theorem_residual(c.BOX)); print(c.resummation_residual(2))"
 ```
 
+### The FRW case: why the same trick provably cannot work
+
+Flat space is the corner where the mass coupling is constant in time, so in the energy
+representation each inserted site sits at ω = 0 and the tower term is a canonical form
+evaluated at a point. In FRW with a(η) = (−η)^{−α} the coupling is time dependent and each
+inserted site carries **ω^{2α−1} dω** instead. De Sitter is α = 1.
+
+Doing that integral at first order gives, in closed form,
+
+> **ψ₁^{dS} = 4[A ln A − B ln B − C ln C + D ln D] / [(x₁²−y²)(x₂²−y²)]**
+
+with A = x₁+x₂, B = x₁+y, C = x₂+y, D = 2y — the four subgraph energies that survive the
+degenerate limit — obeying the single relation **A + D = B + C**, which is exactly what makes
+the weight-one numerator scale free. (This term is Benincasa's eq. 4.10, rederived; verified
+here two independent ways and against numerical quadrature to 12 digits at three points.)
+
+Two things are worth reading off it.
+
+**The quadrics are already there.** The denominator is not a product of linear subgraph
+energies but of the quadrics x_i² − y² — the very loci E² = x_i² that the flat-space
+resummation only reaches after summing the entire tower, here at m = 0 and at first order. In
+both cases each quadric has an unphysical branch (x_i = y in dS, E = x_i in flat space) that is
+**not** a facet of any cosmological polytope, and in both cases the numerator vanishes there
+exactly, so no unpredicted singularity appears. Neither numerator was built with that in mind.
+
+**And the mechanism is dead.** Suppose the dS tower resummed the way the flat one does, by a
+reparameterisation Σ t^a ψ_a = ψ₀(x, f(y,t)). Since ψ₀ is *rational* in its arguments, every
+Taylor coefficient in t would be rational in y. But ψ₁^{dS} carries four logarithms with
+non-vanishing coefficients. So:
+
+> **No reparameterisation of the edge variable can generate the FRW tower.** The obstruction is
+> transcendence of the first term — nothing to do with facets curving, which in flat space they
+> demonstrably do not do at all.
+
+At second order the first energy integral leaves six independent ω-dependent logarithmic
+letters, so the next integration is genuinely dilogarithmic: the transcendentality is not
+bounded. What that leaves is the reading that the FRW resummation must shift a *transcendental*
+label rather than a kinematic one — the Bessel index of the mode functions, elementary only on a
+half-integer sublattice, which is where Benincasa's light states live. **That reading is not
+established here**, and the FRW resummation remains open.
+
+```bash
+python -c "import cosmopolytope as c, sympy as sp; x1,x2,y=sp.symbols('x1 x2 y',positive=True); print(sp.simplify(c.frw_first_order(x1,x2,y)))"
+```
+
 ## Tests
 
 ```bash

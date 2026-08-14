@@ -226,3 +226,123 @@ class TestPoleOrders:
         for key in ("x1 + y", "x2 + y", "x1 + x2"):
             assert naive[key] == derived[key]
         assert naive["y"] >= derived["y"]
+
+
+class TestFRWTower:
+    """The de Sitter tower: where the flat-space mechanism stops."""
+
+    def test_the_measure_exponents(self) -> None:
+        """Flat space is the ``alpha = 0`` corner, de Sitter is ``alpha = 1``."""
+        assert cp.frw_measure_power(0) == -1
+        assert cp.frw_measure_power(1) == 1
+        assert cp.frw_measure_power(2) == 3
+
+    def test_two_routes_to_the_first_order_term(self) -> None:
+        """Closed form against the polytope plus an explicit energy integral."""
+        quoted = cp.frw_first_order(X1, X2, Y)
+        computed = cp.frw_first_order_by_integration(X1, X2, Y)
+        assert sp.simplify(sp.expand(quoted - computed)) == 0
+
+    @pytest.mark.parametrize(
+        "point",
+        [
+            {X1: sp.Rational(3), X2: sp.Rational(5), Y: sp.Rational(2)},
+            {X1: sp.Rational(1, 2), X2: sp.Rational(7, 3), Y: sp.Rational(9, 4)},
+            {X1: sp.Rational(11), X2: sp.Rational(1, 5), Y: sp.Rational(4)},
+        ],
+    )
+    def test_against_numerical_quadrature(self, point) -> None:
+        """The closed form against the integral it came from, numerically."""
+        import mpmath as mp
+
+        omega = sp.Symbol("w", positive=True)
+        integrand = cp.canonical_form(cp.CHAIN(3), [X1, omega, X2, Y, Y])
+        function = sp.lambdify(omega, sp.expand(omega * integrand.subs(point)), "mpmath")
+        numeric = mp.quad(function, [0, mp.inf])
+        closed = complex(cp.frw_first_order(X1, X2, Y).subs(point).evalf()).real
+        assert abs(float(numeric) - closed) < 1e-9 * max(1.0, abs(closed))
+
+    def test_the_letters_obey_one_relation(self) -> None:
+        """``A + D = B + C`` is what makes the weight-one numerator scale free."""
+        A, B, C, D = cp.subgraph_letters(X1, X2, Y)
+        assert sp.simplify(A + D - B - C) == 0
+        assert len({A, B, C, D}) == 4
+
+    def test_the_numerator_is_scale_covariant(self) -> None:
+        """Rescaling all letters shifts it by ``log(lambda)`` times ``A-B-C+D = 0``."""
+        lam = sp.Symbol("lam", positive=True)
+        scaled = cp.frw_first_order_numerator(lam * X1, lam * X2, lam * Y)
+        assert sp.simplify(sp.expand(scaled - lam * cp.frw_first_order_numerator(X1, X2, Y))) == 0
+
+    @pytest.mark.parametrize("variable", [X1, X2])
+    def test_the_unphysical_quadric_branch_cancels_in_de_sitter(self, variable) -> None:
+        """``x_i = y`` is not a subgraph energy, so it must not be a pole."""
+        numerator = cp.frw_first_order_numerator(X1, X2, Y)
+        assert cp.unphysical_branch_residual(numerator, variable, Y) == 0
+
+    @pytest.mark.parametrize("variable", [X1, X2])
+    def test_the_unphysical_quadric_branch_cancels_in_flat_space(self, variable) -> None:
+        """``E = x_i`` likewise, in the resummed flat-space answer."""
+        energy = sp.Symbol("E", positive=True)
+        numerator = cp.flat_numerator(X1, X2, energy)
+        assert cp.unphysical_branch_residual(numerator, energy, variable) == 0
+
+    def test_the_denominator_is_a_product_of_quadrics(self) -> None:
+        """Not of linear subgraph energies: the extra branches are ``x_i - y``."""
+        _, denominator = sp.fraction(sp.together(cp.frw_first_order(X1, X2, Y)))
+        assert sp.simplify(denominator - (X1**2 - Y**2) * (X2**2 - Y**2)) == 0
+
+    def test_a_divergent_energy_integral_is_refused(self) -> None:
+        omega = sp.Symbol("w", positive=True)
+        with pytest.raises(ValueError, match="diverges"):
+            cp.mellin_simple(1 / (omega + 1) ** 1, omega, 1)
+
+    def test_a_non_simple_pole_is_refused(self) -> None:
+        omega = sp.Symbol("w", positive=True)
+        with pytest.raises(ValueError, match="not simple"):
+            cp.mellin_simple(1 / (omega + 1) ** 3, omega, 1)
+
+    def test_the_mellin_helper_against_a_closed_form(self) -> None:
+        """``int_0^inf w dw / prod (w + p_i)`` for three simple poles."""
+        omega = sp.Symbol("w", positive=True)
+        p, q, r = sp.symbols("p q r", positive=True)
+        got = cp.mellin_simple(1 / ((omega + p) * (omega + q) * (omega + r)), omega, 1)
+        want = sum(
+            a * sp.log(a) / sp.prod([b - a for b in (p, q, r) if b is not a])
+            for a in (p, q, r)
+        )
+        assert sp.simplify(got - want) == 0
+
+
+class TestReparameterisationObstruction:
+    """The flat-space mechanism provably does not survive into de Sitter."""
+
+    def test_the_first_order_term_is_not_rational(self) -> None:
+        """Four logarithms, all with non-vanishing coefficients.
+
+        A reparameterisation ``y -> f(y, m^2)`` composed with the rational
+        ``psi_0`` yields a rational function at every order in ``m^2``. One
+        transcendental coefficient is enough to rule the whole mechanism out.
+        """
+        coefficients = cp.reparameterisation_obstruction(X1, X2, Y)
+        assert len(coefficients) == 4
+        for name, coefficient in coefficients.items():
+            assert sp.simplify(coefficient) != 0, name
+
+    def test_the_coefficients_reproduce_the_closed_form(self) -> None:
+        coefficients = cp.reparameterisation_obstruction(X1, X2, Y)
+        A, B, C, D = cp.subgraph_letters(X1, X2, Y)
+        rebuilt = (
+            coefficients["log(x1 + x2)"] * sp.log(A)
+            + coefficients["log(x1 + y)"] * sp.log(B)
+            + coefficients["log(x2 + y)"] * sp.log(C)
+            + coefficients["log(2y)"] * sp.log(D)
+        )
+        assert sp.simplify(sp.expand(rebuilt - cp.frw_first_order(X1, X2, Y))) == 0
+
+    def test_flat_space_is_the_case_where_no_logarithm_appears(self) -> None:
+        """The contrast: the flat tower term is rational, and does resum."""
+        for insertions in range(3):
+            term = cp.tower_term(insertions, X1, X2, Y)
+            assert term.free_symbols <= {X1, X2, Y}
+            assert not term.atoms(sp.log)
