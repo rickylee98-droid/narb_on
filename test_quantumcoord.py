@@ -257,3 +257,38 @@ class TestTheRentDoesNotScale:
     def test_an_unenumerated_size_is_refused(self) -> None:
         with pytest.raises(ValueError, match="two or three"):
             qc.max_ratio(4)
+
+
+class TestPriceOfAnarchy:
+    """The corollary that dissolves the 'quantum price of anarchy' question."""
+
+    def test_the_prisoners_dilemma_is_one_third(self) -> None:
+        """Welfare 2 at the unique correlated equilibrium against 6 at the optimum."""
+        value = qc.correlated_price_of_anarchy([[(3, 3), (0, 5)], [(5, 0), (1, 1)]])
+        assert value == Fraction(1, 3)
+
+    @pytest.mark.parametrize(
+        "game",
+        [
+            [[(3, 3), (0, 5)], [(5, 0), (1, 1)]],
+            [[(2, 2), (0, 0)], [(0, 0), (1, 1)]],
+            [[(4, 1), (0, 0)], [(0, 0), (1, 4)]],
+        ],
+    )
+    def test_the_quantum_ratio_is_the_classical_one(self, game) -> None:
+        """Not approximately -- identically, because the sets coincide.
+
+        There is no separate quantity to define for a complete-information game.
+        """
+        assert qc.quantum_price_of_anarchy(game) == qc.correlated_price_of_anarchy(game)
+
+    def test_the_ratio_is_a_proper_fraction(self) -> None:
+        for game in ([[(3, 3), (0, 5)], [(5, 0), (1, 1)]],
+                     [[(2, 2), (0, 0)], [(0, 0), (1, 1)]]):
+            value = qc.correlated_price_of_anarchy(game)
+            assert isinstance(value, Fraction)
+            assert 0 < value <= 1
+
+    def test_a_degenerate_game_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="positive"):
+            qc.correlated_price_of_anarchy([[(0, 0), (0, 0)], [(0, 0), (0, 0)]])

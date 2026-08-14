@@ -2633,7 +2633,13 @@ two-servers-see-a-local-signal story *is* that setting, so the mechanism survive
 doesn't.
 
 Computed exactly: the CE polytope of the Prisoner's Dilemma has **1 vertex** (defect–defect,
-uniquely) and a coordination game has 5. The local polytope, built from nothing but the 16
+uniquely) and a coordination game has 5.
+
+**Corollary — your problem B dissolves.** A "Quantum Price of Anarchy" is asked for as though it
+needs defining. For complete-information games it doesn't exist as a separate quantity: the two
+equilibrium sets coincide, so every welfare ratio over them agrees identically. The Prisoner's
+Dilemma has correlated PoA **exactly 1/3**, quantum or classical alike. The question only becomes
+substantive once the mediator is removed and types are private. The local polytope, built from nothing but the 16
 deterministic strategies, comes out with **24 facets in dimension 8** — 16 positivity + the 8 CHSH
 inequalities, the textbook answer.
 

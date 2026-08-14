@@ -35,6 +35,14 @@ cannot be larger.  :func:`correlated_equilibrium_polytope` computes that polytop
 exactly, and :func:`quantum_point_is_classically_realisable` checks the
 containment on the optimal quantum point.
 
+One corollary settles a question usually posed as open.  A "quantum price of
+anarchy" is asked for as though it needed defining; for complete-information
+games it does not exist as a separate quantity, because the two equilibrium sets
+coincide and every welfare ratio over them agrees
+(:func:`quantum_price_of_anarchy`).  The Prisoner's Dilemma has correlated price
+of anarchy exactly ``1/3``, quantum or classical alike.  The question becomes
+substantive only once the mediator is removed and types are private.
+
 The advantage is real, but it lives somewhere else: in **Bayesian games with
 private types and no mediator**.  There the classical resource is shared
 randomness -- which produces exactly the local (Bell) polytope -- and quantum
@@ -182,6 +190,8 @@ __all__ = [
     "classical_bias",
     "tsirelson_bias",
     "max_ratio",
+    "correlated_price_of_anarchy",
+    "quantum_price_of_anarchy",
 ]
 
 LOGGER = logging.getLogger(__name__)
@@ -721,3 +731,74 @@ def max_ratio(size: int, *, restarts: int = 8, iterations: int = 300) -> float:
         quantum = tsirelson_bias(matrix, restarts=restarts, iterations=iterations)
         best = max(best, quantum / classical_bias(matrix))
     return best
+
+
+# --------------------------------------------------------------------------- #
+# The price of anarchy, quantum and classical
+# --------------------------------------------------------------------------- #
+def correlated_price_of_anarchy(
+    payoffs: Sequence[Sequence[tuple[int, int]]],
+) -> Fraction:
+    """Worst correlated-equilibrium welfare over best welfare, exactly.
+
+    A linear objective over the correlated equilibrium polytope, so the minimum
+    sits at a vertex and the computation is exact rational arithmetic.
+    """
+    from PyNormaliz import Cone
+
+    inequalities = []
+    for action in (0, 1):
+        other = 1 - action
+        row = [0] * 4
+        for column in (0, 1):
+            row[2 * action + column] = (
+                payoffs[action][column][0] - payoffs[other][column][0]
+            )
+        inequalities.append(row)
+    for action in (0, 1):
+        other = 1 - action
+        row = [0] * 4
+        for line in (0, 1):
+            row[2 * line + action] = (
+                payoffs[line][action][1] - payoffs[line][other][1]
+            )
+        inequalities.append(row)
+    for slot in range(4):
+        row = [0] * 4
+        row[slot] = 1
+        inequalities.append(row)
+    cone = Cone(
+        inhom_inequalities=[row + [0] for row in inequalities],
+        inhom_equations=[[1, 1, 1, 1, -1]],
+    )
+    welfare = [
+        Fraction(payoffs[i][j][0] + payoffs[i][j][1]) for i in (0, 1) for j in (0, 1)
+    ]
+    best = max(welfare)
+    if best <= 0:
+        raise ValueError("the optimal welfare must be positive")
+    worst = min(
+        sum(Fraction(int(v[k]), int(v[-1])) * welfare[k] for k in range(4))
+        for v in cone.VerticesOfPolyhedron()
+    )
+    return Fraction(worst, 1) / best
+
+
+def quantum_price_of_anarchy(
+    payoffs: Sequence[Sequence[tuple[int, int]]],
+) -> Fraction:
+    """The same number, and that is the point.
+
+    A "quantum price of anarchy" is asked for as though it were a new quantity.
+    For a complete-information game it is not: the quantum equilibrium
+    distributions are contained in the classical correlated ones, and the
+    classical ones are all realisable, so the two sets coincide and every
+    welfare ratio taken over them agrees.  There is nothing left to define.
+
+    The question becomes substantive only once the mediator is removed and types
+    are private, where the classical set contracts to the local polytope.  That
+    is where a genuinely different ratio lives, and it is bounded by the same
+    factors as the game values: at most ``sqrt 2`` at two inputs, ``6/5`` at
+    three, and Grothendieck's constant in general.
+    """
+    return correlated_price_of_anarchy(payoffs)
