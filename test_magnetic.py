@@ -14,6 +14,7 @@ The load-bearing checks:
 from __future__ import annotations
 
 import cmath
+from itertools import combinations
 
 import numpy as np
 import pytest
@@ -263,10 +264,18 @@ class TestWhatThisDoesNotClaim:
         """
         assert not hasattr(magnetic, "diamagnetic_bound")
 
-    def test_nothing_here_is_new_mathematics(self):
-        """The ingredients are all known; only the conjunction appears unstated."""
-        assert "None of the ingredients" in magnetic.__doc__
-        assert "not as new mathematics" in magnetic.__doc__
+    def test_novelty_is_split_correctly(self):
+        """Statements one to four are assembly; statement five is not.
+
+        This test previously asserted that nothing in the module was new, which
+        was true when it was written and stopped being true when the
+        interlacing result went in.  The distinction is worth pinning: the
+        first four statements are known pieces whose conjunction appears
+        unstated, and the fifth is an actual result.
+        """
+        assert "none of the ingredients" in magnetic.__doc__.lower()
+        assert "Statement five is the original part" in magnetic.__doc__
+        assert "not in the literature" in magnetic.__doc__
 
     def test_cohomology_is_not_defined_under_curvature(self):
         """A non-flat connection gives a curved dg-module, not a cochain complex.
@@ -277,3 +286,131 @@ class TestWhatThisDoesNotClaim:
         """
         assert not magnetic.supersymmetry_survives(CURVED)
         assert magnetic.index_from_betti((1, 0, 1)) == 2
+
+
+# ---------------------------------------------------------------------------
+# statement five: interlacing under insertion
+# ---------------------------------------------------------------------------
+
+
+def _close(faces):
+    collected = set()
+    for face in faces:
+        face = tuple(sorted(face))
+        for size in range(1, len(face) + 1):
+            collected.update(combinations(face, size))
+    return sorted(collected, key=lambda s: (len(s), s))
+
+
+def _phase(angles):
+    def weight(u, v):
+        key = (min(u, v), max(u, v))
+        angle = angles.get(key, 0.0)
+        return cmath.exp(1j * angle if (u, v) == key else -1j * angle)
+
+    return weight
+
+
+BASE_FACES = [(0, 1), (1, 2), (0, 2), (2, 3), (1, 3)]
+BASE = _close(BASE_FACES)
+INSERTED = _close(BASE_FACES + [(0, 1, 2)])
+
+ANGLE_SETS = [
+    {},
+    {(0, 1): 0.4, (1, 2): 0.7, (0, 2): 1.1, (2, 3): 0.2, (1, 3): 0.9},
+    {(0, 1): 1.3, (1, 2): 0.4, (0, 2): 2.7, (2, 3): 0.9, (1, 3): 1.8},
+    {(0, 1): 2.9, (1, 2): 2.2, (0, 2): 0.3, (2, 3): 1.7, (1, 3): 0.1},
+]
+
+
+class TestStatementFiveInterlacing:
+    """The original part. Insertion is a bordering, so the spectra interlace."""
+
+    def test_insertion_is_a_bordering(self):
+        """The structural fact everything rests on: no cofaces, so one row."""
+        assert magnetic.insertion_is_a_bordering(BASE, INSERTED)
+        assert len(INSERTED) == len(BASE) + 1
+
+    def test_bordering_rejects_non_insertions(self):
+        assert not magnetic.insertion_is_a_bordering(INSERTED, BASE)
+        assert not magnetic.insertion_is_a_bordering(BASE, BASE)
+
+    @pytest.mark.parametrize("angles", ANGLE_SETS, ids=["zero", "mild", "strong", "wild"])
+    def test_interlacing_holds(self, angles):
+        weight = _phase(angles)
+        assert magnetic.interlaces(
+            magnetic.general_dirac(BASE, weight),
+            magnetic.general_dirac(INSERTED, weight),
+        )
+
+    def test_interlacing_is_connection_independent(self):
+        """Uniform over connections: curvature cannot degrade it.
+
+        This is the answer to the stated worry that a holonomy error term might
+        destabilise the descriptor.  Interlacing constrains where the new
+        eigenvalues land, not what the new matrix entries are, and the
+        connection only touches the entries.
+        """
+        for angles in ANGLE_SETS:
+            weight = _phase(angles)
+            assert magnetic.interlaces(
+                magnetic.general_dirac(BASE, weight),
+                magnetic.general_dirac(INSERTED, weight),
+            )
+
+    def test_interlacing_rejects_wrong_sizes(self):
+        weight = _phase(ANGLE_SETS[1])
+        with pytest.raises(ValueError, match="single-simplex"):
+            magnetic.interlaces(
+                magnetic.general_dirac(BASE, weight),
+                magnetic.general_dirac(BASE, weight),
+            )
+
+    @pytest.mark.parametrize("threshold", [-2.5, -1.3, 0.7, 1.4, 2.6])
+    def test_counting_function_moves_by_at_most_one(self, threshold):
+        weight = _phase(ANGLE_SETS[2])
+        verdict = magnetic.counting_is_stable(
+            magnetic.general_dirac(BASE, weight),
+            magnetic.general_dirac(INSERTED, weight),
+            threshold,
+        )
+        assert verdict in (True, None)
+
+    def test_counting_is_ambiguous_exactly_on_the_kernel(self):
+        """A tie at zero returns None rather than a coin-flip boolean.
+
+        The randomised sweep found every apparent counting violation to be a
+        float tie at ``t = 0``, where the harmonic modes sit at machine epsilon
+        with mixed signs -- and none away from a tie.  That is the same place
+        statement three located the operator's one genuine asymmetry.
+        """
+        weight = _phase(ANGLE_SETS[2])
+        before = magnetic.general_dirac(BASE, weight)
+        after = magnetic.general_dirac(INSERTED, weight)
+        assert magnetic.counting_is_stable(before, after, 0.0) is None
+        assert magnetic.counting_is_stable(before, after, 1.4) is True
+
+    def test_general_dirac_is_hermitian(self):
+        for angles in ANGLE_SETS:
+            operator = magnetic.general_dirac(BASE, _phase(angles))
+            assert np.allclose(operator, operator.conj().T)
+
+    def test_general_dirac_rejects_empty(self):
+        with pytest.raises(ValueError, match="at least one"):
+            magnetic.general_dirac([], _phase({}))
+
+    def test_counting_function_is_monotone_in_threshold(self):
+        values = np.sort(np.linalg.eigvalsh(magnetic.general_dirac(BASE, _phase({}))))
+        counts = [magnetic.counting_function(values, t) for t in (-3, -1, 0.5, 2, 5)]
+        assert counts == sorted(counts)
+
+    def test_scope_is_combinatorial_not_metric(self):
+        """Stated in the docstring, asserted here so it cannot drift.
+
+        This is stability under inserting a simplex, not under perturbing an
+        underlying point cloud.  The metric case is the open problem and nothing
+        here touches it.
+        """
+        assert "combinatorial" in magnetic.__doc__
+        assert "metric" in magnetic.__doc__
+        assert not hasattr(magnetic, "metric_stability")

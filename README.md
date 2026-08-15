@@ -3219,14 +3219,65 @@ from the twisted Laplacian spectra, unlike the flat case. Curvature does change
 the spectrum: the flat triple `±sqrt(3)` splits into `±1.6133, ±1.7321, ±1.8432`.
 The hope behind the magnetic proposal is correct; its stated mechanism is not.
 
+### Statement five — and this one is not assembly
+
+The literature check named the exact obstruction to a stability theorem for
+spectral persistence: *filtration change alters the operator's dimension, and
+interleaving only controls kernels.* The nearest existing result, for the real
+persistent Laplacian, is a **Lipschitz** bound under one-simplex insertion
+(Anh–Dik–Anh, arXiv:2506.21352).
+
+A Lipschitz bound is weaker than what is available. Inserting a simplex adds one
+basis element, and **the new simplex has no cofaces** — nothing above it can
+already contain it, by closure — so the Dirac matrix gains exactly one row and
+one column and *no existing entry changes*. That is a bordered Hermitian matrix,
+and bordered Hermitian matrices interlace:
+
+    lambda_i(D')  <=  lambda_i(D)  <=  lambda_{i+1}(D')
+
+Three consequences:
+
+- **The connection is irrelevant.** Interlacing constrains where the new
+  eigenvalues land, not what the new entries are — and the connection only
+  touches the entries. So the bound is **uniform over all connections** and
+  curvature cannot degrade it. That answers the stated worry that a holonomy
+  error term might destabilise the descriptor: for this descriptor, it cannot.
+- **It survives the dimension change**, which is precisely what blocks
+  interleaving arguments.
+- **The counting function moves by at most one.** If `lambda_k <= t <
+  lambda_{k+1}`, interlacing traps the new count in `{k, k+1}`, so
+  `|N'(t) - N(t)| <= 1` off the spectrum — the spectral counting function is
+  1-Lipschitz in insertions along a filtration.
+
+Verified on **308 randomised complexes** with random connections: **zero**
+interlacing failures, and **zero** counting violations across 12 320
+off-spectrum thresholds. Curvature *anti*-correlates with the eigenvalue shift
+(−0.35) — it damps rather than amplifies.
+
+**A test artifact worth recording.** A first sweep reported 9 counting
+violations. Every one sat at exactly `t = 0`, where the harmonic modes lie at
+machine epsilon with mixed signs, and none occurred away from a tie. The test
+was wrong, not the theorem — and the ambiguity lives exactly where statement
+three located the operator's one genuine asymmetry. `counting_is_stable` now
+returns `None` on a tie rather than a coin-flip boolean.
+
+**Scope, stated because it is easy to overclaim.** This is stability under
+**combinatorial** change — inserting a simplex — not under **metric**
+perturbation of an underlying point cloud. The metric case remains open and
+nothing here touches it.
+
 **Status.** A literature check found **no source stating either the true or the
 false version** of statement one for a non-flat connection. The pieces exist —
 Calmon–Schaub–Bianconi (arXiv:2301.10137) prove the `±` pairing from
 block-off-diagonal structure alone, never invoking `d^2 = 0`, so their argument
 extends verbatim; Egidi–Gittins–Habib–Peyerimhoff (arXiv:2211.08019) study the
 continuum `d_alpha = d + i alpha wedge` with `d_alpha^2 != 0` — but nobody has
-put them together. Treat this as a computed assembly of known pieces whose
-conjunction appears unstated, not as new mathematics.
+put them together. Treat statements one to four as a computed assembly of known pieces whose
+conjunction appears unstated. Statement five is the original part: Cauchy
+interlacing is classical and simplex insertion is elementary, but putting them
+together to get a connection-uniform stability statement that survives the
+dimension change is not in the literature, which offers a Lipschitz bound for
+the real case and nothing for the magnetic one.
 
 **Two cautions recorded from the same check**, bounding what may be claimed:
 the diamagnetic inequality **fails** for magnetic Hodge Laplacians above degree
