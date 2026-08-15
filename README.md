@@ -3023,24 +3023,43 @@ by a factor of `3 - 3/n`, and the complete-graph state sits *exactly four gates*
 below the diameter at every size measured, essentially saturating it. So
 `structure_gap` **closes** (+1.17, +1.45, +0.86, +0.44, +0.19) instead of widening.
 
-**And the distribution concentrates there** — the stronger statement, which the
-`n = 5` mean exposed:
+### Where the observed laws stop being true
 
-| | n=1 | n=2 | n=3 | n=4 | n=5 |
-| --- | --- | --- | --- | --- | --- |
-| `mean - 3(n-1)` | — | 1.45 | 0.86 | 0.44 | **0.19** |
-| `diameter - mean` | 1.83 | 2.55 | 3.14 | 3.56 | **3.81** |
+The measured trends invited a concentration claim — `mean - 3(n-1)` running
+1.45, 0.86, 0.44, 0.19 and `diameter - mean` running 1.83, 2.55, 3.14, 3.56,
+3.81, apparently converging to 4. **Both are small-`n` artifacts, and counting
+proves it.**
 
-The mean complexity converges to the complete-graph state's *exactly*, and
-`diameter - mean` converges to **4** — the same constant that separates the
-diameter from the complete-graph state at every size. Typical and maximal
-complexity differ by `O(1)`, not by anything that grows.
+There are `N(n) ~ 2^(n^2/2)` stabilizer states and only `|G| = n^2 + n` gates,
+so a ball of radius `L` holds at most `|G|^L` states and the diameter must grow
+like `n^2 / (4 log_2 n)` — superlinear. Therefore:
 
-That is the mechanism behind the refutation: almost every stabilizer state
-already sits within `O(1)` of the diameter, so there is no room below for a
-structured state to occupy. The cheap ones — GHZ at `n` against a diameter of
-`3n+1` — are a vanishing fraction (3.3% at `n=3`, 0.63% at `n=4`), and being a
-one-line rule is not what puts them there.
+- **`diameter = 3n + 1` is false.** It is exactly right at every size the search
+  reaches and cannot hold in general. At **`n = 72`** the counting bound alone
+  gives 219 against `3n+1 = 217`, and the curves never cross back.
+- **`diameter - mean -> 4` is false** for the same reason: the diameter grows
+  and the structured states do not, so the gap must diverge.
+
+Both statements coexist without contradiction — the counting bound sits far
+*below* `3n+1` at small `n`, which is exactly why five points proved nothing.
+
+**What survives, now proved rather than observed:**
+
+- **GHZ complexity is exactly `n`, for every `n`.** At least one Hadamard is
+  needed, since `CNOT` and `S` map computational basis states to computational
+  basis states and cannot create a superposition. At least `n-1` controlled-nots
+  are needed, since the two-qubit interaction graph must be connected or the
+  output factorises along a disconnected cut. The two counts are disjoint, and
+  `ghz_state` attains the bound.
+- **The concentration is real and stronger than measured.**
+  `cheap_fraction_bound` bounds the fraction of states with complexity `<= n` by
+  `|B(n)|/N(n)` with no search at all: **7e-18** at `n = 20`, **2e-131** at
+  `n = 40`. Cheap states vanish superexponentially.
+
+So the mechanism I claimed was right and its arithmetic was wrong. Almost every
+stabilizer state does sit far above the structured ones, leaving no room below —
+but the separation **grows without bound** rather than saturating at four. The
+conclusion is strengthened by the correction, not weakened.
 
 > Optimising the **algorithm** changes nothing, by definition. Choosing a
 > structured **state** buys nothing in general — some structured states are as
@@ -3053,8 +3072,9 @@ complete-graph/GHZ ratio exceeds 2. It is `3 - 3/n`, which is *exactly* 2 at
 the cheap-state fraction, set without looking at `n = 3` where it is 3.3%. Both
 claims were about a *trend*; both tests had been written as thresholds.
 
-**What this does not claim.** The laws above are read off four points, not
-derived — the tests are the claim, not the formulas. And by Gottesman–Knill every
+**What this does not claim.** The laws above are read off five points, and two
+of them are now known false in general (see above) — the tests are the claim,
+not the formulas. And by Gottesman–Knill every
 state here is classically simulable, so this measures exact minimal *Clifford*
 complexity and says nothing about quantum advantage or about the states Shor's
 algorithm produces. No volume, no tensor network, no bulk is constructed.

@@ -438,6 +438,172 @@ class TestConcentration:
         assert fractions[-1] < 0.01
 
 
+class TestCountingBound:
+    """Proofs, valid for every ``n``, not observations over five points."""
+
+    @pytest.mark.parametrize("qubits", [1, 2, 3, 4, 5, 10, 50])
+    def test_gate_count(self, qubits: int):
+        assert complexity.gate_count(qubits) == qubits**2 + qubits
+
+    @pytest.mark.parametrize("qubits", [2, 3, 4])
+    def test_gate_count_matches_the_gate_set(self, qubits: int):
+        assert complexity.gate_count(qubits) == len(complexity.gate_set(qubits))
+
+    def test_ball_of_radius_zero_is_one_state(self):
+        for qubits in (1, 2, 5):
+            assert complexity.ball_size_bound(qubits, 0) == 1
+
+    @pytest.mark.parametrize("qubits", [2, 3, 5])
+    def test_ball_grows_geometrically(self, qubits: int):
+        size = complexity.gate_count(qubits)
+        for radius in range(4):
+            assert complexity.ball_size_bound(
+                qubits, radius + 1
+            ) == complexity.ball_size_bound(qubits, radius) + size ** (radius + 1)
+
+    @pytest.mark.parametrize(
+        "qubits, measured", [(1, 4), (2, 7), (3, 10), (4, 13), (5, 16)]
+    )
+    def test_bound_never_exceeds_the_measured_diameter(
+        self, qubits: int, measured: int
+    ):
+        """A lower bound that exceeded a measurement would be a contradiction."""
+        assert complexity.counting_lower_bound(qubits) <= measured
+
+    @pytest.mark.parametrize("qubits", [2, 3, 4, 5, 10, 20])
+    def test_ball_at_the_bound_covers_all_states(self, qubits: int):
+        radius = complexity.counting_lower_bound(qubits)
+        assert complexity.ball_size_bound(
+            qubits, radius
+        ) >= complexity.stabilizer_state_count(qubits)
+        assert complexity.ball_size_bound(
+            qubits, radius - 1
+        ) < complexity.stabilizer_state_count(qubits)
+
+    def test_bound_grows_superlinearly(self):
+        """``n^2 / log n`` beats any line eventually, and this is the evidence."""
+        ratios = [
+            complexity.counting_lower_bound(qubits) / qubits
+            for qubits in (20, 40, 80, 160)
+        ]
+        assert ratios == sorted(ratios)
+
+    def test_rejects_bad_input(self):
+        with pytest.raises(ValueError):
+            complexity.gate_count(0)
+        with pytest.raises(ValueError):
+            complexity.ball_size_bound(3, -1)
+
+
+class TestDiameterLawIsRefuted:
+    """This module's own headline law, disproved by counting."""
+
+    def test_crossover_value(self):
+        assert complexity.DIAMETER_LAW_FAILS_AT == 72
+
+    def test_law_survives_just_below_the_crossover(self):
+        assert complexity.diameter_law_is_refuted(71) is False
+
+    @pytest.mark.parametrize("qubits", [72, 73, 80, 100, 200])
+    def test_law_is_dead_at_and_above_the_crossover(self, qubits: int):
+        assert complexity.diameter_law_is_refuted(qubits) is True
+
+    def test_the_crossover_is_the_first_failure(self):
+        for qubits in range(2, complexity.DIAMETER_LAW_FAILS_AT):
+            assert not complexity.diameter_law_is_refuted(qubits), qubits
+        assert complexity.diameter_law_is_refuted(
+            complexity.DIAMETER_LAW_FAILS_AT
+        )
+
+    def test_both_statements_hold_at_once(self):
+        """Exactly right where it can be measured, and false in general.
+
+        There is no contradiction: the counting bound is far below ``3n + 1`` at
+        small ``n``, so both can be true there, and the curves cross at 72 --
+        far beyond anything a search will ever reach.
+        """
+        assert complexity.diameter_law_holds(4) is True
+        assert complexity.diameter_law_is_refuted(4) is False
+        assert complexity.diameter_law_is_refuted(100) is True
+
+
+class TestProvedConcentration:
+    """The concentration claim, in the form that is actually true."""
+
+    @pytest.mark.parametrize(
+        "qubits, ceiling",
+        [(20, 1e-15), (40, 1e-100), (60, 1e-250)],
+    )
+    def test_cheap_states_vanish(self, qubits: int, ceiling: float):
+        """No search involved: this is ``|B(n)| / N(n)``."""
+        assert complexity.cheap_fraction_bound(qubits, qubits) < ceiling
+
+    def test_bound_falls_with_size(self):
+        fractions = [
+            complexity.cheap_fraction_bound(qubits, qubits)
+            for qubits in (15, 20, 25, 30)
+        ]
+        assert fractions == sorted(fractions, reverse=True)
+
+    def test_bound_is_vacuous_at_small_sizes(self):
+        """Above one at ``n <= 10``, which is why five points proved nothing.
+
+        The counting bound only bites once ``N(n)`` outruns ``|G|^n``, and it
+        does not at the sizes the search reaches.  Recorded so the proof is not
+        mistaken for a confirmation of the measurements.
+        """
+        assert complexity.cheap_fraction_bound(5, 5) > 1
+        assert complexity.cheap_fraction_bound(10, 10) > 1
+
+    def test_measured_fractions_are_far_below_the_bound(self):
+        """At ``n = 4`` the truth is 0.6 percent and the bound says nothing."""
+        distribution = complexity.complexity_distribution(4)
+        total = sum(distribution.values())
+        cheap = sum(count for depth, count in distribution.items() if depth <= 4)
+        assert cheap / total < 0.01
+        assert complexity.cheap_fraction_bound(4, 4) > cheap / total
+
+
+class TestGhzIsExactlyLinear:
+    """The one structured law that is proved rather than observed."""
+
+    @pytest.mark.parametrize("qubits", [2, 3, 4, 5, 10, 100])
+    def test_lower_bound_is_n(self, qubits: int):
+        assert complexity.ghz_lower_bound(qubits) == qubits
+
+    @pytest.mark.parametrize("qubits", [2, 3, 4])
+    def test_bound_is_attained(self, qubits: int):
+        """Proof and measurement agree where both are available."""
+        assert complexity.ghz_lower_bound(qubits) == complexity.complexity_of(
+            complexity.ghz_state(qubits)
+        )
+
+    def test_construction_meets_the_bound(self):
+        """``ghz_state`` uses one Hadamard and ``n-1`` controlled-nots."""
+        for qubits in (2, 3, 4):
+            assert complexity.complexity_of(complexity.ghz_state(qubits)) <= qubits
+
+    def test_rejects_single_qubit(self):
+        with pytest.raises(ValueError):
+            complexity.ghz_lower_bound(1)
+
+    @pytest.mark.parametrize("qubits", [1, 2, 3, 4, 5, 9])
+    def test_touched_qubit_bound(self, qubits: int):
+        assert complexity.touched_qubit_bound(qubits) == -(-qubits // 2)
+
+    @pytest.mark.parametrize("qubits", [2, 3, 4])
+    def test_touched_bound_is_respected_by_the_plus_state(self, qubits: int):
+        """Weak but valid: every qubit must be acted on, gates touch two."""
+        assert (
+            complexity.structured_complexities(qubits)["plus"]
+            >= complexity.touched_qubit_bound(qubits)
+        )
+
+    def test_touched_bound_rejects_zero(self):
+        with pytest.raises(ValueError):
+            complexity.touched_qubit_bound(0)
+
+
 class TestWhatThisDoesNotClaim:
     """The boundary, asserted so it cannot drift."""
 

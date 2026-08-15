@@ -45,26 +45,53 @@ rule -- yet they differ by a factor of ``3 - 3/n``, and the complete graph state
 sits *exactly four gates* below the diameter at every size measured, essentially
 saturating it.
 
-**And the distribution concentrates there.**  The stronger statement, which the
-``n = 5`` mean exposed: ``mean - 3(n-1)`` runs 1.45, 0.86, 0.44, 0.19, so the
-mean complexity converges to the complete graph state's exactly, and
-``diameter - mean`` runs 1.83, 2.55, 3.14, 3.56, 3.81, converging to 4.  Typical
-and maximal complexity differ by ``O(1)``, not by anything that grows.
-
-That is why structure buys nothing here: almost every stabilizer state already
-has essentially maximal complexity, so there is no room below for a structured
-state to occupy.  The ones that are cheap -- GHZ at ``n``, against a diameter of
-``3n+1`` -- are a vanishing fraction, and being a one-line rule is not what puts
-them there.
-
 So `structure_gap`, which measures the mean minus the *hardest* named
-structured state, closes with ``n`` (+1.17, +1.45, +0.86, +0.44) instead of
-widening.  That closing is the finding, not a defect: it refutes the intuition
-the module was built to test.  The honest summary is:
+structured state, closes with ``n`` (+1.17, +1.45, +0.86, +0.44, +0.19) instead
+of widening.  That closing is the finding, not a defect: it refutes the
+intuition the module was built to test.
+
+Where the observed laws stop being true
+---------------------------------------
+
+Two of the patterns above are small-``n`` artifacts, and the counting arguments
+in `counting_lower_bound` prove it.  There are ``N(n) ~ 2^(n^2/2)`` stabilizer
+states and only ``|G| = n^2 + n`` gates, so a ball of radius ``L`` holds at most
+``|G|^L`` of them and the diameter must grow like
+
+    n^2 / (4 log_2 n)
+
+which is superlinear.  Therefore:
+
+  * **``diameter = 3n + 1`` is false.**  It is exactly right at every size the
+    search reaches and cannot hold in general; from ``n = 72`` the counting
+    bound alone exceeds it (219 against 217).  `DIAMETER_LAW_FAILS_AT` records
+    the crossover and `diameter_law_is_refuted` tests it.
+  * **``diameter - mean -> 4`` is false** for the same reason.  The measured
+    approach 1.83, 2.55, 3.14, 3.56, 3.81 is real but it is not converging to a
+    constant; the gap has to grow, because the diameter does and the structured
+    states do not.
+
+What survives, and is now proved rather than observed:
+
+  * **GHZ complexity is exactly ``n``, for every ``n``.**  At least one Hadamard
+    is needed because ``CNOT`` and ``S`` cannot create a superposition, and at
+    least ``n - 1`` controlled-nots are needed because the two-qubit interaction
+    graph must be connected or the state factorises.  The counts are disjoint
+    and the construction meets the bound.  See `ghz_lower_bound`.
+  * **The concentration is real, and stronger than measured.**
+    `cheap_fraction_bound` bounds the fraction of states with complexity at most
+    ``n`` by ``|B(n)| / N(n)``, with no search: ``7e-18`` at ``n = 20`` and
+    ``2e-131`` at ``n = 40``.  Cheap states vanish superexponentially.
+
+So the mechanism claimed above was right and its arithmetic was wrong.  Almost
+every stabilizer state does sit far above the structured ones, leaving no room
+below -- but the separation *grows* like ``n^2/log n`` rather than saturating at
+a constant four.  The conclusion is strengthened by the correction, not weakened:
 
     optimising the *algorithm*   ->  changes nothing, by definition
-    choosing a structured *state* ->  buys nothing in general; some structured
-                                      states are as hard as anything there is
+    choosing a structured *state* ->  buys nothing in general, and the gap
+                                      between structured and typical widens
+                                      without bound
 
 Referee
 -------
@@ -135,6 +162,14 @@ __all__ = [
     "CONCENTRATION_WIDTH",
     "mean_gap_to_complete_graph",
     "diameter_minus_mean",
+    "gate_count",
+    "ball_size_bound",
+    "counting_lower_bound",
+    "DIAMETER_LAW_FAILS_AT",
+    "diameter_law_is_refuted",
+    "cheap_fraction_bound",
+    "touched_qubit_bound",
+    "ghz_lower_bound",
     "MAX_EXACT_QUBITS",
 ]
 
@@ -503,9 +538,12 @@ def typical_complexity(qubits: int) -> float:
 def predicted_diameter(qubits: int) -> int:
     """``3n + 1``: the diameter observed for ``n = 1..4``.
 
-    A law read off four points, not a theorem.  `diameter_law_holds` tests it,
-    and the test is worth more than the formula: if it fails at ``n = 5`` the
-    formula is wrong and the failure is the interesting output.
+    Confirmed at ``n = 1..5``, and **false in general**.  `counting_lower_bound`
+    proves the diameter must grow like ``n^2 / log n``, and from
+    `DIAMETER_LAW_FAILS_AT` = 72 onward the counting bound alone exceeds
+    ``3n + 1``.  Kept because it is exactly right on every size the search can
+    reach, and because a formula that fits five points and then dies is worth
+    keeping visible next to the argument that kills it.
     """
     if qubits < 1:
         raise ValueError(f"need at least one qubit, got {qubits}")
@@ -540,16 +578,20 @@ def predicted_structured_complexities(qubits: int) -> dict[str, int]:
     return predictions
 
 
-#: ``diameter - mean`` appears to converge to this, and it is also the constant
-#: gap between the diameter and the complete graph state at every measured size.
+#: The gap between the diameter and the complete graph state, at every size the
+#: search reaches.  Exact for ``n <= 5`` and **not** a limit: since the diameter
+#: grows like ``n^2/log n`` and the complete graph state stays linear, the true
+#: gap diverges.  Kept as the measured constant it is, not as an asymptote.
 CONCENTRATION_WIDTH: int = 4
 
 
 def mean_gap_to_complete_graph(qubits: int) -> float:
     """``mean - 3(n-1)``: how far typical complexity sits above the complete graph.
 
-    Runs 1.45, 0.86, 0.44, 0.19 for ``n = 2..5`` -- shrinking toward zero, so
-    the mean converges to the complete graph state's complexity exactly.
+    Runs 1.45, 0.86, 0.44, 0.19 for ``n = 2..5``.  Shrinking, but not toward a
+    meaningful limit: the diameter is superlinear in ``n`` while ``3(n-1)`` is
+    not, so the mean cannot stay within ``O(1)`` of it.  A measured trend over
+    five points, superseded by `counting_lower_bound`.
     """
     if qubits < 2:
         raise ValueError(f"needs at least two qubits, got {qubits}")
@@ -559,11 +601,134 @@ def mean_gap_to_complete_graph(qubits: int) -> float:
 def diameter_minus_mean(qubits: int) -> float:
     """How far the hardest state sits above the typical one.
 
-    Runs 1.83, 2.55, 3.14, 3.56, 3.81 for ``n = 1..5``, converging to
-    `CONCENTRATION_WIDTH`.  Bounded, so typical and maximal complexity differ by
-    ``O(1)`` -- the distribution concentrates just below the diameter.
+    Runs 1.83, 2.55, 3.14, 3.56, 3.81 for ``n = 1..5``, which reads as
+    convergence to `CONCENTRATION_WIDTH` and is not.  `counting_lower_bound`
+    forces the diameter to grow like ``n^2/log n`` while the structured states
+    stay linear, so this gap must diverge.  Five points were not enough to see
+    it, and the constant is a small-``n`` artifact.
     """
     return diameter(qubits) - typical_complexity(qubits)
+
+
+# ---------------------------------------------------------------------------
+# proofs: what survives beyond the reach of the search
+# ---------------------------------------------------------------------------
+#
+# Everything above n = 5 is observation.  This section is not: these are
+# counting arguments, valid for every n, and the first thing they establish is
+# that one of the observed laws is false.
+
+
+def gate_count(qubits: int) -> int:
+    """``n^2 + n``: ``n`` Hadamards, ``n`` phases, ``n(n-1)`` controlled-nots."""
+    if qubits < 1:
+        raise ValueError(f"need at least one qubit, got {qubits}")
+    return qubits * qubits + qubits
+
+
+def ball_size_bound(qubits: int, radius: int) -> int:
+    """Most states reachable within ``radius`` gates: ``sum_{i<=r} |G|^i``.
+
+    Every state at distance at most ``radius`` is the image of some gate
+    sequence of length at most ``radius``, and there are ``|G|^i`` sequences of
+    length ``i``.  Exact, and an over-count -- distinct sequences often give the
+    same state.
+    """
+    if radius < 0:
+        raise ValueError(f"radius must be non-negative, got {radius}")
+    size = gate_count(qubits)
+    total = 0
+    power = 1
+    for _ in range(radius + 1):
+        total += power
+        power *= size
+    return total
+
+
+def counting_lower_bound(qubits: int, limit: int = 100000) -> int:
+    """Smallest radius whose ball could hold every stabilizer state.
+
+    A rigorous lower bound on the diameter, for every ``n``: if
+    ``|B(r)| < N(n)`` then some state is further than ``r``.  Asymptotically
+    this is ``~ n^2 / (4 log_2 n)``, since ``log_2 N ~ n^2/2`` and
+    ``log_2 |G| ~ 2 log_2 n``.
+    """
+    target = stabilizer_state_count(qubits)
+    size = gate_count(qubits)
+    total = 1
+    power = 1
+    for radius in range(limit + 1):
+        if total >= target:
+            return radius
+        power *= size
+        total += power
+    raise ValueError(
+        f"counting bound for {qubits} qubits exceeded radius {limit}"
+    )
+
+
+#: The smallest register at which `counting_lower_bound` exceeds ``3n + 1``,
+#: proving that the observed diameter law cannot hold for all ``n``.  At
+#: ``n = 72`` the bound is ``219`` against ``3n + 1 = 217``.
+DIAMETER_LAW_FAILS_AT: int = 72
+
+
+def diameter_law_is_refuted(qubits: int) -> bool:
+    """Does counting alone rule out ``diameter = 3n + 1`` at this size?
+
+    The correction to this module's own headline.  ``3n + 1`` fits every size
+    the search reaches, and it is false: the number of stabilizer states grows
+    like ``2^(n^2/2)`` while a radius-``L`` ball holds at most ``(n^2+n)^L``, so
+    the diameter must grow like ``n^2 / log n``.  A linear law cannot survive
+    that, and from ``n = 72`` the two curves have crossed.
+    """
+    return counting_lower_bound(qubits) > predicted_diameter(qubits)
+
+
+def cheap_fraction_bound(qubits: int, radius: int) -> float:
+    """Most of the stabilizer states that can sit within ``radius`` gates.
+
+    ``|B(r)| / N(n)``, rigorous for every ``n`` with no search involved.  This
+    is the concentration statement, proved rather than extrapolated: taking
+    ``radius = n`` -- the scale at which GHZ and the product states live -- the
+    bound falls off superexponentially, ``7e-18`` at ``n = 20`` and ``2e-131``
+    at ``n = 40``.  Cheap states are a vanishing fraction of all states.
+    """
+    return ball_size_bound(qubits, radius) / stabilizer_state_count(qubits)
+
+
+def touched_qubit_bound(qubits: int) -> int:
+    """``ceil(n/2)``: every qubit must be acted on, and a gate touches at most two.
+
+    A floor under the complexity of any state whose every single-qubit marginal
+    differs from ``|0>``.  Weak, but it holds for all ``n`` and needs no search.
+    """
+    if qubits < 1:
+        raise ValueError(f"need at least one qubit, got {qubits}")
+    return -(-qubits // 2)
+
+
+def ghz_lower_bound(qubits: int) -> int:
+    """``n``, and this one is exact for every ``n`` rather than observed.
+
+    Two independent obstructions, neither needing a search:
+
+    * ``CNOT`` and ``S`` map computational basis states to computational basis
+      states up to phase, so neither can create a superposition.  Preparing GHZ
+      from ``|0...0>`` therefore costs at least one Hadamard.
+    * GHZ is entangled across every bipartition, so the graph whose edges are
+      the two-qubit gates used must be connected on ``n`` vertices -- otherwise
+      the output factorises along a disconnected cut.  A connected graph on
+      ``n`` vertices has at least ``n - 1`` edges, so at least ``n - 1``
+      controlled-nots are needed.
+
+    The two counts are disjoint, giving ``>= n``, and `ghz_state` achieves it.
+    So GHZ complexity is exactly ``n`` at every size, not merely at the five
+    the search reaches.
+    """
+    if qubits < 2:
+        raise ValueError(f"a GHZ state needs at least two qubits, got {qubits}")
+    return qubits
 
 
 def structure_gap(qubits: int) -> float:
