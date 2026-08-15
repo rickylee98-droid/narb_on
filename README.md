@@ -2905,6 +2905,80 @@ owner, who reports no prior statement of the conjunction. The novelty claim
 therefore rests on someone else's search, not mine. The arithmetic is exact
 independently of that.
 
+## A twentieth target: what logic actually costs
+
+`thermo.py` answers the proposed "Goedel–Landauer–Prigogine trilemma" — that a
+physical computer cannot be simultaneously consistent, efficient and thermally
+stable, with heat diverging exactly when the logic becomes complete. No such
+conjecture exists in the literature. Underneath it there are two real and
+**separable** effects, and conflating them is where the framing goes wrong.
+
+| claim | verdict |
+| --- | --- |
+| erasing perfectly costs infinite heat | **false** — bounded by `ln 2` |
+| there is a dissipation singularity | **true, twice**, neither where the brief puts it |
+| it is a phase transition | true of one, false of the other |
+| the trilemma is the TUR | partly — the TUR says nothing about logic |
+
+**Maintenance is logarithmic, not singular.** A bit held at error `eps` against
+a bath of rate `gamma` is an exactly solvable two-channel Markov jump process.
+In the reliable limit the demon flux saturates at the noise rate, `|J| -> gamma`,
+while the affinity grows as `2 ln(1/eps)`, giving
+
+    Sdot  ->  2 * gamma * ln(1/eps)
+
+Consistency does cost, and the cost does diverge — but logarithmically, with a
+coefficient of exactly **twice the noise rate**. Every decade of reliability
+costs the same fixed increment. Nothing here deserves the word "transition".
+The coefficient `2` is checked by confirming that 1, 3 and 4 all *fail*, so it
+is derived rather than fitted.
+
+**Erasure is bounded, so the headline claim is false.** `W(eps) = ln 2 - H(eps)`
+rises monotonically to `ln 2` and stops. Perfect erasure is finitely priced. The
+brief's error is to attribute the maintenance divergence to erasure.
+
+**The real phase transition is the fault-tolerance threshold.** Majority-vote
+concatenation gives `p' = 3p^2 - 2p^3`, fixed points `0`, `1/2`, `1`. The
+unstable one at `p = 1/2` is a genuine critical point:
+
+| `p` | reachable? | levels | gates | dissipation |
+| --- | --- | --- | --- | --- |
+| 0.100 | yes | 4 | 81 | 1.1e2 `kT` |
+| 0.400 | yes | 8 | 6561 | 9.1e3 `kT` |
+| 0.490 | yes | 14 | 4782969 | 6.6e6 `kT` |
+| 0.499 | yes | 19 | 1162261467 | 1.6e9 `kT` |
+| **0.500** | **no** | — | — | **unattainable** |
+| 0.510 | no | — | — | unattainable |
+
+Finite on one side of a sharp parameter value, unattainable on the other, with
+overhead exponent `log 3 / log 2 = 1.585`. That is the dissipation singularity,
+and it sits at a **noise** value, not at "logical completeness".
+
+**Critical slowing down, derived.** Linearising the map at the fixed point gives
+`d/dp (3p^2 - 2p^3) = 6p(1-p)`, exactly `3/2` at `p = 1/2`. So distance from
+threshold grows geometrically with ratio `3/2` and escape takes
+`ln(1/delta)/ln(3/2)` levels — 5.68 per decade, measured 6, 5, 6. The test checks
+the *slope*, since the absolute count carries an offset from the doubly
+exponential phase that follows.
+
+**Referees.** The mean current read off the cumulant generating function of the
+tilted generator must equal the steady-state cycle flux — two disjoint paths,
+agreeing to 1e-12. The TUR is checked to hold *and* separately checked not to be
+vacuous (it approaches 2 near equilibrium). The floating-point orbit used near
+the threshold is checked against the exact rational map.
+
+**A test that failed and was right to.** `test_flux_saturates_at_the_noise_rate`
+originally used a fixed tolerance and passed at `gamma = 1` while failing at
+`gamma = 3`: saturation is asymptotic in the affinity and the residual carries a
+factor `gamma/gamma_D`. It now checks that the gap *shrinks*, which is the claim
+that was meant.
+
+**What this does not claim.** No Gödel statement enters at any point, and a test
+asserts it. The maintenance law, the erasure bound, the TUR and the threshold
+are all statements about noise, current and gate count. The incompleteness half
+of the conjecture contributes nothing, and pretending otherwise would be the
+overclaim.
+
 ## Tests
 
 ```bash
