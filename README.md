@@ -3317,6 +3317,17 @@ eigenvalues are not functorial under interleaving and operators change dimension
 along a filtration. At *fixed* combinatorics Weyl gives 1-Lipschitz dependence
 for free, which is all `weyl_bound_holds` claims.
 
+## Reference document
+
+`docs/REFERENCE.md` is the standing write-up: every result this repository
+establishes, what it refutes, and what it leaves open, with the formulas and
+citations in one place. It covers all ten investigation threads, the ledger of
+solved versus open problems, and the failure catalogue.
+
+Read §12 first if you read nothing else — twelve wrong guesses that died in
+computation, the mechanical traps that produced them, and the one pattern behind
+two of them (claims about a *trend* written as tests against a *threshold*).
+
 ## Tests
 
 ```bash
