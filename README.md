@@ -3086,7 +3086,24 @@ algorithm produces. No volume, no tensor network, no bulk is constructed.
 persistent homology is blind, because `D` is first-order and "retains sign and
 orientation" that the second-order Laplacian squares away.
 
-**The conjecture is false, and it fails twice, for two independent reasons.**
+**The conjecture is false, and it fails twice, for two independent reasons** —
+but the target is the brief, not the literature. A literature check (run by the
+repository owner; arxiv.org is unreachable from this environment) established:
+
+- The brief's citation `arXiv:2208.06456` **does not support the chirality
+  claim**. The relevant work is `arXiv:2301.10137` and `arXiv:2105.00529`.
+- What the topological deep learning literature actually claims is that the
+  persistent Dirac spectrum beats persistent *homology*, by retaining the
+  non-harmonic spectrum. **That claim is true**, and it is exactly the one
+  recorded under "what actually survives" below.
+- The chiral-symmetry equivalence proved here is **already established**, as
+  standard Hodge theory.
+
+So the published claim is correct and modest, and the brief inflated it into a
+statement about chirality its own citation never made. This module refutes the
+inflation. Nothing here is a criticism of the cited work, and **nothing here is
+novel** — the result that looked most like a contribution, the spectral
+equivalence, is the one confirmed to be known.
 
 ### One: the Dirac spectrum carries no more than the Laplacian's
 
@@ -3134,8 +3151,9 @@ blind to chirality for this reason, and it has nothing to do with squaring.
 
 ### What actually survives
 
-One part of the brief is true and worth keeping: **the non-zero spectrum carries
-strictly more than persistent homology.** Homology reads only the kernel — the
+One part of the brief is true and worth keeping — and it is what the literature
+actually claims: **the non-zero spectrum carries strictly more than persistent
+homology.** Homology reads only the kernel — the
 Betti numbers — and discards every non-zero eigenvalue (`homology_discards`
 counts them: 4 for a circle, 12 for a 2-sphere). That gap is real and is what
 makes spectral methods worth using. But it is a statement about *homology versus

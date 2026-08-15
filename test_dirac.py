@@ -340,6 +340,33 @@ class TestWhatThisDoesNotClaim:
         assert not hasattr(dirac, "eigenvectors_are_equivalent")
         assert dirac.spectra_are_equivalent(SPHERE)
 
+    def test_the_literature_is_not_being_corrected(self):
+        """The published claim is true; the brief inflated it.
+
+        A literature check established that the brief's citation does not
+        support its chirality claim, that the real claim in the topological
+        deep learning literature is the weaker and correct one -- the Dirac
+        spectrum beats persistent *homology* by retaining the non-harmonic
+        spectrum -- and that the chiral-symmetry equivalence proved here is
+        already standard Hodge theory.
+
+        So this module refutes an inflation of the literature, not the
+        literature.  Asserted here so the distinction cannot quietly erode.
+        """
+        assert dirac.MISCITED_REFERENCE == "arXiv:2208.06456"
+        assert "2301.10137" in " ".join(dirac.RELEVANT_REFERENCES)
+        assert "persistent homology" in dirac.LITERATURE_CLAIM
+        assert dirac.homology_discards(SPHERE) > 0
+
+    def test_nothing_here_is_novel(self):
+        """Stated flatly, because the literature check settled it.
+
+        The spectral equivalence in part one is the result that looked most like
+        a contribution, and it is the one explicitly confirmed to be known.
+        """
+        assert "**None.**" in dirac.__doc__
+        assert "standard Hodge theory" in dirac.__doc__
+
     def test_chirality_detection_is_not_offered(self):
         """No method here detects chirality, because the point is that none can.
 

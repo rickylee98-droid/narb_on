@@ -6,8 +6,30 @@ geometric chirality in data where persistent homology is blind, because ``D`` is
 first order and therefore "retains the sign and orientation" that the
 second-order Laplacian squares away.
 
-The conjecture is false, and it fails twice, for two independent reasons.  Both
+That conjecture is false, and it fails twice, for two independent reasons.  Both
 are proved here and both are short.
+
+Who is actually being corrected
+-------------------------------
+
+Not the topological deep learning literature.  A literature check (run by the
+repository owner; arxiv.org is unreachable from this environment) established
+three things, and they matter for reading everything below:
+
+  * The brief's supporting citation, ``arXiv:2208.06456``, does not support the
+    chirality claim.  The relevant work is ``arXiv:2301.10137`` and
+    ``arXiv:2105.00529``.  The citation was simply wrong.
+  * What the literature actually claims is that the persistent Dirac spectrum is
+    strictly more informative than persistent *homology* -- which means only
+    that it retains the non-harmonic spectrum.  **That claim is true**, and it
+    is the one recorded under "What is actually true" below.
+  * The chiral-symmetry equivalence proved here is already established, as
+    standard Hodge theory.  It is not new.
+
+So the published claim is correct and modest, and the brief inflated it into a
+statement about chirality that its own citation does not make.  This module
+refutes the inflation, not the literature.  Nothing below should be read as a
+criticism of the cited work.
 
 One: the Dirac spectrum carries no more than the Laplacian's
 -------------------------------------------------------------
@@ -57,8 +79,8 @@ chirality, and the reason has nothing to do with squaring.
 What is actually true
 ---------------------
 
-One part of the brief survives, and it is worth stating because it is the
-defensible version:
+One part of the brief survives, and it is worth stating because it is both the
+defensible version *and* what the literature actually claims:
 
     the non-zero spectrum carries strictly more than persistent homology.
 
@@ -71,13 +93,19 @@ about Dirac versus Laplacian, where the answer is that they are equivalent.
 Novelty
 -------
 
-None of this is new mathematics.  The chiral symmetry of ``d + delta`` and the
-resulting supersymmetric pairing of the spectrum is standard Hodge theory;
-reflection-invariance of distance matrices is immediate; Laplacian
-cospectrality is classical.  What is assembled is a computed verdict on a
-specific conjecture, with the two independent refutations separated so neither
-is mistaken for the other, and with the one surviving claim stated in the form
-that is actually true.
+**None.**  This is stated flatly rather than hedged, because the literature
+check settled it.  The chiral symmetry of ``d + delta`` and the resulting
+supersymmetric pairing of the spectrum is standard Hodge theory and was already
+established; reflection-invariance of distance matrices is immediate; Laplacian
+cospectrality is classical.  No result in this module is new mathematics, and
+the one that looked most like a contribution -- the spectral equivalence in part
+one -- is the one explicitly confirmed to be known.
+
+What the module is, then, is a computed verdict on a claim that was never in the
+literature to begin with: the two independent refutations separated so neither
+is mistaken for the other, the surviving claim stated in the form that is
+actually true, and the whole thing checked in exact arithmetic.  That is worth
+having as a record.  It is not worth calling a discovery.
 
 Referees
 --------
@@ -126,7 +154,28 @@ __all__ = [
     "COSPECTRAL_PAIR",
     "MINIMAL_COSPECTRAL_ORDER",
     "cospectral_pair_is_a_blindspot",
+    "MISCITED_REFERENCE",
+    "RELEVANT_REFERENCES",
+    "LITERATURE_CLAIM",
 ]
+
+
+#: The citation the brief gave for the chirality claim.  A literature check found
+#: it does not support that claim; it is recorded here so the miscitation stays
+#: visible rather than being quietly dropped.
+MISCITED_REFERENCE: str = "arXiv:2208.06456"
+
+#: What the brief should have cited, per the same literature check.  These are
+#: reported second hand -- arxiv.org is unreachable from this environment, so
+#: they were supplied by the repository owner and not verified here.
+RELEVANT_REFERENCES: tuple[str, ...] = ("arXiv:2301.10137", "arXiv:2105.00529")
+
+#: What the topological deep learning literature actually claims, which is true
+#: and is the statement `homology_discards` measures.
+LITERATURE_CLAIM: str = (
+    "the persistent Dirac spectrum is strictly more informative than persistent "
+    "homology, because it retains the non-harmonic spectrum"
+)
 
 
 # ---------------------------------------------------------------------------
