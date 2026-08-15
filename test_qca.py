@@ -419,6 +419,97 @@ class TestInnerProduct:
             qca.character_inner_product(-1, 2, qca.OCTAHEDRAL)
 
 
+class TestElasticConstants:
+    """The gauge-field reading, and the strongest external referee here.
+
+    Twelve independent measured numbers -- the elastic constant counts of the
+    crystal systems -- come out of the same machinery, and not one of them was
+    put in.
+    """
+
+    @pytest.mark.parametrize(
+        "group, constants, system",
+        [
+            (qca.cyclic(1), 21, "triclinic"),
+            (qca.cyclic(2), 13, "monoclinic"),
+            (qca.dihedral(2), 9, "orthorhombic"),
+            (qca.cyclic(3), 7, "trigonal-low"),
+            (qca.cyclic(4), 7, "tetragonal-low"),
+            (qca.dihedral(3), 6, "trigonal-high"),
+            (qca.dihedral(4), 6, "tetragonal-high"),
+            (qca.cyclic(6), 5, "hexagonal"),
+            (qca.dihedral(6), 5, "hexagonal-full"),
+            (qca.TETRAHEDRAL, 3, "cubic-T"),
+            (qca.OCTAHEDRAL, 3, "cubic-O"),
+            (qca.ICOSAHEDRAL, 2, "icosahedral"),
+        ],
+        ids=lambda value: value if isinstance(value, str) else "",
+    )
+    def test_crystal_system_table(
+        self, group: qca.RotationGroup, constants: int, system: str
+    ):
+        assert qca.elastic_constant_count(group) == constants, system
+
+    def test_total_before_symmetry_is_twenty_one(self):
+        """``Sym^2(Sym^2(R^3))`` has dimension 21."""
+        assert qca.elastic_constant_count(qca.cyclic(1)) == 21
+
+    def test_isotropic_medium_has_the_lame_pair(self):
+        assert qca.ISOTROPIC_ELASTIC_CONSTANTS == 2
+
+    def test_icosahedral_quasicrystals_are_elastically_isotropic(self):
+        """A measured property of real icosahedral quasicrystals, recovered."""
+        assert qca.is_elastically_isotropic(qca.ICOSAHEDRAL)
+        assert qca.elastic_excess(qca.ICOSAHEDRAL) == 0
+
+    def test_cubic_needs_the_zener_relation(self):
+        """Cubic anisotropy is exactly one relation: ``2 C_44 = C_11 - C_12``."""
+        assert qca.elastic_excess(qca.OCTAHEDRAL) == 1
+        assert qca.elastic_excess(qca.TETRAHEDRAL) == 1
+
+    @pytest.mark.parametrize("group", ALL_GROUPS, ids=lambda g: g.name)
+    def test_never_below_isotropic(self, group: qca.RotationGroup):
+        assert qca.elastic_constant_count(group) >= qca.ISOTROPIC_ELASTIC_CONSTANTS
+        assert qca.elastic_excess(group) >= 0
+
+    @pytest.mark.parametrize("group", ALL_GROUPS, ids=lambda g: g.name)
+    def test_never_above_twenty_one(self, group: qca.RotationGroup):
+        assert qca.elastic_constant_count(group) <= 21
+
+    def test_only_icosahedral_is_isotropic(self):
+        """Among all finite rotation groups, exactly one forces elastic isotropy."""
+        isotropic = [
+            group.name
+            for group in qca.finite_rotation_groups(10)
+            if qca.is_elastically_isotropic(group)
+        ]
+        assert isotropic == ["I"]
+
+    def test_more_symmetry_never_costs_constants(self):
+        """``O`` contains ``T``, ``D_n`` contains ``C_n``: counts must not rise."""
+        assert qca.elastic_constant_count(qca.OCTAHEDRAL) <= qca.elastic_constant_count(
+            qca.TETRAHEDRAL
+        )
+        for order in range(1, 8):
+            assert qca.elastic_constant_count(
+                qca.dihedral(order)
+            ) <= qca.elastic_constant_count(qca.cyclic(order))
+
+    def test_both_readings_agree_on_the_verdict(self):
+        """States and fields disagree on severity, agree on who passes.
+
+        `zero_momentum_splitting` treats the multiplet as five states;
+        `elastic_excess` treats it as a symmetric rank-2 field.  They differ in
+        how badly a cubic lattice fails -- see
+        `TestWhatThisDoesNotClaim.test_the_gauge_reading_is_milder` -- but they
+        agree on which groups need no tuning at all.
+        """
+        for group in qca.finite_rotation_groups(8):
+            free_as_states = qca.zero_momentum_splitting(2, group) == 0
+            free_as_field = qca.elastic_excess(group) == 0
+            assert free_as_states == free_as_field, group.name
+
+
 class TestHelicityAliasing:
     @pytest.mark.parametrize("axis_order", [1, 2, 3, 4, 5, 6, 7])
     def test_modulus(self, axis_order: int):
@@ -585,3 +676,34 @@ class TestWhatThisDoesNotClaim:
     def test_fine_tuning_is_not_impossibility(self):
         """A cubic model can still be tuned; the cost is one parameter, not infinity."""
         assert qca.tuning_cost(2, qca.OCTAHEDRAL) == 1
+
+    def test_the_gauge_reading_is_milder(self):
+        """A weakening of my own no-go, recorded rather than buried.
+
+        The ladder's fatal rung is a splitting at zero momentum: five states
+        acquiring different gaps.  A gauge field has no zero-momentum states to
+        split, so that rung does not apply to it.  In the elastic reading the
+        cubic failure is instead a *leading-order velocity anisotropy* -- three
+        constants where isotropy allows two, i.e. a Zener ratio that must be set
+        to one.  Real, but tunable, and not the relevant-operator catastrophe
+        the state reading gives.
+
+        So the strong form of the no-go holds for an emergent spin-2 multiplet
+        realised as excitations, and the weak form for one realised as a gauge
+        field.  Both leave the icosahedral group free.
+        """
+        assert qca.zero_momentum_splitting(2, qca.OCTAHEDRAL) == 1
+        assert qca.elastic_excess(qca.OCTAHEDRAL) == 1
+        assert qca.zero_momentum_splitting(2, qca.ICOSAHEDRAL) == 0
+        assert qca.elastic_excess(qca.ICOSAHEDRAL) == 0
+
+    def test_elastic_isotropy_is_not_a_graviton(self):
+        """Icosahedral elasticity is isotropic. That is not general relativity.
+
+        Two elastic constants matching the Lame pair says the quadratic action
+        has the isotropic form.  It says nothing about diffeomorphism
+        invariance, about the nonlinear structure, or about whether the theory
+        has a massless pole at all.
+        """
+        assert qca.is_elastically_isotropic(qca.ICOSAHEDRAL)
+        assert not hasattr(qca, "einstein_equations")

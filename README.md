@@ -2820,9 +2820,46 @@ three-dimensional irrep as `l = 1` while under `O` they land in `T_1` versus
 `E + T_2`. That is a known feature of non-centrosymmetric structures, and it was
 not put in.
 
+### States or fields — the strongest referee, and a weakening
+
+The ladder treats the multiplet as five *states*. That is right for a gapped
+quadrupolar excitation and wrong for a gauge field: a graviton has two
+propagating helicities and no zero-momentum states to split. Re-asked for a
+field, the object is the elastic tensor in `Sym^2(Sym^2(vector))`, and
+`elastic_constant_count` reproduces the entire crystal-system table:
+
+| system | group | count |
+| --- | --- | --- |
+| triclinic | `C_1` | 21 |
+| monoclinic | `C_2` | 13 |
+| orthorhombic | `D_2` | 9 |
+| trigonal / tetragonal (low) | `C_3`, `C_4` | 7 |
+| trigonal / tetragonal (high) | `D_3`, `D_4` | 6 |
+| hexagonal | `C_6`, `D_6` | 5 |
+| cubic | `T`, `O` | 3 |
+| **icosahedral** | `I` | **2** |
+| isotropic | `SO(3)` | 2 |
+
+Twelve independent measured numbers, all correct, none of them put in — and the
+last row is the known elastic isotropy of icosahedral quasicrystals.
+
+**This weakens the no-go above, and the weakening is the point.** In the field
+reading a cubic lattice does not gap the multiplet apart; it gives three elastic
+constants where isotropy allows two, so the failure is a leading-order velocity
+anisotropy — the Zener ratio `2 C_44 / (C_11 - C_12)` must be tuned to one.
+Real, but tunable, and not the relevant-operator catastrophe the state reading
+gives. So:
+
+- emergent spin two **as excitations** → strong no-go on any lattice
+- emergent spin two **as a gauge field** → one tuned relation on a cubic lattice
+
+Both readings leave the icosahedral group free, and a test asserts they agree
+across the whole classification on *which* groups need no tuning at all.
+
 **What this does not claim.** Protection is necessary, not sufficient.
-Icosahedral symmetry keeps the multiplet whole; it does not supply a massless
-dispersion or a gauge redundancy. And fine-tuning is not impossibility — a cubic
+Icosahedral symmetry keeps the multiplet whole and forces elastic isotropy; it
+supplies neither a massless dispersion, nor diffeomorphism invariance, nor any
+nonlinear structure. And fine-tuning is not impossibility — a cubic
 model can still be tuned, at a cost of exactly one parameter.
 
 **Novelty.** Every ingredient is classical: Klein's classification, the

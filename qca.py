@@ -82,6 +82,36 @@ dispersion is protected by symmetry and the leading correction is an irrelevant
 ``k^2`` term -- which is exactly the regime where emergent photons are known to
 work.  The same computation, on the same lattices, says spin two fails at ``k^0``.
 
+States or fields, and a weakening of the above
+----------------------------------------------
+
+The ladder treats the multiplet as five *states*, which is right for a gapped
+quadrupolar excitation and wrong for a gauge field: a graviton has two
+propagating helicities and no zero-momentum states to split.  Re-asked for a
+field, the object is the elastic tensor in ``Sym^2(Sym^2(vector))`` and the
+question is how many independent constants ``G`` permits.  `elastic_constant_count`
+answers it, and reproduces the entire crystal-system table:
+
+    triclinic 21, monoclinic 13, orthorhombic 9, tetragonal 7 or 6,
+    trigonal 7 or 6, hexagonal 5, cubic 3, isotropic 2
+
+and, for the icosahedral group, ``2`` -- icosahedral quasicrystals are
+elastically isotropic, which is a measured fact and was not put in.  Twelve
+independent numbers, all correct, from the same cyclotomic arithmetic.
+
+This *weakens* the no-go above and the weakening is the point.  In the field
+reading a cubic lattice does not gap the multiplet apart; it gives three elastic
+constants where isotropy allows two, so the failure is a leading-order velocity
+anisotropy -- the Zener ratio ``2 C_44 / (C_11 - C_12)`` must be tuned to one.
+Real, but tunable, not a relevant-operator catastrophe.  So:
+
+    emergent spin two as excitations   -> strong no-go on any lattice
+    emergent spin two as a gauge field -> one tuned relation on a cubic lattice
+
+Both readings leave the icosahedral group free, and they agree exactly on which
+groups need no tuning at all -- a test asserts that agreement across the
+classification.
+
 Novelty
 -------
 
@@ -156,6 +186,10 @@ __all__ = [
     "first_anisotropic_degree",
     "ANISOTROPY_ONSET",
     "zero_momentum_splitting",
+    "elastic_constant_count",
+    "ISOTROPIC_ELASTIC_CONSTANTS",
+    "is_elastically_isotropic",
+    "elastic_excess",
     "helicity_alias_modulus",
     "helicity_is_resolved",
     "minimal_axis_order",
@@ -697,6 +731,125 @@ def zero_momentum_splitting(spin: int, group: RotationGroup) -> int:
     its commutant.
     """
     return tuning_ladder(spin, group, max_degree=0)[0].excess
+
+
+# ---------------------------------------------------------------------------
+# the gauge-field reading: elastic constants
+# ---------------------------------------------------------------------------
+#
+# The ladder above treats the spin-2 multiplet as five *states*, which is the
+# right reading for a gapped quadrupolar excitation but not for a gauge field.
+# A graviton is a field with two propagating helicities, so the obstruction has
+# to be re-asked in terms of the quadratic effective action rather than a
+# spectrum.  For a symmetric rank-2 field that action is an elastic tensor,
+# and the same invariant count applies to it -- with an external referee
+# attached, because the answers are measured quantities.
+
+
+def _shift_product(
+    left: dict[int, Fraction], right: dict[int, Fraction]
+) -> dict[int, Fraction]:
+    """Multiply two virtual characters written as ``sum_d c_d zeta^{d t}``."""
+    product: dict[int, Fraction] = {}
+    for left_shift, left_coeff in left.items():
+        for right_shift, right_coeff in right.items():
+            key = left_shift + right_shift
+            product[key] = product.get(key, Fraction(0)) + left_coeff * right_coeff
+    return product
+
+
+def _shift_double(source: dict[int, Fraction]) -> dict[int, Fraction]:
+    """The character of ``g -> g^2``: every shift doubled."""
+    doubled: dict[int, Fraction] = {}
+    for shift, coeff in source.items():
+        doubled[2 * shift] = doubled.get(2 * shift, Fraction(0)) + coeff
+    return doubled
+
+
+def _shift_symmetric_square(source: dict[int, Fraction]) -> dict[int, Fraction]:
+    """``chi_{Sym^2 W}(g) = (chi_W(g)^2 + chi_W(g^2)) / 2``."""
+    squared = _shift_product(source, source)
+    doubled = _shift_double(source)
+    combined: dict[int, Fraction] = {}
+    for shift in set(squared) | set(doubled):
+        value = squared.get(shift, Fraction(0)) + doubled.get(shift, Fraction(0))
+        if value:
+            combined[shift] = value / 2
+    return combined
+
+
+def _spin_shifts(spin: int) -> dict[int, Fraction]:
+    """``chi_l`` as ``sum_{m=-l}^{l} zeta^{m t}``."""
+    return {magnetic: Fraction(1) for magnetic in range(-spin, spin + 1)}
+
+
+def _average_shifts(source: dict[int, Fraction], group: RotationGroup) -> int:
+    """Average a virtual character over ``G``, requiring an integer."""
+    scale = 1
+    for coeff in source.values():
+        scale = scale * coeff.denominator // _gcd(scale, coeff.denominator)
+    terms: dict[Fraction, int] = {}
+    for shift, coeff in source.items():
+        integral = int(coeff * scale)
+        if not integral:
+            continue
+        for turn, count in group.spectrum:
+            key = Fraction(shift) * turn
+            key -= key.numerator // key.denominator
+            terms[key] = terms.get(key, 0) + integral * count
+    total = _root_of_unity_sum(terms)
+    divisor = scale * group.order
+    if total % divisor:
+        raise ArithmeticError(
+            f"average over {group.name} is not an integer: {total}/{divisor}"
+        )
+    return total // divisor
+
+
+def elastic_constant_count(group: RotationGroup) -> int:
+    """Independent elastic constants of a medium with rotational symmetry ``G``.
+
+    The elastic tensor ``C_ijkl`` is symmetric within each index pair and under
+    exchange of the pairs, so it lives in ``Sym^2(Sym^2(V))`` with ``V`` the
+    vector representation -- twenty-one components before any symmetry.  The
+    number surviving is the dimension of the ``G``-invariant subspace.
+
+    This is the gauge-field reading of the obstruction.  Where `tuning_ladder`
+    asks whether five *states* stay degenerate, this asks how many independent
+    couplings the quadratic action of a symmetric rank-2 *field* may carry.
+
+    It also comes with a referee that no part of this module was built to
+    satisfy, because the answers are measured:
+
+        isotropic medium      2   (the Lame constants)
+        cubic crystal         3   (C_11, C_12, C_44)
+        icosahedral           2   -- quasicrystals are elastically isotropic
+
+    The last line is a known property of icosahedral quasicrystals, and it is
+    the same conclusion the character norm reached: the icosahedral group is the
+    unique finite rotation group that cannot tell a quadrupole from a rotation.
+    """
+    elastic = _shift_symmetric_square(_shift_symmetric_square(_spin_shifts(1)))
+    return _average_shifts(elastic, group)
+
+
+#: Independent elastic constants under full rotational symmetry: the Lame pair.
+ISOTROPIC_ELASTIC_CONSTANTS: int = 2
+
+
+def is_elastically_isotropic(group: RotationGroup) -> bool:
+    """Does ``G`` force the elastic tensor to the isotropic two-parameter form?"""
+    return elastic_constant_count(group) == ISOTROPIC_ELASTIC_CONSTANTS
+
+
+def elastic_excess(group: RotationGroup) -> int:
+    """Elastic constants beyond the isotropic two: the anisotropy that must be tuned.
+
+    For a cubic crystal this is ``1``, and the single relation to impose is
+    ``2 C_44 = C_11 - C_12`` -- the statement that the Zener anisotropy ratio is
+    one.  For the icosahedral group it is ``0``.
+    """
+    return elastic_constant_count(group) - ISOTROPIC_ELASTIC_CONSTANTS
 
 
 # ---------------------------------------------------------------------------
