@@ -3079,6 +3079,82 @@ state here is classically simulable, so this measures exact minimal *Clifford*
 complexity and says nothing about quantum advantage or about the states Shor's
 algorithm produces. No volume, no tensor network, no bulk is constructed.
 
+## A twenty-second target: what the persistent Dirac operator can and cannot see
+
+`dirac.py` answers the conjecture that the persistent Dirac operator
+`D = d + delta` (with `D^2 = Delta`) classifies geometric **chirality** where
+persistent homology is blind, because `D` is first-order and "retains sign and
+orientation" that the second-order Laplacian squares away.
+
+**The conjecture is false, and it fails twice, for two independent reasons.**
+
+### One: the Dirac spectrum carries no more than the Laplacian's
+
+Let `Gamma` be the grading operator, `+1` on even-degree chains and `-1` on odd.
+Both `d` and `delta` shift degree by one, so both anticommute with it:
+
+    Gamma D = - D Gamma        (verified exactly zero on every test complex)
+
+`Gamma` is a unitary involution, so `D psi = lambda psi` implies
+`D (Gamma psi) = -lambda (Gamma psi)`. The spectrum is symmetric about zero, and
+with `D^2 = Delta` that pins it completely:
+
+    spec(D) = { +- sqrt(mu) : mu in spec(Delta) },  signs forced
+
+`dirac_spectrum_from_laplacian` reconstructs `spec(D)` from `spec(Delta)` with no
+other input, and it agrees on every complex tested. **The two carry identical
+information.** The first-order-ness is real, but it buys expressiveness in the
+*eigenvectors*, which mix degrees — not in the spectrum, which is what the
+conjecture is about.
+
+Consequence: the Dirac operator inherits *every* Laplacian blindspot. An
+exhaustive search finds a Laplacian-cospectral non-isomorphic pair of graphs at
+six vertices (none exist at five), and the two share a Dirac spectrum exactly.
+
+### Two: nothing built from distances can see chirality
+
+This one does not involve the Dirac operator at all. A reflection is an isometry,
+so a chiral point cloud and its mirror have **bitwise identical** distance
+matrices — the measured difference is exactly 0.0, not small. Every
+distance-based filtration (Vietoris–Rips, Čech) is therefore the *same filtered
+complex*, and every invariant of it agrees: persistent homology, persistent
+Laplacian, persistent Dirac.
+
+| | original | mirrored |
+| --- | --- | --- |
+| orientation signature | `(1, 1, -1, 1, 1)` | `(-1, -1, 1, -1, -1)` |
+| distance matrix | — | **identical** |
+| Rips complex (r = 1.1, 1.5, 2.0) | — | **identical** |
+| Dirac spectrum | — | **identical** |
+
+So chirality is not a function of the distance matrix. What *does* flip is the
+signed volume — and it is not recoverable from pairwise distances, which is
+precisely why no distance-based filtration can reach it. Persistent homology is
+blind to chirality for this reason, and it has nothing to do with squaring.
+
+### What actually survives
+
+One part of the brief is true and worth keeping: **the non-zero spectrum carries
+strictly more than persistent homology.** Homology reads only the kernel — the
+Betti numbers — and discards every non-zero eigenvalue (`homology_discards`
+counts them: 4 for a circle, 12 for a 2-sphere). That gap is real and is what
+makes spectral methods worth using. But it is a statement about *homology versus
+the Laplacian*, not about *the Laplacian versus Dirac*, where the answer is that
+they are equivalent.
+
+**Referees.** `partial . partial = 0` on every complex — without correct boundary
+signs nothing else would mean anything. `dim ker D` equals the sum of the Betti
+numbers, and the Betti numbers themselves come out right on complexes whose
+homology is known independently: circle `(1,1)`, disk `(1,0,0)`, 2-sphere
+`(1,0,1)`. All in exact arithmetic; the shared cospectral spectrum prints as
+exact algebraic numbers like `-sqrt(sqrt(5) + 3)`.
+
+**What this does not claim.** No persistence module is built, because neither
+refutation needs one — the second says every complex in the filtration is
+identical, which is stronger than any statement about the module above it. And
+only the *spectra* are shown equivalent: the Dirac eigenvectors genuinely mix
+degrees in a way the Laplacian's do not, and nothing here says otherwise.
+
 ## Tests
 
 ```bash
