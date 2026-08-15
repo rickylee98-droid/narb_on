@@ -3317,6 +3317,71 @@ eigenvalues are not functorial under interleaving and operators change dimension
 along a filtration. At *fixed* combinatorics Weyl gives 1-Lipschitz dependence
 for free, which is all `weyl_bound_holds` claims.
 
+## A twenty-fourth target: the insertion measure
+
+`insertion.py` defines an object rather than attacking a conjecture, and derives
+its structure.
+
+**The construction.** `magnetic` established that inserting a simplex is a
+*bordering* of the Dirac operator. A bordering is exactly the situation where a
+Hermitian matrix has a distinguished last basis vector — and that vector carries
+a canonical object, its spectral measure, equivalently the Weyl function
+
+    m(z) = <e_tau, (D - z)^-1 e_tau> = integral dmu(t)/(t - z)
+
+So **every simplex in a filtration carries a probability measure, taken at the
+moment it enters.** Call it the *insertion measure*. Its moments are weighted
+closed-walk counts in the Hasse diagram — and they have far more structure than
+a walk count has any right to.
+
+**One. Every odd moment vanishes**, for any connection. `Gamma` acts on `e_tau`
+by a sign and anticommutes with `D`. The measure is symmetric about zero.
+
+**Two. The second moment is purely combinatorial:** `M_2 = dim(tau) + 1`, the
+face count. Independent of the connection, the ambient complex, everything.
+Zero failures across 150 random cases. A closed two-walk goes down to a face and
+straight back, so the phase meets its own conjugate — **flux is invisible at
+second order.**
+
+**Three. At zero flux the measure is known completely.** The moments are exact
+integers `M_2j = (k+1)^j` — `2, 4, 8`; `3, 9, 27`; `4, 16, 64`; `5, 25, 125`;
+`6, 36, 216`. With vanishing odd moments that determines the measure outright:
+
+    mu_tau  =  ½ delta_{+sqrt(k+1)}  +  ½ delta_{-sqrt(k+1)}
+
+A flat insertion measure is a **symmetric Bernoulli distribution whose support is
+the square root of the face count.**
+
+**Four — the result. In dimension two the excess kurtosis is the squared
+curvature:**
+
+    M_4 - M_2²  =  |h - 1|²
+
+exactly, every connection, every ambient. Max residual `1.3e-15` over 120 random
+cases. The right-hand side is not a new quantity — `|h - 1|` is precisely
+`magnetic.curvature_norm`, the size of `d²`. So a purely spectral fourth moment
+reproduces the differential-geometric curvature of the cell being inserted, while
+the second moment is blind to it. **The insertion measure is combinatorial at
+second order and geometric at fourth.** Equivalently: curvature is exactly the
+amount by which insertion smears the Bernoulli measure, quadratically in the
+holonomy defect.
+
+**Where it stops, recorded as a result.** The identity is **dimension-two only**.
+For `k >= 3` the excess kurtosis is *not* proportional to any sum of face
+holonomies: regressing against `sum |h-1|²` gives residuals of 2.45 at `k = 3`
+and 2.48 at `k = 4` — comparable to the signal, not a small correction. The
+natural `2/(k+1)` coefficient is wrong too (fitted 0.28 and 0.093 against 0.5 and
+0.4). Above dimension two the triangular faces share edges, so their holonomies
+interfere rather than add. `KURTOSIS_IDENTITY_MAX_DIMENSION` records the boundary
+and a test measures the failure rather than asserting it.
+
+**Novelty.** The insertion measure appears to be new as a definition, and
+statements two through four new as results. Every *tool* is classical — Weyl
+functions, moments as walk counts, the chiral symmetry from `magnetic`. What is
+new is putting a Weyl function on each simplex of a filtration and finding its
+low moments separate combinatorics from curvature this cleanly. **Unverified
+against the literature** — arxiv.org is unreachable from this environment.
+
 ## Reference document
 
 `docs/REFERENCE.md` is the standing write-up: every result this repository
