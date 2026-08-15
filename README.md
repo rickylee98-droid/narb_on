@@ -3173,6 +3173,70 @@ identical, which is stronger than any statement about the module above it. And
 only the *spectra* are shown equivalent: the Dirac eigenvectors genuinely mix
 degrees in a way the Laplacian's do not, and nothing here says otherwise.
 
+## A twenty-third target: curvature kills supersymmetry but not chirality
+
+`magnetic.py` follows `dirac.py`. Having shown the *real* simplicial Dirac
+operator carries exactly what the Hodge Laplacians carry, the standard escape is
+a `U(1)` connection — a magnetic Dirac operator — on the stated grounds that
+`D^2 != Delta` there and **that this breaks the spectral symmetry**.
+
+The grounds are wrong. The conclusion is right for a different reason.
+
+**One. Chiral symmetry survives any connection.** `Gamma D + D Gamma = 0` holds
+for every connection, flat or curved, *exactly* — asserted at literal zero, not
+a tolerance. The proof uses only that `d` raises degree by one and `delta`
+lowers it; it never touches `d^2 = 0`. Magnetic phases do not break chirality.
+
+**Two. What curvature breaks is `D^2 = Delta`.** Working out the composition,
+
+    (d_1 d_0 c)([u,v,w]) = (sigma_uv sigma_vw - sigma_uw) c(w)
+
+so `d^2 = 0` exactly when every triangle has trivial holonomy. Three separately
+computed quantities turn out to be one number:
+
+| | flat | curved |
+| --- | --- | --- |
+| holonomy defect \|hol − 1\| | 0 | **0.397339** |
+| \|d²\| | 0 | **0.397339** |
+| `D²` off-block norm | 0 | **0.397339** |
+| `{Gamma, D}` | **0** | **0 exactly** |
+| spectrum asymmetry | 1e-15 | 1e-15 |
+
+Statements one and two come apart *exactly* at curvature. Supersymmetry dies;
+the grading does not.
+
+**Three. There is a chiral asymmetry, and it is the index.** The `±` pairing
+holds on the non-zero spectrum but not on the kernel — the even and odd harmonic
+spaces differ in dimension by `sum_k (-1)^k beta_k`, the Euler characteristic:
+disk 1, sphere 2, path 1, circle 0. This asymmetry is **topological, present at
+zero flux, and exactly what persistent homology already reports.** The one
+genuine chirality asymmetry in the operator is not geometric and not new
+information.
+
+**Four.** So the magnetic Dirac operator *does* carry more than its Laplacians —
+because `D²` is no longer block diagonal, `spec(D_sigma)` is not reconstructible
+from the twisted Laplacian spectra, unlike the flat case. Curvature does change
+the spectrum: the flat triple `±sqrt(3)` splits into `±1.6133, ±1.7321, ±1.8432`.
+The hope behind the magnetic proposal is correct; its stated mechanism is not.
+
+**Status.** A literature check found **no source stating either the true or the
+false version** of statement one for a non-flat connection. The pieces exist —
+Calmon–Schaub–Bianconi (arXiv:2301.10137) prove the `±` pairing from
+block-off-diagonal structure alone, never invoking `d^2 = 0`, so their argument
+extends verbatim; Egidi–Gittins–Habib–Peyerimhoff (arXiv:2211.08019) study the
+continuum `d_alpha = d + i alpha wedge` with `d_alpha^2 != 0` — but nobody has
+put them together. Treat this as a computed assembly of known pieces whose
+conjunction appears unstated, not as new mathematics.
+
+**Two cautions recorded from the same check**, bounding what may be claimed:
+the diamagnetic inequality **fails** for magnetic Hodge Laplacians above degree
+zero, so the intuition that flux only raises the spectral gap does not survive;
+and no bottleneck- or Wasserstein-stability theorem exists for raw
+eigenvalue-valued persistence descriptors, the obstruction being structural —
+eigenvalues are not functorial under interleaving and operators change dimension
+along a filtration. At *fixed* combinatorics Weyl gives 1-Lipschitz dependence
+for free, which is all `weyl_bound_holds` claims.
+
 ## Tests
 
 ```bash
