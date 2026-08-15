@@ -3012,21 +3012,46 @@ state would both show up as a miscount. One number validates the apparatus.
 | line graph | `2n - 1` | — | 3 | 5 | 7 |
 | complete graph | `3(n - 1)` | — | 3 | 6 | 9 |
 
+Confirmed at `n = 5` by a full search of all **2 423 520** states (921 s):
+diameter 16, plus 5, GHZ 5, line graph 9, complete graph 12, mean 12.1871. Every
+law holds, and the state count matches exactly.
+
 I built this expecting structured states to sit far below typical ones with the
 gap widening in `n`. **The search refutes that.** GHZ and the complete-graph
 state are both maximally structured — each is a one-line rule — yet they differ
 by a factor of `3 - 3/n`, and the complete-graph state sits *exactly four gates*
 below the diameter at every size measured, essentially saturating it. So
-`structure_gap` **closes** (+1.17, +1.45, +0.86, +0.44) instead of widening.
+`structure_gap` **closes** (+1.17, +1.45, +0.86, +0.44, +0.19) instead of widening.
+
+**And the distribution concentrates there** — the stronger statement, which the
+`n = 5` mean exposed:
+
+| | n=1 | n=2 | n=3 | n=4 | n=5 |
+| --- | --- | --- | --- | --- | --- |
+| `mean - 3(n-1)` | — | 1.45 | 0.86 | 0.44 | **0.19** |
+| `diameter - mean` | 1.83 | 2.55 | 3.14 | 3.56 | **3.81** |
+
+The mean complexity converges to the complete-graph state's *exactly*, and
+`diameter - mean` converges to **4** — the same constant that separates the
+diameter from the complete-graph state at every size. Typical and maximal
+complexity differ by `O(1)`, not by anything that grows.
+
+That is the mechanism behind the refutation: almost every stabilizer state
+already sits within `O(1)` of the diameter, so there is no room below for a
+structured state to occupy. The cheap ones — GHZ at `n` against a diameter of
+`3n+1` — are a vanishing fraction (3.3% at `n=3`, 0.63% at `n=4`), and being a
+one-line rule is not what puts them there.
 
 > Optimising the **algorithm** changes nothing, by definition. Choosing a
 > structured **state** buys nothing in general — some structured states are as
 > hard as anything there is.
 
-**A test that failed and was right to.** `test_structure_does_not_imply_low_complexity`
-first asserted the complete-graph/GHZ ratio exceeds 2. It is `3 - 3/n`, which is
-*exactly* 2 at `n = 3`. The separation is real, but its size had to be read off
-the formula rather than guessed.
+**Two tests that failed and were right to.**
+`test_structure_does_not_imply_low_complexity` first asserted the
+complete-graph/GHZ ratio exceeds 2. It is `3 - 3/n`, which is *exactly* 2 at
+`n = 3`. And `test_this_is_why_structure_buys_nothing` used a fixed 2% cutoff on
+the cheap-state fraction, set without looking at `n = 3` where it is 3.3%. Both
+claims were about a *trend*; both tests had been written as thresholds.
 
 **What this does not claim.** The laws above are read off four points, not
 derived — the tests are the claim, not the formulas. And by Gottesman–Knill every

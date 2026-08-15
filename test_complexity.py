@@ -327,6 +327,117 @@ class TestTheRefutation:
             assert mean < complexity.diameter(qubits)
 
 
+#: Measured by a full search of all 2423520 five-qubit stabilizer states, which
+#: took 921 seconds.  Recorded rather than re-run: the search is far too slow for
+#: a test suite, but the numbers are the strongest confirmation the laws have.
+FIVE_QUBIT_MEASUREMENT = {
+    "states": 2423520,
+    "diameter": 16,
+    "mean": 12.1871,
+    "plus": 5,
+    "ghz": 5,
+    "line-graph": 9,
+    "complete-graph": 12,
+}
+
+
+class TestFiveQubitConfirmation:
+    """The laws checked at the largest size the search reaches.
+
+    These assert the *predictions* against measurements taken out of band, so
+    the suite stays fast.  If a law were wrong, the prediction and the recorded
+    number would disagree here.
+    """
+
+    def test_state_count(self):
+        assert (
+            complexity.stabilizer_state_count(5) == FIVE_QUBIT_MEASUREMENT["states"]
+        )
+
+    def test_diameter_law(self):
+        assert (
+            complexity.predicted_diameter(5) == FIVE_QUBIT_MEASUREMENT["diameter"]
+        )
+
+    def test_structured_laws(self):
+        predicted = complexity.predicted_structured_complexities(5)
+        for name in ("plus", "ghz", "line-graph", "complete-graph"):
+            assert predicted[name] == FIVE_QUBIT_MEASUREMENT[name], name
+
+    def test_complete_graph_gap_is_still_four(self):
+        assert (
+            FIVE_QUBIT_MEASUREMENT["diameter"]
+            - FIVE_QUBIT_MEASUREMENT["complete-graph"]
+            == complexity.CONCENTRATION_WIDTH
+        )
+
+    def test_mean_is_closing_on_the_complete_graph(self):
+        gap = FIVE_QUBIT_MEASUREMENT["mean"] - 3 * (5 - 1)
+        assert 0 < gap < complexity.mean_gap_to_complete_graph(4)
+
+
+class TestConcentration:
+    """Typical and maximal complexity differ by ``O(1)``."""
+
+    @pytest.mark.parametrize("qubits", [2, 3, 4])
+    def test_mean_sits_above_the_complete_graph(self, qubits: int):
+        assert complexity.mean_gap_to_complete_graph(qubits) > 0
+
+    def test_mean_gap_shrinks(self):
+        """``mean - 3(n-1)`` runs 1.45, 0.86, 0.44 and keeps closing."""
+        gaps = [complexity.mean_gap_to_complete_graph(n) for n in (2, 3, 4)]
+        assert gaps == sorted(gaps, reverse=True)
+
+    def test_diameter_minus_mean_grows_toward_the_width(self):
+        """1.83, 2.55, 3.14, 3.56 -- rising, and bounded by 4."""
+        gaps = [complexity.diameter_minus_mean(n) for n in (1, 2, 3, 4)]
+        assert gaps == sorted(gaps)
+        for gap in gaps:
+            assert gap < complexity.CONCENTRATION_WIDTH
+
+    def test_width_matches_the_complete_graph_gap(self):
+        """The same constant, reached two ways.
+
+        ``diameter - mean`` converges to it, and ``diameter - complete_graph``
+        equals it exactly at every size.
+        """
+        for qubits in (2, 3, 4):
+            measured = complexity.structured_complexities(qubits)["complete-graph"]
+            assert (
+                complexity.diameter(qubits) - measured
+                == complexity.CONCENTRATION_WIDTH
+            )
+
+    def test_rejects_single_qubit(self):
+        with pytest.raises(ValueError):
+            complexity.mean_gap_to_complete_graph(1)
+
+    def test_this_is_why_structure_buys_nothing(self):
+        """The mechanism behind the refutation.
+
+        Almost every stabilizer state already sits within ``O(1)`` of the
+        diameter, so there is no room below for a structured state to occupy.
+        The cheap ones -- GHZ at ``n`` against a diameter of ``3n+1`` -- are a
+        vanishing fraction, and being a one-line rule is not what puts them
+        there.
+
+        The claim is that the fraction *vanishes*, so the test is that it falls
+        with ``n`` -- 3.3 percent at ``n = 3``, 0.63 percent at ``n = 4``.  A
+        fixed cutoff is the wrong check and the first version used one, set at
+        two percent without looking at ``n = 3``.
+        """
+        fractions = []
+        for qubits in (2, 3, 4):
+            distribution = complexity.complexity_distribution(qubits)
+            total = sum(distribution.values())
+            cheap = sum(
+                count for depth, count in distribution.items() if depth <= qubits
+            )
+            fractions.append(cheap / total)
+        assert fractions == sorted(fractions, reverse=True)
+        assert fractions[-1] < 0.01
+
+
 class TestWhatThisDoesNotClaim:
     """The boundary, asserted so it cannot drift."""
 

@@ -35,12 +35,27 @@ the result.  Measured exactly for ``n = 1..4``:
     line graph        2n - 1        --,  3,  5,  7
     complete graph  3(n - 1)        --,  3,  6,  9
 
+Confirmed at ``n = 5`` by a full search of all 2423520 states (921 s): diameter
+16, plus 5, GHZ 5, line graph 9, complete graph 12, mean 12.1871.  Every law
+holds.
+
 **Structure does not imply low complexity.**  The GHZ state and the complete
 graph state are both maximally structured -- each is specified by a one-line
-rule -- yet they differ by a factor of three, and the complete graph state sits
-within four gates of the diameter, essentially saturating it.  Structured
-states span nearly the whole available range rather than clustering at the
-bottom.
+rule -- yet they differ by a factor of ``3 - 3/n``, and the complete graph state
+sits *exactly four gates* below the diameter at every size measured, essentially
+saturating it.
+
+**And the distribution concentrates there.**  The stronger statement, which the
+``n = 5`` mean exposed: ``mean - 3(n-1)`` runs 1.45, 0.86, 0.44, 0.19, so the
+mean complexity converges to the complete graph state's exactly, and
+``diameter - mean`` runs 1.83, 2.55, 3.14, 3.56, 3.81, converging to 4.  Typical
+and maximal complexity differ by ``O(1)``, not by anything that grows.
+
+That is why structure buys nothing here: almost every stabilizer state already
+has essentially maximal complexity, so there is no room below for a structured
+state to occupy.  The ones that are cheap -- GHZ at ``n``, against a diameter of
+``3n+1`` -- are a vanishing fraction, and being a one-line rule is not what puts
+them there.
 
 So `structure_gap`, which measures the mean minus the *hardest* named
 structured state, closes with ``n`` (+1.17, +1.45, +0.86, +0.44) instead of
@@ -117,6 +132,9 @@ __all__ = [
     "diameter_law_holds",
     "STRUCTURED_LAWS",
     "predicted_structured_complexities",
+    "CONCENTRATION_WIDTH",
+    "mean_gap_to_complete_graph",
+    "diameter_minus_mean",
     "MAX_EXACT_QUBITS",
 ]
 
@@ -520,6 +538,32 @@ def predicted_structured_complexities(qubits: int) -> dict[str, int]:
         predictions["line-graph"] = 2 * qubits - 1
         predictions["complete-graph"] = 3 * (qubits - 1)
     return predictions
+
+
+#: ``diameter - mean`` appears to converge to this, and it is also the constant
+#: gap between the diameter and the complete graph state at every measured size.
+CONCENTRATION_WIDTH: int = 4
+
+
+def mean_gap_to_complete_graph(qubits: int) -> float:
+    """``mean - 3(n-1)``: how far typical complexity sits above the complete graph.
+
+    Runs 1.45, 0.86, 0.44, 0.19 for ``n = 2..5`` -- shrinking toward zero, so
+    the mean converges to the complete graph state's complexity exactly.
+    """
+    if qubits < 2:
+        raise ValueError(f"needs at least two qubits, got {qubits}")
+    return typical_complexity(qubits) - 3 * (qubits - 1)
+
+
+def diameter_minus_mean(qubits: int) -> float:
+    """How far the hardest state sits above the typical one.
+
+    Runs 1.83, 2.55, 3.14, 3.56, 3.81 for ``n = 1..5``, converging to
+    `CONCENTRATION_WIDTH`.  Bounded, so typical and maximal complexity differ by
+    ``O(1)`` -- the distribution concentrates just below the diameter.
+    """
+    return diameter(qubits) - typical_complexity(qubits)
 
 
 def structure_gap(qubits: int) -> float:
