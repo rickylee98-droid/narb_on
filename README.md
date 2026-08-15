@@ -2856,6 +2856,39 @@ gives. So:
 Both readings leave the icosahedral group free, and a test asserts they agree
 across the whole classification on *which* groups need no tuning at all.
 
+### Does the fracton route escape? No.
+
+Symmetric tensor gauge theory is the known way around Weinberg–Witten: replace
+`delta h_ij = d_(i xi_j)` with `delta A_ij = d_i d_j phi` (Pretko), and pay for
+it with mobility restrictions on the charges. It does not escape this
+obstruction, and the argument is one line:
+
+> The obstruction is a property of the **field**, and both theories use the same
+> field, `Sym^2(vector) = l0 + l2`. A different gauge parameter changes which
+> polarisations survive; it cannot fuse two distinct point-group irreducibles
+> back into one.
+
+`field_splitting_is_theory_independent` asserts the equality across the whole
+classification, and `fracton_evades_obstruction` returns `False` on every group.
+Splitting values are identical for both theories: `T` → 2, `O` → 1, `I` → 0.
+
+What the gauge parameter *does* change is the surviving helicity content:
+
+| theory | gauge parameter | field − parameter | helicities |
+| --- | --- | --- | --- |
+| linearised gravity | `xi_i` (`l=1`), 1 derivative | 6 − 3 = 3 | `{0, ±2}` |
+| scalar-charge fracton | `phi` (`l=0`), 2 derivatives | 6 − 1 = 5 | `{0, ±1, ±2}` |
+
+Gravity's gauge parameter removes the helicity `±1` content entirely; the
+fracton's does not. That is the rigorous distinction.
+
+**A function that oversold, corrected.** The first version asserted the gauge
+quotient isolates the `±2` pair — and it returned `False` for *gravity*, because
+the quotient leaves `{0, ±2}` and the residual helicity-zero mode is the
+Newtonian piece removed by the Hamiltonian constraint, not by gauge. Constraint
+structure is not computed here. `carries_only_helicity_two` is now named for what
+it measures: gauge orbits, not propagating modes.
+
 **What this does not claim.** Protection is necessary, not sufficient.
 Icosahedral symmetry keeps the multiplet whole and forces elastic isotropy; it
 supplies neither a massless dispersion, nor diffeomorphism invariance, nor any
@@ -2866,9 +2899,11 @@ model can still be tuned, at a cost of exactly one parameter.
 crystallographic restriction, the character theory, and the textbook cubic
 splitting `l = 2 -> E_g + T_2g`. What is assembled is the conjunction read as a
 no-go, plus the commutant reading that turns the same norm into a fine-tuning
-count. Literature access was unavailable when this was written (arxiv.org is
-egress-blocked here and web search was rate limited), so the framing is
-**unverified** and may be a rediscovery. The arithmetic is exact regardless.
+count. I could not run the search myself (arxiv.org is egress-blocked here and web
+search was rate limited); the literature check was carried out by the repository
+owner, who reports no prior statement of the conjunction. The novelty claim
+therefore rests on someone else's search, not mine. The arithmetic is exact
+independently of that.
 
 ## Tests
 

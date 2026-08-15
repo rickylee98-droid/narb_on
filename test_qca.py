@@ -510,6 +510,149 @@ class TestElasticConstants:
             assert free_as_states == free_as_field, group.name
 
 
+class TestSO3Decomposition:
+    """The exact decomposer, checked against things whose answers are known."""
+
+    def test_vector_is_spin_one(self):
+        assert qca.so3_multiplicities(qca._spin_shifts(1)) == {1: 1}
+
+    def test_symmetric_tensor_splits_as_scalar_plus_quadrupole(self):
+        assert qca.so3_multiplicities(qca.symmetric_tensor_field()) == {0: 1, 2: 1}
+
+    def test_symmetric_tensor_has_six_components(self):
+        content = qca.so3_multiplicities(qca.symmetric_tensor_field())
+        assert sum(mult * (2 * spin + 1) for spin, mult in content.items()) == 6
+
+    def test_elastic_tensor_has_the_lame_pair(self):
+        elastic = qca._shift_symmetric_square(qca.symmetric_tensor_field())
+        assert qca.so3_invariant_count(elastic) == qca.ISOTROPIC_ELASTIC_CONSTANTS
+
+    def test_symmetric_tensor_has_one_invariant(self):
+        """The trace, and nothing else."""
+        assert qca.so3_invariant_count(qca.symmetric_tensor_field()) == 1
+
+    def test_agrees_with_isotropic_coupling_count(self):
+        """A second path to the same numbers as `isotropic_coupling_count`."""
+        for spin in range(3):
+            operator = {shift: Fraction(0) for shift in ()}
+            for component in qca.operator_multiplet_content(spin):
+                for shift, coeff in qca._spin_shifts(component).items():
+                    operator[shift] = operator.get(shift, Fraction(0)) + coeff
+            assert qca.so3_multiplicities(operator) == {
+                component: 1 for component in qca.operator_multiplet_content(spin)
+            }
+
+    def test_rejects_asymmetric_character(self):
+        with pytest.raises(ValueError, match="symmetric"):
+            qca.so3_multiplicities({0: Fraction(1), 1: Fraction(1)})
+
+    def test_rejects_virtual_character(self):
+        with pytest.raises(ArithmeticError, match="negative"):
+            qca.so3_multiplicities(
+                {0: Fraction(1), 1: Fraction(2), -1: Fraction(2)}
+            )
+
+    def test_empty_is_empty(self):
+        assert qca.so3_multiplicities({}) == {}
+
+
+class TestFractonRoute:
+    """Does symmetric tensor gauge theory escape the point-group obstruction?
+
+    It does not, and the argument is one line: the obstruction is a property of
+    the *field*, both theories use the same field, and changing the gauge
+    parameter cannot fuse two distinct point-group irreducibles back into one.
+    """
+
+    def test_both_theories_use_the_same_field(self):
+        assert (
+            qca.LINEARIZED_GRAVITY.field == qca.SCALAR_CHARGE_FRACTON.field
+        ), "the shared field is the whole reason the route fails"
+
+    def test_gauge_parameters_differ(self):
+        assert qca.so3_multiplicities(qca.LINEARIZED_GRAVITY.gauge_parameter) == {1: 1}
+        assert qca.so3_multiplicities(qca.SCALAR_CHARGE_FRACTON.gauge_parameter) == {
+            0: 1
+        }
+        assert qca.LINEARIZED_GRAVITY.gauge_derivatives == 1
+        assert qca.SCALAR_CHARGE_FRACTON.gauge_derivatives == 2
+
+    def test_field_helicity_content(self):
+        content = qca.helicity_content(qca.symmetric_tensor_field())
+        assert content == {-2: 1, -1: 1, 0: 2, 1: 1, 2: 1}
+        assert sum(content.values()) == 6
+
+    @pytest.mark.parametrize(
+        "theory, helicities, total",
+        [
+            (qca.LINEARIZED_GRAVITY, {-2: 1, 0: 1, 2: 1}, 3),
+            (qca.SCALAR_CHARGE_FRACTON, {-2: 1, -1: 1, 0: 1, 1: 1, 2: 1}, 5),
+        ],
+        ids=["gravity", "fracton"],
+    )
+    def test_gauge_quotient(
+        self, theory: qca.GaugeTheory, helicities: dict[int, int], total: int
+    ):
+        assert qca.gauge_invariant_helicities(theory) == helicities
+        assert qca.gauge_invariant_polarisation_count(theory) == total
+
+    def test_gravity_removes_helicity_one_and_fracton_does_not(self):
+        """The rigorous distinction between the two theories."""
+        assert qca.carries_only_helicity_two(qca.LINEARIZED_GRAVITY)
+        assert not qca.carries_only_helicity_two(qca.SCALAR_CHARGE_FRACTON)
+        assert 1 in qca.gauge_invariant_helicities(qca.SCALAR_CHARGE_FRACTON)
+        assert 1 not in qca.gauge_invariant_helicities(qca.LINEARIZED_GRAVITY)
+
+    @pytest.mark.parametrize("group", ALL_GROUPS, ids=lambda g: g.name)
+    def test_splitting_is_theory_independent(self, group: qca.RotationGroup):
+        assert qca.field_splitting(qca.LINEARIZED_GRAVITY, group) == qca.field_splitting(
+            qca.SCALAR_CHARGE_FRACTON, group
+        )
+
+    def test_splitting_is_theory_independent_globally(self):
+        assert qca.field_splitting_is_theory_independent() is True
+
+    @pytest.mark.parametrize("group", ALL_GROUPS, ids=lambda g: g.name)
+    def test_the_answer(self, group: qca.RotationGroup):
+        """The fracton route evades the obstruction on exactly no group."""
+        assert qca.fracton_evades_obstruction(group) is False
+
+    @pytest.mark.parametrize(
+        "group, splitting",
+        [(qca.TETRAHEDRAL, 2), (qca.OCTAHEDRAL, 1), (qca.ICOSAHEDRAL, 0)],
+        ids=["T", "O", "I"],
+    )
+    def test_splitting_values(self, group: qca.RotationGroup, splitting: int):
+        assert qca.field_splitting(qca.SCALAR_CHARGE_FRACTON, group) == splitting
+
+    def test_splitting_matches_the_quadrupole_tuning_cost(self):
+        """The field's splitting is the ``l = 2`` part's, since ``l = 0`` never splits."""
+        for group in qca.finite_rotation_groups(6):
+            assert qca.field_splitting(qca.LINEARIZED_GRAVITY, group) == qca.tuning_cost(
+                2, group
+            )
+
+    def test_rejects_derivativeless_gauge_transformation(self):
+        with pytest.raises(ValueError, match="derivative"):
+            qca.GaugeTheory(
+                name="bad",
+                field=qca.symmetric_tensor_field(),
+                gauge_parameter=qca._spin_shifts(1),
+                gauge_derivatives=0,
+            )
+
+    def test_rejects_oversized_gauge_parameter(self):
+        """A parameter carrying more of a helicity than the field cannot be quotiented."""
+        theory = qca.GaugeTheory(
+            name="bad",
+            field=qca._spin_shifts(0),
+            gauge_parameter=qca._spin_shifts(1),
+            gauge_derivatives=1,
+        )
+        with pytest.raises(ArithmeticError, match="more helicity"):
+            qca.gauge_invariant_helicities(theory)
+
+
 class TestHelicityAliasing:
     @pytest.mark.parametrize("axis_order", [1, 2, 3, 4, 5, 6, 7])
     def test_modulus(self, axis_order: int):

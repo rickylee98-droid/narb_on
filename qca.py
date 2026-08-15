@@ -121,15 +121,44 @@ and the fact that ``l = 2`` restricted to the icosahedral group is the
 five-dimensional irrep ``H``.  Solid-state texts routinely quote the cubic
 splitting ``l = 2 -> E_g + T_2g``.
 
-What is assembled here, and what I have not seen stated, is the *conjunction*
-read as a no-go for emergent gravity on lattices: that the maximal irrep
-dimension of finite ``SO(3)`` subgroups reproduces the massless-helicity bound,
-that spin two singles out the unique non-crystallographic case, and that the
-commutant dimension turns the same character norm into an explicit count of
-how many parameters an emergent-graviton construction must tune.  If this is in
-the literature it is a rediscovery; I could not check, because arxiv.org is
-blocked from this environment and web search was rate limited.  Treat the
-framing as unverified and the arithmetic as exact.
+What is assembled here is the *conjunction* read as a no-go for emergent gravity
+on lattices: that the maximal irrep dimension of finite ``SO(3)`` subgroups
+reproduces the massless-helicity bound, that spin two singles out the unique
+non-crystallographic case, and that the commutant dimension turns the same
+character norm into an explicit count of how many parameters an
+emergent-graviton construction must tune.
+
+Provenance of that claim: I could not run the search myself -- arxiv.org is
+blocked from this environment and web search was rate limited -- and the
+literature check was carried out by the repository owner, who reports no prior
+statement of the conjunction.  So the novelty rests on someone else's search,
+not on mine.  The arithmetic is exact independently of that.
+
+Does the fracton route escape?
+------------------------------
+
+Symmetric tensor gauge theory is the known way around Weinberg-Witten: replace
+``delta h_ij = d_(i xi_j)`` with ``delta A_ij = d_i d_j phi``, and pay for it
+with mobility restrictions on the charges.  It does not escape this obstruction,
+and the reason is short enough to state in the docstring: the obstruction is a
+property of the *field*, and both theories use the same field, ``Sym^2`` of the
+vector representation.  A different gauge parameter changes which polarisations
+survive; it cannot fuse two distinct point-group irreducibles back into one.
+`field_splitting_is_theory_independent` asserts the equality across the whole
+classification, and `fracton_evades_obstruction` is ``False`` on every group.
+
+What the gauge parameter *does* change is the surviving helicity content, and
+there the two part company cleanly:
+
+    linearised gravity     6 field - 3 parameter = 3   helicities {0, +-2}
+    scalar charge fracton  6 field - 1 parameter = 5   helicities {0, +-1, +-2}
+
+Gravity's gauge parameter removes the helicity ``+-1`` content entirely; the
+fracton's does not.  That is the rigorous distinction.  The residual
+helicity-zero mode in gravity is the Newtonian piece and is removed by the
+Hamiltonian constraint, which is *not* computed here -- so this counts gauge
+orbits, not propagating modes, and `carries_only_helicity_two` is named for what
+it actually measures.
 
 Referees
 --------
@@ -190,6 +219,20 @@ __all__ = [
     "ISOTROPIC_ELASTIC_CONSTANTS",
     "is_elastically_isotropic",
     "elastic_excess",
+    "so3_multiplicities",
+    "so3_invariant_count",
+    "symmetric_tensor_field",
+    "GaugeTheory",
+    "helicity_content",
+    "gauge_invariant_helicities",
+    "gauge_invariant_polarisation_count",
+    "carries_only_helicity_two",
+    "LINEARIZED_GRAVITY",
+    "SCALAR_CHARGE_FRACTON",
+    "GAUGE_THEORIES",
+    "field_splitting",
+    "fracton_evades_obstruction",
+    "field_splitting_is_theory_independent",
     "helicity_alias_modulus",
     "helicity_is_resolved",
     "minimal_axis_order",
@@ -850,6 +893,239 @@ def elastic_excess(group: RotationGroup) -> int:
     one.  For the icosahedral group it is ``0``.
     """
     return elastic_constant_count(group) - ISOTROPIC_ELASTIC_CONSTANTS
+
+
+# ---------------------------------------------------------------------------
+# gauge structure: does the fracton route evade any of this?
+# ---------------------------------------------------------------------------
+#
+# Symmetric tensor gauge theory is the known way around Weinberg-Witten: rather
+# than a metric with delta h_ij = d_(i xi_j), one takes a symmetric rank-2 gauge
+# field with delta A_ij = d_i d_j phi.  The mobility restrictions on the charges
+# (fractons) are the price.  The question this section settles is whether that
+# also buys an escape from the point-group obstruction above.
+#
+# It does not, and the reason is short: the obstruction is a statement about the
+# *field*, and both theories use the same field.  Changing the gauge parameter
+# changes which polarisations are physical; it cannot merge two distinct irreps
+# of the point group back into one.
+
+
+def so3_multiplicities(shifts: dict[int, Fraction]) -> dict[int, int]:
+    """Decompose a virtual character into ``SO(3)`` multiplets, exactly.
+
+    In the shift basis a character is ``sum_d c_d zeta^{d t}``, and since
+    ``chi_l`` contributes ``1`` to every shift with ``|d| <= l``, the coefficient
+    at shift ``d`` is ``sum_{l >= |d|} m_l``.  Telescoping gives
+    ``m_l = c_l - c_{l+1}``.
+    """
+    if not shifts:
+        return {}
+    for shift, coeff in shifts.items():
+        mirrored = shifts.get(-shift, Fraction(0))
+        if coeff != mirrored:
+            raise ValueError(
+                f"character is not symmetric under d -> -d at shift {shift}: "
+                f"{coeff} vs {mirrored}"
+            )
+    top = max(abs(shift) for shift in shifts)
+    multiplicities: dict[int, int] = {}
+    for spin in range(top + 1):
+        value = shifts.get(spin, Fraction(0)) - shifts.get(spin + 1, Fraction(0))
+        if value.denominator != 1:
+            raise ArithmeticError(
+                f"multiplicity of spin {spin} is not an integer: {value}"
+            )
+        if value < 0:
+            raise ArithmeticError(
+                f"multiplicity of spin {spin} is negative: {value}; "
+                "this is a virtual character, not a representation"
+            )
+        if value:
+            multiplicities[spin] = int(value)
+    return multiplicities
+
+
+def so3_invariant_count(shifts: dict[int, Fraction]) -> int:
+    """How many ``SO(3)`` invariants a constructed representation carries."""
+    return so3_multiplicities(shifts).get(0, 0)
+
+
+def symmetric_tensor_field() -> dict[int, Fraction]:
+    """``Sym^2`` of the vector representation: a symmetric rank-2 field.
+
+    Six components, decomposing as ``l = 0`` plus ``l = 2``.  This is the field
+    of linearised gravity *and* the field of a symmetric tensor gauge theory --
+    they differ in their gauge transformation, not in their field content, which
+    is the whole reason the fracton route does not evade the obstruction.
+    """
+    return _shift_symmetric_square(_spin_shifts(1))
+
+
+@dataclass(frozen=True)
+class GaugeTheory:
+    """A linear gauge theory of a symmetric rank-2 field.
+
+    Attributes
+    ----------
+    name:
+        Human readable label.
+    field:
+        Virtual character of the field, in the shift basis.
+    gauge_parameter:
+        Virtual character of the gauge parameter.
+    gauge_derivatives:
+        How many derivatives appear in the gauge transformation.  One for
+        ``delta h_ij = d_(i xi_j)``, two for ``delta A_ij = d_i d_j phi``.
+    """
+
+    name: str
+    field: dict[int, Fraction]
+    gauge_parameter: dict[int, Fraction]
+    gauge_derivatives: int
+
+    def __post_init__(self) -> None:
+        if self.gauge_derivatives < 1:
+            raise ValueError(
+                f"{self.name}: gauge transformation needs at least one derivative, "
+                f"got {self.gauge_derivatives}"
+            )
+        so3_multiplicities(self.field)
+        so3_multiplicities(self.gauge_parameter)
+
+
+def helicity_content(shifts: dict[int, Fraction]) -> dict[int, int]:
+    """Helicities carried at fixed non-zero momentum.
+
+    The little group of a non-zero momentum is the ``SO(2)`` of rotations about
+    it, whose irreducibles are labelled by helicity -- and in the shift basis the
+    shift *is* the helicity, so this is a relabelling with a check attached.
+    """
+    content: dict[int, int] = {}
+    for shift, coeff in shifts.items():
+        if coeff.denominator != 1:
+            raise ArithmeticError(f"helicity {shift} has fractional weight {coeff}")
+        if coeff < 0:
+            raise ArithmeticError(f"helicity {shift} has negative weight {coeff}")
+        if coeff:
+            content[shift] = int(coeff)
+    return content
+
+
+def gauge_invariant_helicities(theory: GaugeTheory) -> dict[int, int]:
+    """Helicities surviving the gauge quotient at fixed non-zero momentum.
+
+    At momentum ``k`` the gauge orbit through a configuration is the image of
+    the parameter under ``k^p`` contracted appropriately.  That map is injective
+    for ``k != 0``, and ``k`` itself carries helicity zero, so the image has the
+    same helicity content as the parameter.  The physical content is therefore
+    the field's helicities minus the parameter's, as multisets.
+    """
+    surviving = dict(helicity_content(theory.field))
+    for helicity, count in helicity_content(theory.gauge_parameter).items():
+        remaining = surviving.get(helicity, 0) - count
+        if remaining < 0:
+            raise ArithmeticError(
+                f"{theory.name}: gauge parameter carries more helicity "
+                f"{helicity} than the field does"
+            )
+        if remaining:
+            surviving[helicity] = remaining
+        else:
+            surviving.pop(helicity, None)
+    return surviving
+
+
+def gauge_invariant_polarisation_count(theory: GaugeTheory) -> int:
+    """Total gauge-invariant polarisations at fixed non-zero momentum."""
+    return sum(gauge_invariant_helicities(theory).values())
+
+
+def carries_only_helicity_two(theory: GaugeTheory) -> bool:
+    """Are the surviving *non-zero* helicities exactly ``+-2``?
+
+    This is the honest form of "does it describe a graviton", and the
+    qualification matters.  The gauge quotient alone leaves linearised gravity
+    with ``{0, +-2}``, not ``{+-2}``: the residual helicity-zero mode is the
+    Newtonian piece, removed by the Hamiltonian constraint rather than by gauge.
+    Constraint structure is not computed here, so a function claiming to isolate
+    the ``+-2`` pair outright would be claiming more than the arithmetic
+    supports -- the first version of this did exactly that and reported ``False``
+    for gravity itself.
+
+    What is computed, and is rigorous: gravity's gauge parameter removes the
+    helicity ``+-1`` content entirely, and the fracton's does not.
+
+        linearised gravity     {0, +-2}   -> True
+        scalar charge fracton  {0, +-1, +-2} -> False
+    """
+    nonzero = {
+        helicity
+        for helicity in gauge_invariant_helicities(theory)
+        if helicity != 0
+    }
+    return nonzero == {2, -2}
+
+
+#: Linearised gravity: ``delta h_ij = d_(i xi_j)`` with a vector parameter.
+LINEARIZED_GRAVITY = GaugeTheory(
+    name="linearised gravity",
+    field=symmetric_tensor_field(),
+    gauge_parameter=_spin_shifts(1),
+    gauge_derivatives=1,
+)
+
+#: Pretko's scalar charge theory: ``delta A_ij = d_i d_j phi``, a scalar parameter.
+SCALAR_CHARGE_FRACTON = GaugeTheory(
+    name="scalar charge fracton",
+    field=symmetric_tensor_field(),
+    gauge_parameter=_spin_shifts(0),
+    gauge_derivatives=2,
+)
+
+#: The gauge theories compared here.
+GAUGE_THEORIES: tuple[GaugeTheory, ...] = (LINEARIZED_GRAVITY, SCALAR_CHARGE_FRACTON)
+
+
+def field_splitting(theory: GaugeTheory, group: RotationGroup) -> int:
+    """Independent ``G``-invariant couplings on the field, beyond the isotropic ones.
+
+    Depends on `GaugeTheory.field` alone.  Every theory built on a symmetric
+    rank-2 field returns the same number, which is the point.
+    """
+    lattice = sum(
+        multiplicity * character_norm(spin, group)
+        for spin, multiplicity in so3_multiplicities(theory.field).items()
+    )
+    isotropic = sum(so3_multiplicities(theory.field).values())
+    return lattice - isotropic
+
+
+def fracton_evades_obstruction(group: RotationGroup) -> bool:
+    """Does the symmetric tensor gauge route escape the point-group splitting?
+
+    ``False`` on every crystallographic group, and the argument is one line: the
+    obstruction is a property of the field, both theories use the same field, so
+    both inherit the same splitting.  Changing the gauge parameter changes which
+    polarisations survive; it cannot fuse two distinct point-group irreducibles
+    back into one.
+    """
+    return field_splitting(SCALAR_CHARGE_FRACTON, group) < field_splitting(
+        LINEARIZED_GRAVITY, group
+    )
+
+
+def field_splitting_is_theory_independent(bound: int = 10) -> bool:
+    """Do all symmetric rank-2 gauge theories inherit identical splitting?
+
+    The reason `fracton_evades_obstruction` is ``False`` everywhere, stated
+    positively so it cannot be mistaken for an accident of the comparison.
+    """
+    return all(
+        field_splitting(LINEARIZED_GRAVITY, group)
+        == field_splitting(SCALAR_CHARGE_FRACTON, group)
+        for group in finite_rotation_groups(bound)
+    )
 
 
 # ---------------------------------------------------------------------------
