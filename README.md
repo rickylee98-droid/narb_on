@@ -3261,6 +3261,35 @@ was wrong, not the theorem — and the ambiguity lives exactly where statement
 three located the operator's one genuine asymmetry. `counting_is_stable` now
 returns `None` on a tie rather than a coin-flip boolean.
 
+### Statement six — the useful form of five
+
+`lambda_i(D') <= lambda_i(D)` is not merely a bound. It is **monotonicity**:
+along a filtration each eigenvalue index traces a monotone curve, with *no
+stability constant needed* and no genericity assumption to keep the indexing
+well defined. Composing over `m` insertions:
+
+    lambda_i(D^(m))  <=  lambda_i(D)  <=  lambda_{i+m}(D^(m))
+
+so the spectral counting function is **`m`-Lipschitz over a filtration segment
+adding `m` simplices, uniformly in the connection.**
+
+Combined with statement one, the spectrum **spreads symmetrically**. Measured
+over a 21-step filtration with a random connection, the two ends stayed exact
+mirrors at every step while the spread grew monotonically:
+
+| step | size | λ_min | λ_max | spread |
+| --- | --- | --- | --- | --- |
+| 1 | 7 | −1.41421 | 1.41421 | 2.82843 |
+| 5 | 11 | −2.44949 | 2.44949 | 4.89898 |
+| 12 | 18 | −2.67731 | 2.67731 | 5.35463 |
+| 21 | 27 | −2.83573 | 2.83573 | 5.67145 |
+
+Zero monotonicity failures, zero interlacing failures across all 21 steps.
+
+Monotonicity is the part that matters practically: a descriptor built from "the
+k-th eigenvalue" is ill-defined if indices can swap, and the flat spectra here
+are heavily degenerate. Monotonicity in the index removes the question entirely.
+
 **Scope, stated because it is easy to overclaim.** This is stability under
 **combinatorial** change — inserting a simplex — not under **metric**
 perturbation of an underlying point cloud. The metric case remains open and

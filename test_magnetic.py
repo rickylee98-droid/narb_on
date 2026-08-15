@@ -414,3 +414,81 @@ class TestStatementFiveInterlacing:
         assert "combinatorial" in magnetic.__doc__
         assert "metric" in magnetic.__doc__
         assert not hasattr(magnetic, "metric_stability")
+
+
+class TestStatementSixMonotonicity:
+    """The useful form of interlacing: monotone spectral curves."""
+
+    @pytest.mark.parametrize("angles", ANGLE_SETS, ids=["zero", "mild", "strong", "wild"])
+    def test_eigenvalues_are_monotone(self, angles):
+        weight = _phase(angles)
+        assert magnetic.eigenvalues_are_monotone(
+            magnetic.general_dirac(BASE, weight),
+            magnetic.general_dirac(INSERTED, weight),
+        )
+
+    @pytest.mark.parametrize("angles", ANGLE_SETS, ids=["zero", "mild", "strong", "wild"])
+    def test_composed_interlacing(self, angles):
+        """Holds for a multi-simplex jump, not just a single insertion."""
+        weight = _phase(angles)
+        bigger = _close(BASE_FACES + [(0, 1, 2), (1, 2, 3)])
+        assert magnetic.composed_interlacing(
+            magnetic.general_dirac(BASE, weight),
+            magnetic.general_dirac(bigger, weight),
+        )
+        assert (
+            magnetic.counting_shift_bound(BASE, bigger) == len(bigger) - len(BASE)
+        )
+
+    def test_single_insertion_is_the_m_equals_one_case(self):
+        weight = _phase(ANGLE_SETS[2])
+        before = magnetic.general_dirac(BASE, weight)
+        after = magnetic.general_dirac(INSERTED, weight)
+        assert magnetic.composed_interlacing(before, after)
+        assert magnetic.interlaces(before, after)
+        assert magnetic.counting_shift_bound(BASE, INSERTED) == 1
+
+    @pytest.mark.parametrize("angles", ANGLE_SETS, ids=["zero", "mild", "strong", "wild"])
+    def test_spread_is_non_decreasing(self, angles):
+        weight = _phase(angles)
+        assert magnetic.spectral_spread(
+            magnetic.general_dirac(INSERTED, weight)
+        ) >= magnetic.spectral_spread(magnetic.general_dirac(BASE, weight)) - 1e-9
+
+    @pytest.mark.parametrize("angles", ANGLE_SETS, ids=["zero", "mild", "strong", "wild"])
+    def test_spread_is_twice_the_largest_eigenvalue(self, angles):
+        """Statements one and six together: the ends are exact mirrors."""
+        weight = _phase(angles)
+        values = np.linalg.eigvalsh(magnetic.general_dirac(INSERTED, weight))
+        assert magnetic.spectral_spread(
+            magnetic.general_dirac(INSERTED, weight)
+        ) == pytest.approx(2 * values.max(), abs=1e-9)
+
+    def test_monotonicity_rejects_shrinking(self):
+        weight = _phase(ANGLE_SETS[1])
+        with pytest.raises(ValueError, match="shrink"):
+            magnetic.eigenvalues_are_monotone(
+                magnetic.general_dirac(INSERTED, weight),
+                magnetic.general_dirac(BASE, weight),
+            )
+        with pytest.raises(ValueError, match="shrink"):
+            magnetic.composed_interlacing(
+                magnetic.general_dirac(INSERTED, weight),
+                magnetic.general_dirac(BASE, weight),
+            )
+
+    def test_monotone_curves_need_no_genericity_assumption(self):
+        """Why monotonicity matters: the indexing never needs a crossing rule.
+
+        A descriptor built from "the k-th eigenvalue" is ill-defined if indices
+        can swap.  Monotonicity in the index removes the question, so the curve
+        is well defined even through degeneracies -- and the flat spectra here
+        are heavily degenerate.
+        """
+        weight = _phase({})
+        before = magnetic.general_dirac(BASE, weight)
+        after = magnetic.general_dirac(INSERTED, weight)
+        assert magnetic.eigenvalues_are_monotone(before, after)
+        assert len(set(np.round(np.linalg.eigvalsh(before), 9))) < len(
+            np.linalg.eigvalsh(before)
+        )
