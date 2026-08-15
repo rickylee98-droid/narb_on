@@ -2979,6 +2979,61 @@ are all statements about noise, current and gate count. The incompleteness half
 of the conjecture contributes nothing, and pretending otherwise would be the
 overclaim.
 
+## A twenty-first target: exact circuit complexity of stabilizer states
+
+`complexity.py` answers the Brown–Susskind brief — does optimising an algorithm
+shrink the wormhole? **No, and it needs no computation.** Complexity is *defined*
+as the minimum gate count over all circuits preparing a state. An optimised
+circuit prepares the same state and was already in the set the minimum ranged
+over. Nothing shrinks. (The random-circuit side is also less open than the brief
+suggests: Haferkamp, Faist, Kothakonda, Eisert and Yunger Halpern proved linear
+growth of exact complexity there.)
+
+The question that survives is about *states*, and on stabilizer states it is
+decidable rather than estimable. Breadth-first search from `|0...0>` under
+`{H, S, CNOT}` returns the exact minimal gate count for every reachable state —
+a true minimum over all circuits, not a bound from one construction.
+
+**The referee.** The number of `n`-qubit stabilizer states is known in closed
+form, `2^n prod (2^k + 1)` = 6, 60, 1080, 36720. The search must enumerate
+exactly that many, and does. Nothing in the tableau, canonical form or gate
+rules was built to make that come out — a sign error in the Pauli-product
+bookkeeping or a canonical form that failed to identify two descriptions of one
+state would both show up as a miscount. One number validates the apparatus.
+
+**What came out, which is not what I expected.**
+
+| quantity | law | n=1 | n=2 | n=3 | n=4 |
+| --- | --- | --- | --- | --- | --- |
+| diameter | `3n + 1` | 4 | 7 | 10 | 13 |
+| mean | `~2.4n` | 2.17 | 4.45 | 6.86 | 9.44 |
+| `|+>^n` | `n` | 1 | 2 | 3 | 4 |
+| GHZ | `n` | — | 2 | 3 | 4 |
+| line graph | `2n - 1` | — | 3 | 5 | 7 |
+| complete graph | `3(n - 1)` | — | 3 | 6 | 9 |
+
+I built this expecting structured states to sit far below typical ones with the
+gap widening in `n`. **The search refutes that.** GHZ and the complete-graph
+state are both maximally structured — each is a one-line rule — yet they differ
+by a factor of `3 - 3/n`, and the complete-graph state sits *exactly four gates*
+below the diameter at every size measured, essentially saturating it. So
+`structure_gap` **closes** (+1.17, +1.45, +0.86, +0.44) instead of widening.
+
+> Optimising the **algorithm** changes nothing, by definition. Choosing a
+> structured **state** buys nothing in general — some structured states are as
+> hard as anything there is.
+
+**A test that failed and was right to.** `test_structure_does_not_imply_low_complexity`
+first asserted the complete-graph/GHZ ratio exceeds 2. It is `3 - 3/n`, which is
+*exactly* 2 at `n = 3`. The separation is real, but its size had to be read off
+the formula rather than guessed.
+
+**What this does not claim.** The laws above are read off four points, not
+derived — the tests are the claim, not the formulas. And by Gottesman–Knill every
+state here is classically simulable, so this measures exact minimal *Clifford*
+complexity and says nothing about quantum advantage or about the states Shor's
+algorithm produces. No volume, no tensor network, no bulk is constructed.
+
 ## Tests
 
 ```bash
