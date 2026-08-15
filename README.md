@@ -2728,6 +2728,73 @@ models an order book, and no claim is made that real markets present rank-2 payo
 python -c "import quantumcoord as q; print(q.marginal_divergence(), q.detection_divergence(), q.rounds_to_detect(1e-3))"
 ```
 
+## A nineteenth target: which spins a discrete structure can protect
+
+`qca.py` asks the one exact question underneath "can a quantum cellular automaton
+produce gravity": for which finite `G < SO(3)` does the spin-`s` multiplet survive
+restriction as a single irreducible object? A multiplet that splits acquires an
+independent coupling — and an independent velocity — per piece, so restoring
+isotropy costs a tuned parameter for every piece beyond the first. A multiplet
+that stays irreducible is protected outright by Schur's lemma.
+
+One number answers both halves. The character norm
+
+    <chi_l, chi_l>_G = (1/|G|) sum_g |chi_l(g)|^2
+
+is simultaneously the sum of squared multiplicities (so it is 1 exactly when the
+multiplet is irreducible) and the dimension of the commutant — the number of
+independent invariant couplings. `tuning_cost` is that norm minus one.
+
+Computing it over the full ADE classification `C_n, D_n, T, O, I`:
+
+| spin | dimension | protected by | tuning cost on a cube |
+| --- | --- | --- | --- |
+| 1 (photon) | 3 | T, O, I | 0 |
+| 2 (graviton) | 5 | **I alone** | 1 |
+| 3 and above | 7+ | nothing | 2+ |
+
+The `s <= 2` ceiling is derived, not assumed: the largest irrep of any finite
+subgroup of `SO(3)` has dimension 5, and `5 = 2*2 + 1`. That is the
+Weinberg–Witten massless-helicity bound, reached from finite group theory rather
+than from a Lorentz-covariant stress tensor.
+
+The second half is the crystallographic restriction theorem — periodic lattices
+admit rotations of order 1, 2, 3, 4, 6 only, so none is icosahedral. Together:
+
+> An emergent photon is symmetry-protected on ordinary lattices. An emergent
+> graviton is protected only on icosahedral — hence quasicrystalline, hence
+> aperiodic — structures. Nothing above spin two is protected anywhere.
+
+Exactness is not decorative here: sympy's trigonometric simplifier fails to close
+these cyclotomic sums already at a seventh of a turn. Every character sum is built
+as a polynomial in `x` and reduced modulo the `L`-th cyclotomic polynomial, which
+is arithmetic in `Z[zeta_L]` and needs no simplifier to be clever.
+
+**Referees.** The polyhedral class data is confirmed by recomputing three classical
+invariant degrees that were never fed in — lowest invariant at `l = 3` for the
+tetrahedral group, `l = 4` for the octahedral (the cubic harmonic `K_4`), and
+`l = 6` for the icosahedral. Every exact result is independently recomputed in
+floating point, and the cyclic-group norms a third time by counting residues.
+
+**A weaker argument that does not suffice, kept as a test.** Helicity on an
+`n`-fold axis is defined only mod `n`, which gives `n >= 2s+1`, so `n >= 5` for
+spin two — but a six-fold axis clears that and *is* crystallographic. The
+single-axis argument alone leaves a periodic graviton open;
+`aliasing_is_insufficient` asserts the gap.
+
+**What this does not claim.** Protection is necessary, not sufficient.
+Icosahedral symmetry keeps the multiplet whole; it does not supply a massless
+dispersion or a gauge redundancy. And fine-tuning is not impossibility — a cubic
+model can still be tuned, at a cost of exactly one parameter.
+
+**Novelty.** Every ingredient is classical: Klein's classification, the
+crystallographic restriction, the character theory, and the textbook cubic
+splitting `l = 2 -> E_g + T_2g`. What is assembled is the conjunction read as a
+no-go, plus the commutant reading that turns the same norm into a fine-tuning
+count. Literature access was unavailable when this was written (arxiv.org is
+egress-blocked here and web search was rate limited), so the framing is
+**unverified** and may be a rediscovery. The arithmetic is exact regardless.
+
 ## Tests
 
 ```bash
