@@ -2782,6 +2782,44 @@ spin two — but a six-fold axis clears that and *is* crystallographic. The
 single-axis argument alone leaves a periodic graviton open;
 `aliasing_is_insufficient` asserts the gap.
 
+### Relevant or irrelevant: the sharpened statement
+
+"One tuned parameter" undersells the obstruction. `tuning_ladder` resolves the
+cost by order in momentum, decomposing the couplings at order `k^n` as
+`Sym^n(vector) x End(multiplet)` and comparing the `G`-invariant count against
+the `SO(3)`-invariant one. The decisive rung is `n = 0`.
+
+| | spin 1 (photon) | spin 2 (graviton) |
+| --- | --- | --- |
+| `T` | `k=0` free, first anisotropy at `n=1` | **splits at `k=0`**, 2 parameters |
+| `O` | `k=0` free, first anisotropy at `n=2` | **splits at `k=0`**, 1 parameter |
+| `I` | `k=0` free, first anisotropy at `n=4` | `k=0` free, first anisotropy at `n=2` |
+
+An excess at `n = 0` is a splitting at *zero momentum*: the pieces of the
+multiplet acquire different gaps, so no massless spin-2 object exists and
+nothing suppresses the failure at low energy. That is a relevant perturbation.
+An excess first appearing at `n > 0` is a velocity or dispersion anisotropy,
+suppressed by powers of `k a` — an irrelevant operator that flows away in the
+infrared. So:
+
+> The cubic failure is **relevant**. The icosahedral failure is **irrelevant**.
+
+**The spin-1 row is the control, and it is why the method is believable.** A
+cubic lattice is isotropic through order `k^1`, so an emergent photon's linear
+dispersion is protected by symmetry and the leading correction is an irrelevant
+`k^2` term. That is precisely the regime in which emergent photons are known to
+work. The same computation, on the same lattices, says spin two fails at `k^0`.
+
+Two further checks fell out. `zero_momentum_splitting` and `tuning_cost` reach
+the same integer by disjoint code paths — one from the character norm of the
+multiplet, one from the degree-zero rung of the polynomial-operator
+decomposition — and are asserted equal for every group and spin. And the
+tetrahedral group permits a linear-in-`k` vector–quadrupole coupling that the
+octahedral group forbids, because `l = 2` restricted to `T` contains the same
+three-dimensional irrep as `l = 1` while under `O` they land in `T_1` versus
+`E + T_2`. That is a known feature of non-centrosymmetric structures, and it was
+not put in.
+
 **What this does not claim.** Protection is necessary, not sufficient.
 Icosahedral symmetry keeps the multiplet whole; it does not supply a massless
 dispersion or a gauge redundancy. And fine-tuning is not impossibility — a cubic

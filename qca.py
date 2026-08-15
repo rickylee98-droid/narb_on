@@ -55,6 +55,33 @@ icosahedral symmetry.  Combining the two:
     quasicrystalline, hence aperiodic -- structures;
     nothing above spin two is protected anywhere.
 
+Relevant or irrelevant: the sharpened statement
+-----------------------------------------------
+
+"One tuned parameter" undersells it.  `tuning_ladder` resolves the cost by
+order in momentum, decomposing the couplings at order ``k^n`` as
+``Sym^n(vector) x End(multiplet)`` and comparing the ``G``-invariant count with
+the ``SO(3)``-invariant one.  The rung that matters is ``n = 0``:
+
+    spin 1:  T splits first at n=1,  O at n=2,  I at n=4  -- all with n=0 free
+    spin 2:  T and O split at n=0,   I first at n=2
+
+An excess at ``n = 0`` is a splitting at *zero momentum*.  The pieces of the
+multiplet acquire different gaps, so there is no massless spin-``s`` object at
+all, and nothing suppresses the failure at low energy: it is a relevant
+perturbation.  An excess first appearing at ``n > 0`` is a velocity or
+dispersion anisotropy, suppressed by powers of ``k a`` -- an irrelevant
+operator that flows away in the infrared.
+
+So the no-go is not that a cubic graviton needs one knob.  It is that the cubic
+failure is *relevant* and the icosahedral failure is *irrelevant*.
+
+The spin-1 row is the control, and it is the reason to believe the method.  A
+cubic lattice is isotropic through order ``k^1``, so an emergent photon's linear
+dispersion is protected by symmetry and the leading correction is an irrelevant
+``k^2`` term -- which is exactly the regime where emergent photons are known to
+work.  The same computation, on the same lattices, says spin two fails at ``k^0``.
+
 Novelty
 -------
 
@@ -107,6 +134,7 @@ __all__ = [
     "finite_rotation_groups",
     "spin_character",
     "character_norm",
+    "character_inner_product",
     "is_irreducible",
     "tuning_cost",
     "invariant_count",
@@ -119,6 +147,15 @@ __all__ = [
     "PROTECTED_SPIN_CEILING",
     "MAXIMAL_IRREP_DIMENSION",
     "graviton_requires_aperiodic",
+    "polynomial_multiplet_content",
+    "operator_multiplet_content",
+    "isotropic_coupling_count",
+    "lattice_coupling_count",
+    "TuningRung",
+    "tuning_ladder",
+    "first_anisotropic_degree",
+    "ANISOTROPY_ONSET",
+    "zero_momentum_splitting",
     "helicity_alias_modulus",
     "helicity_is_resolved",
     "minimal_axis_order",
@@ -363,6 +400,44 @@ def character_norm(spin: int, group: RotationGroup) -> int:
     return total // group.order
 
 
+def character_inner_product(
+    spin_left: int, spin_right: int, group: RotationGroup
+) -> int:
+    """``<chi_a, chi_b>_G``: shared irreducible content of two multiplets.
+
+    Over ``SO(3)`` this is ``delta_ab``.  Over a finite subgroup it can exceed
+    the delta, and every excess is a coupling that a lattice model may switch on
+    and a rotationally invariant one may not.  That excess is the whole content
+    of `tuning_ladder`.
+
+    Computed from ``chi_a * conj(chi_b) = sum_{m, m'} zeta^{(m - m') t}`` where
+    ``m`` runs over ``[-a, a]`` and ``m'`` over ``[-b, b]``; the shift ``d`` then
+    carries the overlap count of the two ranges.
+    """
+    if spin_left < 0 or spin_right < 0:
+        raise ValueError(
+            f"spins must be non-negative, got {spin_left} and {spin_right}"
+        )
+    terms: dict[Fraction, int] = {}
+    for shift in range(-(spin_left + spin_right), spin_left + spin_right + 1):
+        low = max(-spin_left, shift - spin_right)
+        high = min(spin_left, shift + spin_right)
+        weight = high - low + 1
+        if weight <= 0:
+            continue
+        for turn, count in group.spectrum:
+            key = Fraction(shift) * turn
+            key -= key.numerator // key.denominator
+            terms[key] = terms.get(key, 0) + weight * count
+    total = _root_of_unity_sum(terms)
+    if total % group.order:
+        raise ArithmeticError(
+            f"inner product <{spin_left},{spin_right}> on {group.name} is not an "
+            f"integer: {total}/{group.order}"
+        )
+    return total // group.order
+
+
 def is_irreducible(spin: int, group: RotationGroup) -> bool:
     """Does the spin-``l`` multiplet stay irreducible when restricted to ``G``?"""
     return character_norm(spin, group) == 1
@@ -484,6 +559,144 @@ def graviton_requires_aperiodic(bound: int = 12) -> bool:
     if not groups:
         raise ArithmeticError("no group protects spin 2; classification is broken")
     return all(not is_crystallographic(group) for group in groups)
+
+
+# ---------------------------------------------------------------------------
+# the tuning ladder: where anisotropy first bites, order by order in k
+# ---------------------------------------------------------------------------
+
+
+def polynomial_multiplet_content(degree: int) -> tuple[int, ...]:
+    """Spins appearing in ``Sym^n`` of the vector representation.
+
+    Degree-``n`` polynomials in three variables decompose into harmonics of
+    degree ``n, n-2, n-4, ...`` down to ``1`` or ``0``, each once.  This is the
+    momentum dependence available to a coupling at order ``n`` in ``k``.
+    """
+    if degree < 0:
+        raise ValueError(f"degree must be non-negative, got {degree}")
+    return tuple(range(degree, -1, -2))
+
+
+def operator_multiplet_content(spin: int) -> tuple[int, ...]:
+    """Spins appearing in ``End`` of the spin-``s`` multiplet: ``0`` through ``2s``."""
+    if spin < 0:
+        raise ValueError(f"spin must be non-negative, got {spin}")
+    return tuple(range(0, 2 * spin + 1))
+
+
+def isotropic_coupling_count(spin: int, degree: int) -> int:
+    """Independent ``SO(3)``-invariant couplings at order ``k^degree``.
+
+    Over ``SO(3)`` two multiplets pair only when their spins agree, so this is
+    just how many spins the polynomial and operator contents share.
+    """
+    return len(
+        set(polynomial_multiplet_content(degree)) & set(operator_multiplet_content(spin))
+    )
+
+
+def lattice_coupling_count(spin: int, degree: int, group: RotationGroup) -> int:
+    """Independent ``G``-invariant couplings at order ``k^degree``.
+
+    Always at least `isotropic_coupling_count`: a rotationally invariant term is
+    in particular ``G`` invariant.  The difference is what must be tuned away.
+    """
+    return sum(
+        character_inner_product(momentum, operator, group)
+        for momentum in polynomial_multiplet_content(degree)
+        for operator in operator_multiplet_content(spin)
+    )
+
+
+@dataclass(frozen=True)
+class TuningRung:
+    """One order in the momentum expansion.
+
+    Attributes
+    ----------
+    degree:
+        Power of ``k``.
+    lattice:
+        Couplings a ``G``-symmetric model may switch on at this order.
+    isotropic:
+        Couplings a rotationally invariant model may switch on.
+    excess:
+        ``lattice - isotropic``: parameters that must be tuned to zero (or to
+        each other) for isotropy to survive at this order.
+    """
+
+    degree: int
+    lattice: int
+    isotropic: int
+    excess: int
+
+
+def tuning_ladder(
+    spin: int, group: RotationGroup, max_degree: int = 6
+) -> tuple[TuningRung, ...]:
+    """How much isotropy costs, order by order in momentum.
+
+    The physically decisive rung is ``degree = 0``.  An excess there is a
+    splitting *at zero momentum* -- the multiplet is gapped apart, so there is no
+    spin-``s`` object at all, and nothing suppresses the failure at low energy.
+    Excesses at higher degree are velocity and dispersion anisotropies,
+    suppressed by powers of ``k a`` and irrelevant in the infrared.
+
+    So the reading is: onset at degree 0 is fatal, onset at degree ``n > 0`` is
+    an irrelevant operator and emergent isotropy is plausible.
+    """
+    if max_degree < 0:
+        raise ValueError(f"max_degree must be non-negative, got {max_degree}")
+    rungs = []
+    for degree in range(max_degree + 1):
+        lattice = lattice_coupling_count(spin, degree, group)
+        isotropic = isotropic_coupling_count(spin, degree)
+        excess = lattice - isotropic
+        if excess < 0:
+            raise ArithmeticError(
+                f"{group.name}: fewer lattice than isotropic couplings at degree "
+                f"{degree} ({lattice} < {isotropic}), which is impossible"
+            )
+        rungs.append(
+            TuningRung(
+                degree=degree, lattice=lattice, isotropic=isotropic, excess=excess
+            )
+        )
+    return tuple(rungs)
+
+
+def first_anisotropic_degree(
+    spin: int, group: RotationGroup, limit: int = 8
+) -> int | None:
+    """Lowest order in ``k`` at which ``G`` permits an anisotropy.
+
+    ``None`` if none appears up to ``limit`` -- which for these groups means the
+    search was too short, not that the group is fully isotropic; only ``SO(3)``
+    itself is that.
+    """
+    for rung in tuning_ladder(spin, group, limit):
+        if rung.excess:
+            return rung.degree
+    return None
+
+
+#: Onset degree of anisotropy for the spin-2 multiplet, by group.  The gap
+#: between the crystallographic groups (degree 0, a zero-momentum splitting)
+#: and the icosahedral group (degree 2, a velocity anisotropy) is the
+#: quantitative form of the no-go.
+ANISOTROPY_ONSET: dict[str, int] = {"T": 0, "O": 0, "I": 2}
+
+
+def zero_momentum_splitting(spin: int, group: RotationGroup) -> int:
+    """Couplings that split the multiplet at ``k = 0``: the fatal ones.
+
+    This is `tuning_ladder`'s degree-zero excess, isolated because it is the
+    rung that decides whether a spin-``s`` object exists at all.  It equals
+    `tuning_cost`, since the degree-zero couplings on a multiplet are exactly
+    its commutant.
+    """
+    return tuning_ladder(spin, group, max_degree=0)[0].excess
 
 
 # ---------------------------------------------------------------------------

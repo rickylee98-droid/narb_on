@@ -244,6 +244,181 @@ class TestCrystallographicRestriction:
         assert set(periodic) == {"T", "O"}
 
 
+class TestTuningLadder:
+    """Where anisotropy first bites, order by order in momentum."""
+
+    @pytest.mark.parametrize(
+        "degree, expected",
+        [
+            (0, (0,)),
+            (1, (1,)),
+            (2, (2, 0)),
+            (3, (3, 1)),
+            (4, (4, 2, 0)),
+            (5, (5, 3, 1)),
+        ],
+    )
+    def test_polynomial_content(self, degree: int, expected: tuple[int, ...]):
+        assert qca.polynomial_multiplet_content(degree) == expected
+
+    @pytest.mark.parametrize("degree", range(8))
+    def test_polynomial_content_has_right_dimension(self, degree: int):
+        """``Sym^n`` of a 3-dim space has dimension ``(n+1)(n+2)/2``."""
+        total = sum(
+            2 * spin + 1 for spin in qca.polynomial_multiplet_content(degree)
+        )
+        assert total == (degree + 1) * (degree + 2) // 2
+
+    @pytest.mark.parametrize("spin", range(4))
+    def test_operator_content_has_right_dimension(self, spin: int):
+        """``End(W)`` has dimension ``(2s+1)^2``."""
+        total = sum(2 * j + 1 for j in qca.operator_multiplet_content(spin))
+        assert total == (2 * spin + 1) ** 2
+
+    @pytest.mark.parametrize("group", ALL_GROUPS, ids=lambda g: g.name)
+    @pytest.mark.parametrize("spin", [1, 2])
+    def test_lattice_never_below_isotropic(self, spin: int, group: qca.RotationGroup):
+        """A rotationally invariant coupling is in particular ``G`` invariant."""
+        for rung in qca.tuning_ladder(spin, group, max_degree=4):
+            assert rung.lattice >= rung.isotropic
+            assert rung.excess == rung.lattice - rung.isotropic
+            assert rung.excess >= 0
+
+    @pytest.mark.parametrize("group", ALL_GROUPS, ids=lambda g: g.name)
+    @pytest.mark.parametrize("spin", range(4))
+    def test_degree_zero_excess_is_the_commutant(
+        self, spin: int, group: qca.RotationGroup
+    ):
+        """Two independent routes to the same number, and they must agree.
+
+        `tuning_cost` comes from the character norm of the multiplet;
+        `zero_momentum_splitting` comes from the degree-zero rung of the
+        polynomial-times-operator decomposition.  They share no code path.
+        """
+        assert qca.zero_momentum_splitting(spin, group) == qca.tuning_cost(spin, group)
+
+    @pytest.mark.parametrize(
+        "group, onset",
+        [(qca.TETRAHEDRAL, 0), (qca.OCTAHEDRAL, 0), (qca.ICOSAHEDRAL, 2)],
+        ids=["T", "O", "I"],
+    )
+    def test_spin_two_onset(self, group: qca.RotationGroup, onset: int):
+        assert qca.first_anisotropic_degree(2, group) == onset
+        assert qca.ANISOTROPY_ONSET[group.name] == onset
+
+    @pytest.mark.parametrize(
+        "group, onset",
+        [(qca.TETRAHEDRAL, 1), (qca.OCTAHEDRAL, 2), (qca.ICOSAHEDRAL, 4)],
+        ids=["T", "O", "I"],
+    )
+    def test_spin_one_onset(self, group: qca.RotationGroup, onset: int):
+        """The photon control.
+
+        A cubic lattice is isotropic through order ``k^1``, so the linear
+        dispersion of an emergent photon is protected and the first correction
+        is an irrelevant ``k^2`` term.  That is the regime in which emergent
+        photons are known to work, and the method reproduces it.
+        """
+        assert qca.first_anisotropic_degree(1, group) == onset
+
+    def test_the_relevant_versus_irrelevant_split(self):
+        """The sharpened no-go, and the reason it is stronger than a parameter count.
+
+        On a crystallographic group the spin-2 multiplet splits at zero
+        momentum: the pieces acquire different gaps, so no massless spin-2
+        object exists and nothing suppresses the failure in the infrared.  On
+        the icosahedral group the zero-momentum degeneracy is protected and the
+        first anisotropy is a velocity term at order ``k^2`` -- an irrelevant
+        operator.
+        """
+        for group in qca.finite_rotation_groups(8):
+            splitting = qca.zero_momentum_splitting(2, group)
+            if qca.is_crystallographic(group):
+                assert splitting > 0, f"{group.name} unexpectedly protects spin 2"
+            else:
+                assert (splitting == 0) == qca.is_irreducible(2, group)
+        assert qca.zero_momentum_splitting(2, qca.ICOSAHEDRAL) == 0
+        assert qca.first_anisotropic_degree(2, qca.ICOSAHEDRAL) == 2
+
+    def test_photon_survives_where_graviton_does_not(self):
+        """Same lattice, same method, opposite verdicts. This is the control."""
+        assert qca.zero_momentum_splitting(1, qca.OCTAHEDRAL) == 0
+        assert qca.zero_momentum_splitting(2, qca.OCTAHEDRAL) == 1
+
+    def test_tetrahedral_permits_a_linear_coupling(self):
+        """``T`` allows an order-``k`` anisotropy that ``O`` forbids.
+
+        ``l = 2`` restricted to ``T`` contains the same three-dimensional irrep
+        as ``l = 1``, so a linear-in-``k`` vector-quadrupole coupling is allowed;
+        under ``O`` the two land in different irreps (``T_1`` versus ``E + T_2``)
+        and it is forbidden.
+        """
+        assert qca.character_inner_product(1, 2, qca.TETRAHEDRAL) == 1
+        assert qca.character_inner_product(1, 2, qca.OCTAHEDRAL) == 0
+
+    def test_ladder_reports_none_when_search_is_too_short(self):
+        assert qca.first_anisotropic_degree(2, qca.ICOSAHEDRAL, limit=1) is None
+
+    def test_ladder_rejects_bad_input(self):
+        with pytest.raises(ValueError):
+            qca.tuning_ladder(2, qca.OCTAHEDRAL, max_degree=-1)
+        with pytest.raises(ValueError):
+            qca.polynomial_multiplet_content(-1)
+        with pytest.raises(ValueError):
+            qca.operator_multiplet_content(-1)
+
+    def test_rung_fields(self):
+        rung = qca.tuning_ladder(2, qca.OCTAHEDRAL, max_degree=0)[0]
+        assert (rung.degree, rung.lattice, rung.isotropic, rung.excess) == (0, 2, 1, 1)
+
+
+class TestInnerProduct:
+    @pytest.mark.parametrize("group", ALL_GROUPS, ids=lambda g: g.name)
+    @pytest.mark.parametrize("left", range(4))
+    @pytest.mark.parametrize("right", range(4))
+    def test_matches_floating_point(
+        self, left: int, right: int, group: qca.RotationGroup
+    ):
+        expected = (
+            sum(
+                count
+                * _numeric_character(left, turn)
+                * _numeric_character(right, turn)
+                for turn, count in group.spectrum
+            )
+            / group.order
+        )
+        assert qca.character_inner_product(left, right, group) == pytest.approx(
+            expected, abs=1e-6
+        )
+
+    @pytest.mark.parametrize("group", ALL_GROUPS, ids=lambda g: g.name)
+    @pytest.mark.parametrize("spin", range(4))
+    def test_agrees_with_character_norm(self, spin: int, group: qca.RotationGroup):
+        assert qca.character_inner_product(spin, spin, group) == qca.character_norm(
+            spin, group
+        )
+
+    @pytest.mark.parametrize("group", ALL_GROUPS, ids=lambda g: g.name)
+    @pytest.mark.parametrize("spin", range(4))
+    def test_agrees_with_invariant_count(self, spin: int, group: qca.RotationGroup):
+        assert qca.character_inner_product(spin, 0, group) == qca.invariant_count(
+            spin, group
+        )
+
+    @pytest.mark.parametrize("group", ALL_GROUPS, ids=lambda g: g.name)
+    def test_symmetric(self, group: qca.RotationGroup):
+        for left in range(4):
+            for right in range(4):
+                assert qca.character_inner_product(
+                    left, right, group
+                ) == qca.character_inner_product(right, left, group)
+
+    def test_rejects_negative_spin(self):
+        with pytest.raises(ValueError):
+            qca.character_inner_product(-1, 2, qca.OCTAHEDRAL)
+
+
 class TestHelicityAliasing:
     @pytest.mark.parametrize("axis_order", [1, 2, 3, 4, 5, 6, 7])
     def test_modulus(self, axis_order: int):
