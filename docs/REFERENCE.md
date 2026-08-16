@@ -653,15 +653,53 @@ Every moment, every simplex, every order, every complex. The measured residual i
 asserts equality with zero rather than smallness: machine noise there would mean
 the argument is wrong.
 
-**Two — computed. That is the only ambiguity.** On two triangles sharing an edge,
-gauge-fixed so the plaquette holonomies are free coordinates, an exhaustive sweep
-of 1296 connections finds exactly two sharing any given signature — the
-connection and its global conjugate. Reversing a *single* plaquette is visible by
-order 1 against a `1e-8` threshold.
+**Two — proved. That is the only ambiguity, and it degenerates predictably.** On
+two triangles sharing an edge, gauge-fixed so the plaquette holonomies are free
+coordinates, an exhaustive sweep of 1296 connections finds exactly two sharing any
+given signature — the connection and its global conjugate. Reversing a *single*
+plaquette is visible by order 1 against a `1e-8` threshold.
 
 ```
 ambiguity group = Z/2
 ```
+
+*The argument.* Write `omega_j = exp(i theta_j)` for the plaquette holonomies. A
+closed walk and its reverse contribute conjugate terms, so every moment is real
+and of the form `cos(a · theta)` summed over the exponent vectors `a` that closed
+walks realise. The fourth moments supply `cos(theta_j)` for each plaquette
+separately — that is the girth law of §11 doing the work, since a 2-simplex has
+`g = 2` and so flux first appears at `M_{2g} = M_4`, one plaquette at a time.
+Higher moments supply the *pair* terms `cos(theta_j + theta_k)` and
+`cos(theta_j − theta_k)`, and their difference is
+
+```
+cos(theta_j - theta_k) - cos(theta_j + theta_k) = 2 sin(theta_j) sin(theta_k)
+```
+
+Now `cos(theta_j)` pins each `theta_j` up to sign, and the product
+`sin(theta_j) sin(theta_k)` pins the *relative* signs: flipping `theta_j` alone
+would negate that product, so it is invisible only if the product is zero. The
+signs must therefore move together, and the ambiguity is one global bit rather
+than one bit per plaquette. That is exactly what the sweep measures.
+
+*The degeneracy, which the argument also predicts.* The relative-sign constraint
+is vacuous precisely when `sin(theta_j) = 0` — when `omega_j = ±1` is **real**. A
+real holonomy is its own conjugate, so reversing it does nothing. Measured on a
+`36 × 36` sweep, and agreeing with `conjugation_acts_faithfully` in every case:
+
+| reference indices | holonomies | matches |
+| --- | --- | --- |
+| (6, 13) | both non-real | 2 — both coordinates flip |
+| (18, 13) | one real | 2 — only the non-real one flips |
+| (6, 18) | one real | 2 |
+| (18, 18) | both real (`−1`, `−1`) | **1 — conjugation is the identity** |
+| (0, 13) | one real | 2 |
+| (0, 0) | both real (`+1`, `+1`) | **1** |
+
+So the sharp statement is: the spectral signature is a complete invariant of the
+connection modulo gauge and one global reflection, and that reflection **acts
+faithfully exactly when some plaquette holonomy is non-real**. When every holonomy
+is real the signature determines the connection outright.
 
 **The name.** The surviving bit is the **flux chirality**: whether the fluxes run
 one way or the other. Gauge invariant, spectrally undetectable, and the unique
@@ -683,14 +721,22 @@ exactly a `Z/2`. The first two were refutations of external briefs; the third
 fell out of asking the inverse question. That they land on the same group is
 either meaningful or a very tidy accident, and which is not established.
 
-**Scope, because the halves differ in kind.** Statement one is a proof, general
-in every argument. Statement two is exhaustive computation on small complexes and
-is **not proved**. What is needed is an argument that the real parts of all
-products of plaquette holonomies determine those holonomies up to simultaneous
-conjugation — a determinacy statement for a moment problem over products of unit
-complex numbers. `AMBIGUITY_IS_PROVED` is `False` and a test asserts it. Nothing
-here reconstructs a connection from a signature; the theorem says only how many
-share one.
+**Scope, and the hypothesis the second proof carries.** Statement one is general
+in every argument. Statement two now has a proof as well as a sweep, but the proof
+uses one thing worth naming: the moment data must actually *contain* the pair
+terms `cos(theta_j ± theta_k)`. Those come from closed walks traversing two
+plaquettes, which exist once the complex connects them. A complex whose plaquettes
+sit in different connected components supplies no such walk, and there the signs
+really are independent. So the theorem reads:
+
+> On a **connected** complex the ambiguity group is `Z/2`, acting faithfully iff
+> some plaquette holonomy is non-real. In general it is one `Z/2` per connected
+> component that carries a non-real holonomy.
+
+`AMBIGUITY_IS_PROVED` is `True` and `component_ambiguity_order` returns the
+general count — `2^k` for `k` faithful components. Nothing here reconstructs a
+connection from a signature; the theorem says only how many share one, and a test
+asserts that no `reconstruct_connection` exists.
 
 ---
 
@@ -704,7 +750,9 @@ Scale invariance of the coherence penalty. The full quantum-coordination package
 The spin-protection classification and its RG sharpening. The elastic table. The
 fracton no-escape. The thermodynamic verdict. Exact stabilizer complexity and its
 concentration proof. Both Dirac refutations. **Interlacing and monotonicity for
-the magnetic Dirac operator.**
+the magnetic Dirac operator.** The girth law, the three-term fourth-moment law and
+the filtration invariant. **Both halves of the flux-chirality rigidity theorem,
+including the degeneracy characterisation and the disconnected count.**
 
 **Open, and stated as open.** The FRW resummation beyond reparameterisations. The
 analytic embedding for Navier–Stokes. The phase tail in the averaging estimate

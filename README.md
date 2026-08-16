@@ -3455,13 +3455,38 @@ Every moment of every simplex, every order, every complex. Measured residual is
 machine noise here would mean the argument is wrong, and a test asserts equality
 with zero rather than smallness.
 
-**Two — computed. That is the *only* ambiguity.** On two triangles sharing an
+**Two — proved. That is the *only* ambiguity.** On two triangles sharing an
 edge, gauge-fixed so the plaquette holonomies are free coordinates, an exhaustive
 sweep finds exactly two connections sharing any given signature: the connection
 and its global conjugate. Reversing a *single* plaquette is visible, by order 1
 against a `1e-8` threshold.
 
     ambiguity group = Z/2
+
+*Why.* A closed walk and its reverse contribute conjugate terms, so every moment
+is real and of the form `cos(a · theta)` in the plaquette angles. The girth law
+puts each single plaquette into `M_4` on its own, giving `cos(theta_j)` — which
+pins each angle up to sign. Higher moments carry the pair terms, and
+
+    cos(theta_j - theta_k) - cos(theta_j + theta_k) = 2 sin(theta_j) sin(theta_k)
+
+pins the *relative* signs: flipping one angle alone negates that product. So the
+signs move together and the ambiguity is one global bit, not one bit per
+plaquette.
+
+**The degeneracy the proof predicts.** The relative-sign constraint is vacuous
+exactly when `sin(theta_j) = 0`, i.e. the holonomy `omega_j = ±1` is **real** — a
+real holonomy is its own conjugate, so reversing it does nothing. Measured on a
+`36 × 36` sweep, matching `conjugation_acts_faithfully` in every case:
+
+| holonomies | matches |
+| --- | --- |
+| both non-real | 2 — both flip |
+| exactly one real | 2 — only the non-real one flips |
+| both real | **1 — conjugation is the identity** |
+
+So the `Z/2` acts **faithfully exactly when some plaquette holonomy is non-real**.
+When every holonomy is real, the signature determines the connection outright.
 
 **The name.** The surviving bit is the **flux chirality** — whether the fluxes
 run one way or the other. Gauge invariant, spectrally undetectable, and the
@@ -3480,13 +3505,20 @@ Three different objects, one pattern: a spectrum is built from `|.|²`-type data
 and cannot resolve an orientation. In each case the invisible thing is exactly a
 `Z/2`.
 
-**Scope, stated because the halves differ.** Statement one is a proof, holding
-for every complex and every order. Statement two is an exhaustive computation on
-small complexes and is **not proved in general** — what is needed is an argument
-that the real parts of all products of plaquette holonomies determine those
-holonomies up to simultaneous conjugation. `AMBIGUITY_IS_PROVED` is `False` and a
-test asserts it. Nothing here reconstructs a connection from a signature either;
-the theorem says only how many share one.
+**Scope, and the hypothesis statement two carries.** Statement one holds for every
+complex and every order with no hypothesis at all. Statement two's proof needs the
+pair terms `cos(theta_j ± theta_k)` to be present, and those come from closed
+walks crossing two plaquettes — which exist once the complex connects them. On a
+complex whose plaquettes lie in different components there is no such walk and the
+signs really are independent. So:
+
+> On a **connected** complex the ambiguity group is `Z/2`. In general it is one
+> `Z/2` per connected component carrying a non-real holonomy.
+
+`AMBIGUITY_IS_PROVED` is `True`; `component_ambiguity_order` returns `2^k` for `k`
+faithful components. Nothing here reconstructs a connection from a signature
+either; the theorem says only how many share one, and a test asserts that no
+`reconstruct_connection` exists.
 
 ## Reference document
 

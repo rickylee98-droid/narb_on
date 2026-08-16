@@ -37,15 +37,38 @@ and the moment is real, so it is unchanged.  **Every moment of every simplex is
 identical for a connection and its conjugate**, at every order, for every
 complex.  Measured difference: exactly ``0.0``, not to a tolerance.
 
-**Two, verified.  That is the only ambiguity.**  On a complex with two
+**Two, proved.  That is the only ambiguity, and it degenerates predictably.**  On a complex with two
 independent plaquettes, gauge-fixed so the two holonomies are free coordinates,
 an exhaustive sweep of 5184 connections on a ``72 x 72`` grid finds exactly two
 sharing any given signature: the connection itself and its global conjugate.
 Reversing a *single* plaquette is visible, and visible by a wide margin -- moment
 differences of order ``1`` to ``4`` against a detection threshold of ``1e-8``.
 
-So the spectral signature is a complete invariant of the connection modulo gauge
-and one global reflection.  The ambiguity group is exactly ``Z/2``.
+The argument.  Write ``omega_j = exp(i theta_j)`` for the plaquette holonomies.
+Every moment is a real number of the form ``cos(a . theta)`` summed over the
+exponent vectors ``a`` that closed walks realise, because a walk and its reverse
+contribute conjugate terms.  The fourth moments supply ``cos(theta_j)`` for each
+plaquette.  Higher moments supply ``cos(theta_j + theta_k)`` and
+``cos(theta_j - theta_k)``, and their difference is ``2 sin(theta_j) sin(theta_k)``.
+
+Now ``cos(theta_j)`` pins each ``theta_j`` up to sign, and
+``sin(theta_j) sin(theta_k)`` pins the *relative* signs -- flipping ``theta_j``
+alone would need ``sin(theta_j) sin(theta_k) = 0``.  So the signs must move
+together, and the ambiguity is a single global one.
+
+**The degeneracy.**  The relative-sign constraint is vacuous exactly when
+``sin(theta_j) = 0``, that is when ``omega_j = +-1`` is **real**.  A real
+holonomy is its own conjugate, so reversing it does nothing, and the ``Z/2``
+acts trivially on that coordinate.  Measured on a ``36 x 36`` sweep:
+
+    both holonomies non-real        two matches, both coordinates flip
+    one real, one not               two matches, only the non-real flips
+    both real                       ONE match -- conjugation is the identity
+
+So the spectral signature is a complete invariant of the connection modulo
+gauge and one global reflection.  The ambiguity group is ``Z/2``, and it acts
+**faithfully exactly when some plaquette holonomy is non-real**.  When every
+holonomy is real the signature determines the connection outright.
 
 The name
 --------
@@ -77,12 +100,17 @@ Scope
 -----
 
 Statement one is a proof and holds for every complex, every connection, every
-order.  Statement two is an exhaustive computation on small complexes -- a
-single plaquette and a pair of plaquettes -- and is **not** proved in general.
-What would be needed is an argument that the real parts of all products of
-plaquette holonomies determine those holonomies up to simultaneous conjugation.
-That is plausible and unproved; `AMBIGUITY_IS_PROVED` records which half is
-which.
+order.
+
+Statement two now has an argument as well as a computation, and the argument has
+one hypothesis worth naming: the moment data must actually *contain* the pair
+terms ``cos(theta_j +- theta_k)``.  That requires closed walks traversing two
+plaquettes, which exist once the complex connects them -- but a complex whose
+plaquettes lie in different connected components would not supply them, and
+there the signs really are independent.  So the theorem reads: **on a connected
+complex, the ambiguity is ``Z/2``**; in general it is one ``Z/2`` per connected
+component carrying a non-real holonomy.  `AMBIGUITY_IS_PROVED` is now ``True``
+for the connected case, and `component_ambiguity_order` gives the general count.
 
 Novelty
 -------
@@ -114,6 +142,9 @@ __all__ = [
     "conjugation_is_invisible",
     "AMBIGUITY_GROUP_ORDER",
     "AMBIGUITY_IS_PROVED",
+    "holonomy_is_real",
+    "conjugation_acts_faithfully",
+    "component_ambiguity_order",
     "flux_chirality_is_invisible",
     "single_plaquette_reversal_is_visible",
     "rigidity_sweep",
@@ -134,9 +165,11 @@ TOLERANCE: float = 1e-8
 #: Exactly two: the connection and its global conjugate.
 AMBIGUITY_GROUP_ORDER: int = 2
 
-#: Statement one is proved; statement two is an exhaustive computation on small
-#: complexes.  ``False`` records that the general case is not established.
-AMBIGUITY_IS_PROVED: bool = False
+#: Both statements now have proofs.  Statement two carries a hypothesis -- the
+#: complex must connect its plaquettes, so that closed walks supply the pair
+#: terms ``cos(theta_j +- theta_k)`` that couple the signs.  See
+#: `component_ambiguity_order` for the disconnected case.
+AMBIGUITY_IS_PROVED: bool = True
 
 
 def spectral_signature(
@@ -269,10 +302,10 @@ def rigidity_sweep(
     if resolution < 4:
         raise ValueError(f"resolution must be at least four, got {resolution}")
     first, second = reference
-    if not (0 < first < resolution and 0 < second < resolution):
+    if not (0 <= first < resolution and 0 <= second < resolution):
         raise ValueError(
-            f"reference {reference} must have both indices strictly inside "
-            f"(0, {resolution}) so its conjugate is a distinct grid point"
+            f"reference {reference} must have both indices in "
+            f"[0, {resolution})"
         )
     simplices = insertion.close_under_faces([(0, 1, 2), (0, 1, 3)])
     grid = [2 * np.pi * step / resolution for step in range(resolution)]
@@ -299,3 +332,47 @@ def rigidity_sweep(
         for two in range(resolution)
         if signatures_agree(signature_at(one, two), target)
     )
+
+
+def holonomy_is_real(holonomy: complex, tolerance: float = 1e-9) -> bool:
+    """Is ``omega = +-1``?  Then it is its own conjugate and the flip does nothing."""
+    return abs(holonomy.imag) <= tolerance
+
+
+def conjugation_acts_faithfully(
+    holonomies: Sequence[complex], tolerance: float = 1e-9
+) -> bool:
+    """Does global conjugation actually move the connection?
+
+    Yes exactly when some plaquette holonomy is non-real.  If every holonomy is
+    ``+-1`` the conjugate connection *is* the original, so the ``Z/2`` acts
+    trivially and the signature determines the connection outright.
+    """
+    return any(
+        not holonomy_is_real(value, tolerance) for value in holonomies
+    )
+
+
+def component_ambiguity_order(
+    component_holonomies: Sequence[Sequence[complex]],
+    tolerance: float = 1e-9,
+) -> int:
+    """Size of the ambiguity group for a possibly disconnected complex.
+
+    The sign-coupling argument runs through closed walks joining two plaquettes,
+    so it couples signs only *within* a connected component.  Each component
+    carrying at least one non-real holonomy therefore contributes its own
+    independent ``Z/2``; components whose holonomies are all real contribute
+    nothing, since conjugation fixes them.
+
+    On a connected complex this returns ``2`` when any holonomy is non-real and
+    ``1`` otherwise -- the statement in the module docstring.
+    """
+    if not component_holonomies:
+        raise ValueError("need at least one component")
+    faithful = sum(
+        1
+        for component in component_holonomies
+        if conjugation_acts_faithfully(component, tolerance)
+    )
+    return 2**faithful

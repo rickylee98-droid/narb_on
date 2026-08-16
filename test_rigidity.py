@@ -9,9 +9,11 @@ The load-bearing checks:
     that asymmetry is what makes the ambiguity one global bit rather than one
     bit per plaquette;
   * the sweep must return exactly two grid points, related by ``(i,j) ->
-    (N-i, N-j)``.
+    (N-i, N-j)`` -- *except* in the degenerate case where a holonomy is real and
+    therefore its own conjugate, which `TestDegeneracy` pins down separately.
 
-`TestScope` records which half of the theorem is proved and which is computed.
+`TestScope` records that both statements are now proved and what hypothesis the
+second one carries.
 """
 
 from __future__ import annotations
@@ -165,8 +167,23 @@ class TestStatementTwoTheAmbiguityIsExactlyTwo:
     def test_sweep_rejects_degenerate_input(self):
         with pytest.raises(ValueError, match="at least four"):
             rigidity.rigidity_sweep(resolution=2)
-        with pytest.raises(ValueError, match="strictly inside"):
-            rigidity.rigidity_sweep(resolution=12, reference=(0, 5))
+
+    @pytest.mark.parametrize("reference", [(12, 5), (5, 12), (-1, 5), (5, -1)])
+    def test_sweep_rejects_out_of_range_reference(self, reference):
+        with pytest.raises(ValueError, match=r"\[0, 12\)"):
+            rigidity.rigidity_sweep(resolution=12, reference=reference)
+
+    def test_index_zero_is_a_legal_reference(self):
+        """It is a degenerate *case*, not a degenerate *input*.
+
+        An earlier guard rejected index ``0`` on the stated grounds that its
+        conjugate would not be a distinct grid point.  That justification was
+        wrong -- index ``resolution/2`` is equally self-conjugate and was always
+        accepted.  The correct handling is to admit both and let the degeneracy
+        show up in the match count, which is what `TestDegeneracy` checks.
+        """
+        matches = rigidity.rigidity_sweep(resolution=12, reference=(0, 5))
+        assert matches == ((0, 5), (0, 7))
 
 
 class TestTheThreeChiralities:
@@ -196,18 +213,116 @@ class TestTheThreeChiralities:
         assert rigidity.AMBIGUITY_GROUP_ORDER == 2
 
 
+class TestDegeneracy:
+    """When the ``Z/2`` acts trivially, and why.
+
+    The sign-coupling argument runs on ``sin(theta_j) sin(theta_k)``, so it says
+    nothing when ``sin(theta_j) = 0`` -- that is, when the holonomy is real.  A
+    real holonomy is its own conjugate, so the flip does nothing to it.  These
+    tests check the prediction against the sweep, case by case.
+    """
+
+    @pytest.mark.parametrize(
+        "holonomy, expected",
+        [
+            (1 + 0j, True),
+            (-1 + 0j, True),
+            (1j, False),
+            (-1j, False),
+            (complex(np.cos(0.3), np.sin(0.3)), False),
+            (complex(-1.0, 1e-12), True),
+        ],
+    )
+    def test_reality_predicate(self, holonomy, expected):
+        assert rigidity.holonomy_is_real(holonomy) is expected
+
+    def test_faithful_when_some_holonomy_is_non_real(self):
+        assert rigidity.conjugation_acts_faithfully([1 + 0j, 1j]) is True
+        assert rigidity.conjugation_acts_faithfully([1j]) is True
+
+    def test_trivial_when_every_holonomy_is_real(self):
+        assert rigidity.conjugation_acts_faithfully([1 + 0j, -1 + 0j]) is False
+        assert rigidity.conjugation_acts_faithfully([]) is False
+
+    @pytest.mark.parametrize(
+        "reference, real_flags, expected",
+        [
+            ((6, 13), [False, False], 2),
+            ((18, 13), [True, False], 2),
+            ((6, 18), [False, True], 2),
+            ((18, 18), [True, True], 1),
+            ((0, 13), [True, False], 2),
+            ((0, 0), [True, True], 1),
+        ],
+    )
+    def test_sweep_matches_the_prediction(self, reference, real_flags, expected):
+        """The measured match count, against what reality of the holonomies says.
+
+        On a ``36``-point grid, indices ``0`` and ``18`` are the two real
+        holonomies (``omega = +1`` and ``omega = -1``); everything else is
+        non-real.
+        """
+        resolution = 36
+        holonomies = [
+            complex(
+                np.cos(2 * np.pi * index / resolution),
+                np.sin(2 * np.pi * index / resolution),
+            )
+            for index in reference
+        ]
+        assert [rigidity.holonomy_is_real(h) for h in holonomies] == real_flags
+
+        predicted = rigidity.component_ambiguity_order([holonomies])
+        assert predicted == expected
+
+        matches = rigidity.rigidity_sweep(
+            resolution=resolution, reference=reference
+        )
+        assert len(matches) == expected
+
+    def test_both_real_gives_a_single_match(self):
+        """The sharpest case: the signature determines the connection outright."""
+        matches = rigidity.rigidity_sweep(resolution=36, reference=(18, 18))
+        assert matches == ((18, 18),)
+
+    def test_component_order_counts_faithful_components(self):
+        assert rigidity.component_ambiguity_order([[1j], [1j]]) == 4
+        assert rigidity.component_ambiguity_order([[1j], [1 + 0j]]) == 2
+        assert rigidity.component_ambiguity_order([[1 + 0j, -1 + 0j]]) == 1
+
+    def test_component_order_rejects_no_components(self):
+        with pytest.raises(ValueError, match="at least one component"):
+            rigidity.component_ambiguity_order([])
+
+    def test_connected_case_reproduces_the_headline_constant(self):
+        assert (
+            rigidity.component_ambiguity_order([[1j, 1j]])
+            == rigidity.AMBIGUITY_GROUP_ORDER
+        )
+
+
 class TestScope:
     """Which half is proved and which is computed."""
 
-    def test_the_general_case_is_not_proved(self):
-        """Statement two is exhaustive on small complexes, not a theorem.
+    def test_both_statements_are_proved(self):
+        """Statement two now has an argument, not only a sweep.
 
-        What would be needed is an argument that the real parts of all products
-        of plaquette holonomies determine those holonomies up to simultaneous
-        conjugation.  Plausible and unproved; the flag says so.
+        Moments are ``cos(a . theta)``; the fourth moments give ``cos(theta_j)``,
+        which pins each angle up to sign, and higher moments give
+        ``cos(theta_j +- theta_k)``, whose difference is
+        ``2 sin(theta_j) sin(theta_k)``, which pins the relative signs.  The
+        hypothesis is that those pair terms exist, which needs closed walks
+        crossing two plaquettes -- so the theorem is stated for connected
+        complexes and `component_ambiguity_order` handles the rest.
         """
-        assert rigidity.AMBIGUITY_IS_PROVED is False
-        assert "not** proved in general" in rigidity.__doc__
+        assert rigidity.AMBIGUITY_IS_PROVED is True
+        assert "Two, proved" in rigidity.__doc__
+
+    def test_the_hypothesis_is_stated(self):
+        """A proof with an unnamed hypothesis is worse than an honest computation."""
+        assert "connected" in rigidity.__doc__
+        assert rigidity.component_ambiguity_order.__doc__ is not None
+        assert "disconnected" in rigidity.component_ambiguity_order.__doc__
 
     def test_statement_one_is_proved(self):
         """And its proof is why the residual is exactly zero rather than small."""
