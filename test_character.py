@@ -209,7 +209,8 @@ class TestTheTwoPathsAgree:
 
 
 class TestSupportLaw:
-    """Expansion order equals shortest-walk length, class by class, simplex by simplex."""
+    """Expansion order equals shortest-walk length, class by class and simplex
+    by simplex."""
 
     @pytest.mark.parametrize(
         "simplex, target, expected",
@@ -770,7 +771,8 @@ class TestGeneralRank:
     """The theorem's hypothesis, discharged rather than assumed."""
 
     @pytest.mark.parametrize(
-        "target, expected", [((1, 0), ((2,), 4)), ((0, 1), ((3,), 4)), ((1, -1), ((0,), 8))]
+        "target, expected",
+        [((1, 0), ((2,), 4)), ((0, 1), ((3,), 4)), ((1, -1), ((0,), 8))],
     )
     def test_which_simplex_resolves_which_class(self, target, expected):
         assert (
@@ -873,6 +875,146 @@ class TestTruncation:
         assert set(matches) == {(6, 13), (30, 23)}
 
 
+class TestTheCubicIsAnSU2Phenomenon:
+    """The framing correction: `U(1)` has no trace coordinates of its own."""
+
+    def test_the_weyl_group_is_the_ambiguity(self):
+        assert character.WEYL_GROUP_ORDER == rigidity.AMBIGUITY_GROUP_ORDER == 2
+
+    @pytest.mark.parametrize("angle", [0.0, 0.4, 1.7, np.pi])
+    def test_trace_coordinate_is_the_su2_trace(self, angle):
+        """``2 cos theta`` is ``tr diag(e^{i theta}, e^{-i theta})``."""
+        matrix = np.diag(
+            [
+                complex(np.cos(angle), np.sin(angle)),
+                complex(np.cos(angle), -np.sin(angle)),
+            ]
+        )
+        assert character.trace_coordinate(float(np.cos(angle))) == pytest.approx(
+            float(np.trace(matrix).real), abs=1e-12
+        )
+
+    @pytest.mark.parametrize("thetas", [(0.7, 1.3), (2.0, 0.4), (0.1, 3.0)])
+    def test_the_two_normalisations_are_the_same_cubic(self, thetas):
+        """``X = 2u`` turns ``u^2+v^2+w^2-2uvw-1`` into ``X^2+Y^2+Z^2-XYZ-4``."""
+        one, two, three = character.fricke_coordinates(thetas=thetas)
+        assert character.standard_cayley_residual(one, two, three) < 1e-12
+        assert character.standard_cayley_residual(
+            one, two, three
+        ) == pytest.approx(4 * character.fricke_residual(one, two, three), abs=1e-12)
+
+    def test_trace_coordinates_are_bounded(self):
+        """Loll's inequalities: the image is compact, not the whole surface."""
+        for first in np.linspace(0, 2 * np.pi, 7):
+            for second in np.linspace(0, 2 * np.pi, 7):
+                for value in character.fricke_coordinates(
+                    thetas=(float(first), float(second))
+                ):
+                    assert -1.0 - 1e-12 <= value <= 1.0 + 1e-12
+                    trace = character.trace_coordinate(value)
+                    assert -2.0 - 1e-9 <= trace <= 2.0 + 1e-9
+
+    def test_a_point_on_the_complex_cubic_need_not_be_reachable(self):
+        """The cubic has real points outside ``[-1,1]^3`` that no connection hits."""
+        assert character.fricke_identity_holds(2.0, 2.0, 1.0)
+        assert not all(abs(value) <= 1.0 for value in (2.0, 2.0, 1.0))
+
+    def test_the_correction_is_recorded(self):
+        assert "That is wrong and the correction is worth more" in character.__doc__
+        assert "Weyl" in character.__doc__
+        assert "hep-th/9309056" in character.__doc__
+
+    def test_the_nodes_are_not_eigenvalue_degeneracies(self):
+        """Withdrawn conflation, pinned so it cannot creep back.
+
+        Two of the four two-torsion points carry repeated eigenvalues and two
+        carry none. The Weyl-degeneracy locus and the eigenvalue-collision locus
+        are different sets.
+        """
+        collisions = {}
+        for first in (0.0, np.pi):
+            for second in (0.0, np.pi):
+                spectrum = character.global_spectrum(
+                    TWO_TRIANGLES, CONNECTION, (first, second)
+                )
+                collisions[(first, second)] = int(
+                    np.sum(np.diff(spectrum) < 1e-8)
+                )
+                assert character.is_cayley_node(
+                    *character.fricke_coordinates(thetas=(first, second))
+                )
+        assert sorted(collisions.values()) == [0, 0, 4, 6]
+
+
+class TestLocalDataBeatsTheSpectrum:
+    """The published obstruction is real, and it is strictly weaker."""
+
+    @pytest.mark.parametrize(
+        "resolution, spectra, signatures", [(8, 19, 34), (12, 40, 74)]
+    )
+    def test_the_gap(self, resolution, spectra, signatures):
+        assert character.local_data_beats_the_spectrum(resolution) == (
+            spectra,
+            signatures,
+        )
+
+    @pytest.mark.parametrize("resolution", [8, 12])
+    def test_the_signature_hits_the_burnside_bound(self, resolution):
+        """It separates every orbit; the spectrum does not."""
+        spectra, signatures = character.local_data_beats_the_spectrum(resolution)
+        assert signatures == character.distinguishable_signature_count(resolution)
+        assert spectra < signatures
+
+    @pytest.mark.parametrize("parameter", [0.0, 0.3, 0.9, 1.4, 2.2, 3.0])
+    def test_the_half_flux_curve_is_isospectral(self, parameter):
+        """An entire curve, not a pair, and exact to machine precision."""
+        reference = character.global_spectrum(
+            TWO_TRIANGLES, CONNECTION, character.half_flux_curve(np.pi / 2)
+        )
+        here = character.global_spectrum(
+            TWO_TRIANGLES, CONNECTION, character.half_flux_curve(parameter)
+        )
+        assert character.spectra_agree(reference, here, tolerance=1e-12)
+        assert character.HALF_FLUX_IS_ISOSPECTRAL is True
+
+    @pytest.mark.parametrize("parameter", [0.2, 0.7, 1.5])
+    def test_a_generic_level_set_is_not_isospectral(self, parameter):
+        """So the curve is picked out by half-flux, not by the sum being constant."""
+        reference = character.global_spectrum(TWO_TRIANGLES, CONNECTION, (1.0, 1.0))
+        here = character.global_spectrum(
+            TWO_TRIANGLES, CONNECTION, (parameter, 2.0 - parameter)
+        )
+        assert not character.spectra_agree(reference, here)
+
+    @pytest.mark.parametrize("parameter", [0.3, 0.9, 1.4])
+    def test_the_local_data_separates_the_curve(self, parameter):
+        """What the spectrum fuses, the moments tell apart."""
+        thetas = character.half_flux_curve(parameter)
+        recovered = character.recover_cosines(TWO_TRIANGLES, CONNECTION, thetas, 8)
+        assert recovered[(1, 0)] == pytest.approx(np.cos(thetas[0]), abs=1e-9)
+        assert recovered[(1, 0)] != pytest.approx(np.cos(np.pi / 2), abs=1e-3)
+        assert character.fricke_identity_holds(
+            recovered[(1, 0)], recovered[(0, 1)], recovered[(1, -1)]
+        )
+
+    def test_half_flux_means_the_outer_loop_is_at_minus_one(self):
+        thetas = character.half_flux_curve(0.7)
+        assert sum(thetas) == pytest.approx(np.pi)
+        holonomy = complex(np.cos(sum(thetas)), np.sin(sum(thetas)))
+        assert holonomy.real == pytest.approx(-1.0, abs=1e-12)
+
+    def test_the_mechanism_is_marked_open(self):
+        assert "the mechanism is open" in character.__doc__
+
+    def test_spectra_agree_rejects_mismatched_lengths(self):
+        with pytest.raises(ValueError, match="different lengths"):
+            character.spectra_agree(np.array([1.0, 2.0]), np.array([1.0]))
+
+    def test_comparison_rejects_zero_resolution(self):
+        with pytest.raises(ValueError, match="resolution must be positive"):
+            character.local_data_beats_the_spectrum(0)
+
+
 class TestNovelty:
     """Whose mathematics each piece is."""
 
@@ -889,9 +1031,28 @@ class TestNovelty:
         assert "arXiv:2502.07558" in character.__doc__
         assert "withdrawal" in character.__doc__
 
-    def test_the_new_part_is_stated_and_marked_unverified(self):
-        assert "unverified against the literature" in character.__doc__
+    def test_the_new_part_is_stated_and_its_check_recorded(self):
+        assert "Mine, and still unverified" in character.__doc__
+        assert "Status of the check" in character.__doc__
         assert "arxiv.org is unreachable" in character.__doc__
+
+    def test_the_withdrawals_are_listed(self):
+        assert "**Withdrawn:**" in character.__doc__
+        assert "not a ``U(1)`` phenomenon" in character.__doc__ or (
+            "is wrong" in character.__doc__
+        )
+
+    def test_the_adjacent_literature_is_named(self):
+        """A claim of novelty that names no neighbours is not a claim."""
+        for citation in (
+            "Fock-Rosly",
+            "Berkolaiko",
+            "Procesi",
+            "Giles",
+            "Fabila-Carrasco",
+            "Hedden-Herald-Kirk",
+        ):
+            assert citation in character.__doc__
 
     def test_no_reconstruction_is_offered_here_either(self):
         """Recovering cosines is not recovering a connection: the cosines are

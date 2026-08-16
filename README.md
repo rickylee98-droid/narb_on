@@ -3602,11 +3602,47 @@ form: `rigidity_sweep` at order 6 returns **four** connections sharing a
 signature, at order 8 it returns two. So `SIGNATURE_ORDER = 8` is not a safety
 margin but the threshold, and one notch below it the rigidity theorem is false.
 
-**Novelty.** The Fricke identity, the Cayley cubic, the pillowcase and Burnside
-are classical and named as such. Unverified and mine: the integrality and symmetry
-of the character expansion, the per-class support inequality with its
-cancellation exceptions, the basepoint correction, and the fact that measured
-local spectral moments satisfy the cubic exactly.
+**Where the cubic comes from — a framing correction.** The first version of this
+said the cubic was a fact about `U(1)`. **That is wrong.** `U(1)` is abelian, its
+character variety is a flat torus, and there is no cubic anywhere in it. Fricke,
+Cayley and the pillowcase are `SL₂` objects — they exist because `SL₂` has a
+Cayley–Hamilton relation and `U(1)` has nothing of the kind.
+
+What is really happening is better. The moments are *forced* to be `cos(a·θ)`,
+and `2 cos θ` is the trace of `diag(e^{iθ}, e^{−iθ}) ∈ SU(2)`. So the local
+moments of a `U(1)` magnetic Dirac operator are **automatically Weyl-invariant
+functions on a maximal torus of `SU(2)`** — they land in trace coordinates
+whether or not anyone asks. Setting `X = 2u` turns the identity into
+`X²+Y²+Z²−XYZ−4 = 0`, the Cayley cubic in standard form. Consequences the wrong
+framing hid: the `Z/2` **is the Weyl group** `N(T)/T`, not a coincidence; the four
+nodes are **orbifold points**, the two-torsion; and the image is compact
+semi-algebraic, cut out by Loll's inequalities, which is what makes a pillowcase a
+pillowcase rather than a variety. Also: **the pillowcase needs dimension two** —
+graphs give balls, and the commuting relation comes from attaching a 2-cell.
+
+**What the local measure buys over the global spectrum.** The published
+obstruction is that the spectrum does *not* determine the magnetic potential
+(Fabila-Carrasco–Lledó–Post, 2023). It does not bite here, because the signature
+is one measure per simplex and the spectrum is their sum. At `N = 12`: **40**
+spectrum classes against **74** signature classes — and 74 is exactly the Burnside
+count, so the local data separates every orbit while the spectrum loses a third of
+them. The exhibit is a *curve*, not a pair: the whole line `θ₁ + θ₂ = π` is
+isospectral to `2e-15` while the local moments vary continuously and separate
+every point of it. A generic level set is not. **Why half-flux does this is not
+explained here** — measured fact, open mechanism.
+
+**Novelty.** Fricke–Klein, the Cayley cubic, the pillowcase (Hedden–Herald–Kirk),
+Procesi's generation theorem, Loll's inequalities, Giles' reconstruction,
+Fock–Rosly, Berkolaiko's Morse theory on the flux torus, isospectral magnetic
+graphs, and Burnside are all classical and named as such. Mine and still
+unverified: the integrality and symmetry of the character expansion, the
+per-class support inequality with its cancellation exceptions, the basepoint
+correction, the recovery, the composite that measured moments satisfy the cubic,
+the Burnside count and its truncated form, and the measurement that the local
+signature strictly dominates the global spectrum. **Withdrawn:** that the cubic
+is a `U(1)` phenomenon, and any reading of the four nodes as eigenvalue
+degeneracies — measured, two of the four carry repeated eigenvalues and two carry
+none.
 
 ## Reference document
 
@@ -3643,6 +3679,20 @@ python -m pytest test_coherence.py -v           # mode architecture / interactio
 python -m pytest test_cascade.py -v             # Euler transport on the architecture
 python -m pytest test_averaging.py -v           # the averaging estimate
 python -m pytest test_quantumcoord.py -v        # quantum coordination / Bell polytopes
+python -m pytest test_qca.py -v                 # which spins a discrete structure protects
+python -m pytest test_thermo.py -v              # what logic actually costs
+python -m pytest test_complexity.py -v          # exact stabilizer complexity
+python -m pytest test_dirac.py -v               # what the persistent Dirac operator sees
+python -m pytest test_magnetic.py -v            # curvature, chirality, interlacing
+python -m pytest test_insertion.py -v           # local spectral measures / girth / Wilson
+python -m pytest test_rigidity.py -v            # flux chirality and its rigidity theorem
+python -m pytest test_character.py -v           # characters, the Fricke cubic, the count
+```
+
+Or the whole thing:
+
+```bash
+python -m pytest -q
 ```
 
 Coverage includes closed-form checks (K4's Laplacian spectrum is exactly {0, 4, 4, 4};
