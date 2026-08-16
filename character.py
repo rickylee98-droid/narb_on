@@ -43,11 +43,11 @@ thing to say about it is that the obvious form of it is false:
 The inequality is a theorem: ``M_n`` is a sum over closed ``n``-walks, so a class
 no ``n``-walk carries cannot appear.  Equality is not, because the sum is
 *signed* and walks of the same length and class can cancel.  They do.  In the
-running example the shared edge ``(0, 1)`` has walks reaching every class from
-length six on, and every single one of them cancels: its moments are ``4, 16,
-64, 256, 1024`` -- exactly ``4^{n/2}`` -- for **every** connection.  Its
-insertion measure is the two-point measure at ``+-2`` and the field never
-touches it.  `is_flux_blind` reports such simplices, and the correct statement is
+running example the shared edge ``(0, 1)`` has walks reaching the single-plaquette
+classes at length six and the difference class at length ten, and every single
+one of them cancels: its moments are ``4, 16, 64, 256, 1024`` -- exactly
+``4^{n/2}`` -- for **every** connection.  Its insertion measure is the two-point
+measure at ``+-2`` and the field never touches it.  `is_flux_blind` reports such simplices, and the correct statement is
 the inequality plus that exceptional set.
 
 Checked against a breadth-first search in the ``Z^r``-cover of the Hasse
@@ -67,10 +67,9 @@ one until ``10``.  Vertex ``0`` lies on both and sees both at ``6``.  The
 ordering is not by class size and not by simplex: it is walk length, class by
 class and simplex by simplex.  The *difference* class -- the four-cycle running
 around the outside -- appears at ``8`` at both, because that is the length of
-that walk from anywhere on it.  And that is why
-`rigidity.SIGNATURE_ORDER` is ``8`` and could not have been ``6``: order ``8``
-is the first order at which the signature sees a relation *between* two
-plaquettes, and relations between plaquettes are the entire content of the
+that walk from anywhere on it.  And that is why `rigidity.SIGNATURE_ORDER` is
+``8`` and could not have been ``6``: order ``8`` is the first order at which the
+signature sees a relation *between* two plaquettes, and relations between plaquettes are the entire content of the
 rigidity proof.  The constant was chosen by guessing generously; it turns out to
 be exactly tight.
 
@@ -115,7 +114,7 @@ inversion quotient of a torus.  Stated here it is an *exact identity among local
 spectral moments of a magnetic Dirac operator*: measure three moments at three
 simplices of a complex, and the three numbers you get lie on a fixed cubic
 surface in ``R^3``, whatever the connection and whatever the complex.  Measured
-residual: ``1e-15``.
+residual: ``4e-15``.
 
 **Step four -- and now the rigidity theorem is a picture.**  The map
 

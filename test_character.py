@@ -249,6 +249,18 @@ class TestSupportLaw:
             TWO_TRIANGLES, simplex, CONNECTION, target, 10, 2
         )
 
+    @pytest.mark.parametrize(
+        "target, walk", [((1, 0), 6), ((0, 1), 6), ((1, -1), 10), ((2, 0), 10)]
+    )
+    def test_the_cancelled_walks_have_the_lengths_claimed(self, target, walk):
+        """Pins the numbers the module docstring quotes for the shared edge."""
+        assert (
+            character.shortest_walk_carrying(
+                TWO_TRIANGLES, (0, 1), CONNECTION, target, 14, 2
+            )
+            == walk
+        )
+
     @pytest.mark.parametrize("target", [(1, 0), (0, 1), (1, -1)])
     def test_equality_fails_at_the_shared_edge(self, target):
         """The counterexample, kept visible rather than parametrised away.
