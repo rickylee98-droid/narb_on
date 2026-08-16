@@ -3578,6 +3578,19 @@ at `N = 5` and `112` at `N = 6`, and brute force returns both. The ambiguity is
 still exactly `Z/2` one rank up, settled by counting rather than by redoing the
 argument. That is what a key is for.
 
+**And the general-rank theorem, with a checkable hypothesis.** The argument needs
+`cos(θⱼ)` for each coordinate and `cos(θⱼ − θₖ)` for each pair — a basis and its
+pairwise differences, nothing else. So: *if every basis class and every pairwise
+difference appears with non-zero coefficient at some simplex and some order, the
+ambiguity group is `Z/2`.* The proof is the rank-two one verbatim.
+
+The hypothesis is not automatic — the moment is a *signed* count and the
+flux-blind edge is a simplex where every walk cancels. `classes_are_resolved`
+discharges it per complex: it holds on fans of one, two and three plaquettes,
+which is why the rank-three count comes out at `Z/2`, and it fails correctly
+under truncation at order 6. **Proving it in general is open**, and stated as
+open.
+
 **And a truncation law falls out.** Below the coupling order nothing joins two
 classes, so the signs are independent and the ambiguity is the *full* `(Z/2)^r`:
 

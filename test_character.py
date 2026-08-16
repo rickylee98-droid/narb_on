@@ -766,6 +766,62 @@ class TestBurnsideCount:
             ) // 2 - 1
 
 
+class TestGeneralRank:
+    """The theorem's hypothesis, discharged rather than assumed."""
+
+    @pytest.mark.parametrize(
+        "target, expected", [((1, 0), ((2,), 4)), ((0, 1), ((3,), 4)), ((1, -1), ((0,), 8))]
+    )
+    def test_which_simplex_resolves_which_class(self, target, expected):
+        assert (
+            character.resolving_simplex(TWO_TRIANGLES, CONNECTION, target, 2, 10)
+            == expected
+        )
+
+    def test_an_unreachable_class_resolves_nowhere(self):
+        assert (
+            character.resolving_simplex(TWO_TRIANGLES, CONNECTION, (3, 3), 2, 6)
+            is None
+        )
+
+    @pytest.mark.parametrize("count", [1, 2, 3])
+    def test_the_hypothesis_holds_on_fans(self, count):
+        """Which is why the rank-three count comes out at ``Z/2``."""
+        simplices, connection = character.plaquette_fan(count)
+        assert character.classes_are_resolved(simplices, connection, count, 10)
+
+    def test_the_hypothesis_fails_under_truncation(self):
+        """And it fails exactly where the ambiguity is known to be bigger.
+
+        Truncated at six the difference class is resolved nowhere, the signs are
+        independent, and the sweep returns four matches rather than two. The
+        predicate and the measurement agree about where the theorem applies.
+        """
+        assert not character.classes_are_resolved(TWO_TRIANGLES, CONNECTION, 2, 6)
+        assert character.truncated_ambiguity_order(6, 2) == 4
+        assert character.classes_are_resolved(TWO_TRIANGLES, CONNECTION, 2, 8)
+        assert character.truncated_ambiguity_order(8, 2) == 2
+
+    def test_the_flux_blind_simplex_resolves_nothing(self):
+        """The reason the hypothesis is a condition and not a formality."""
+        for target in ((1, 0), (0, 1), (1, -1)):
+            expansion_at_the_edge = [
+                character.character_expansion(
+                    TWO_TRIANGLES, (0, 1), CONNECTION, order, 2
+                ).get(target, 0)
+                for order in range(2, 13, 2)
+            ]
+            assert expansion_at_the_edge == [0] * 6
+
+    def test_resolution_rejects_zero_rank(self):
+        with pytest.raises(ValueError, match="rank must be positive"):
+            character.classes_are_resolved(TWO_TRIANGLES, CONNECTION, 0)
+
+    def test_the_open_part_is_marked_open(self):
+        """A hypothesis that is checked per complex is not a hypothesis proved."""
+        assert "Proving the hypothesis in general is open" in character.__doc__
+
+
 class TestTruncation:
     """Why the signature order is load-bearing, and what happens below it."""
 

@@ -47,8 +47,8 @@ running example the shared edge ``(0, 1)`` has walks reaching the single-plaquet
 classes at length six and the difference class at length ten, and every single
 one of them cancels: its moments are ``4, 16, 64, 256, 1024`` -- exactly
 ``4^{n/2}`` -- for **every** connection.  Its insertion measure is the two-point
-measure at ``+-2`` and the field never touches it.  `is_flux_blind` reports such simplices, and the correct statement is
-the inequality plus that exceptional set.
+measure at ``+-2`` and the field never touches it.  `is_flux_blind` reports such
+simplices, and the correct statement is the inequality plus that exceptional set.
 
 Checked against a breadth-first search in the ``Z^r``-cover of the Hasse
 diagram, which is an algorithm with nothing in common with a matrix power.  The
@@ -69,9 +69,9 @@ class and simplex by simplex.  The *difference* class -- the four-cycle running
 around the outside -- appears at ``8`` at both, because that is the length of
 that walk from anywhere on it.  And that is why `rigidity.SIGNATURE_ORDER` is
 ``8`` and could not have been ``6``: order ``8`` is the first order at which the
-signature sees a relation *between* two plaquettes, and relations between plaquettes are the entire content of the
-rigidity proof.  The constant was chosen by guessing generously; it turns out to
-be exactly tight.
+signature sees a relation *between* two plaquettes, and relations between
+plaquettes are the entire content of the rigidity proof.  The constant was chosen
+by guessing generously; it turns out to be exactly tight.
 
 **Step two and a half -- the basepoint, and a scope correction it forces.**
 Chasing the flux-blind edge turned up something that has to be said out loud.
@@ -161,6 +161,31 @@ and brute force returns ``63`` and ``112``.  So the ambiguity is still exactly
 ``Z/2`` one rank up, and that was established by counting rather than by
 redoing the argument.  If a rank-three complex admitted an extra coincidence
 the measured count would come in low, and it does not.
+
+**One and a quarter, the general-rank theorem, with its hypothesis made
+checkable.**  The rank-two argument needs exactly three things from the moments:
+``cos(theta_j)`` for each coordinate, to pin each angle up to sign, and
+``cos(theta_j - theta_k)`` for each pair, to pin the relative signs.  At general
+rank it needs the same list -- a basis and its pairwise differences -- and
+nothing else.  So:
+
+    **Theorem.**  If every standard basis class and every pairwise difference
+    appears with non-zero coefficient at some simplex and some order, then the
+    signature determines the connection modulo gauge and one global reflection,
+    and the ambiguity group is ``Z/2``.
+
+The proof is the rank-two one verbatim.  What is *not* automatic is the
+hypothesis: every class is carried by some closed Hasse walk on a connected
+complex, but the moment is a **signed** count, and step two exhibits a simplex
+where the walks all cancel.  So the hypothesis is a real condition rather than a
+formality, and `classes_are_resolved` discharges it for a given complex instead
+of assuming it.  It holds for fans of one, two and three plaquettes -- which is
+why the rank-three count above comes out at ``Z/2`` -- and it fails, correctly,
+when the signature is truncated at order six.
+
+Proving the hypothesis in general is open.  It would need a non-cancellation
+lemma for signed closed-walk counts on a Hasse diagram, and the flux-blind edge
+shows such a lemma cannot be unconditional.
 
 **One and a half, the truncation law, which falls straight out of the support
 law.**  Below `COUPLING_ORDER` no moment contains a term joining two classes, so
@@ -252,6 +277,8 @@ __all__ = [
     "node_count",
     "plaquette_fan",
     "COUPLING_ORDER",
+    "resolving_simplex",
+    "classes_are_resolved",
     "moments_couple_the_signs",
     "truncated_ambiguity_order",
     "distinguishable_signature_count",
@@ -477,7 +504,9 @@ def character_expansion_by_transform(
                 "aliased -- raise the resolution"
             )
         vector = tuple(
-            int(component) if component <= resolution // 2 else int(component) - resolution
+            int(component)
+            if component <= resolution // 2
+            else int(component) - resolution
             for component in cell
         )
         result[vector] = float(value.real)
@@ -776,7 +805,9 @@ def relabelling_changes_the_spectrum(
     return bool(np.abs(np.sort(first) - np.sort(second)).max() > tolerance)
 
 
-def pure_gauge(vertices: int, potentials: Sequence[float]) -> dict[tuple[int, int], float]:
+def pure_gauge(
+    vertices: int, potentials: Sequence[float]
+) -> dict[tuple[int, int], float]:
     """A flat connection: ``A(u -> v) = lambda(v) - lambda(u)``, every holonomy one."""
     if len(potentials) != vertices:
         raise ValueError(
@@ -966,6 +997,83 @@ def moments_couple_the_signs(order: int) -> bool:
     if order < 0:
         raise ValueError(f"order must be non-negative, got {order}")
     return order >= COUPLING_ORDER
+
+
+def resolving_simplex(
+    simplices: Sequence[tuple[int, ...]],
+    connection: IntegerConnection,
+    target: Sequence[int],
+    rank: int,
+    upto: int = COUPLING_ORDER,
+) -> tuple[tuple[int, ...], int] | None:
+    """A simplex and order where the class ``target`` appears with non-zero weight.
+
+    ``None`` when no simplex resolves it within ``upto`` -- which is a real
+    possibility and not a formality, since the shared edge of two triangles
+    resolves nothing at any order.  What matters for the theorem below is whether
+    *some* simplex resolves each needed class, not whether every one does.
+    """
+    ordered = sorted(simplices, key=lambda s: (len(s), s))
+    wanted = tuple(int(component) for component in target)
+    for order in range(2, upto + 1, 2):
+        for simplex in ordered:
+            expansion = character_expansion(
+                ordered, simplex, connection, order, rank
+            )
+            if expansion.get(wanted, 0) != 0:
+                return (simplex, order)
+    return None
+
+
+def classes_are_resolved(
+    simplices: Sequence[tuple[int, ...]],
+    connection: IntegerConnection,
+    rank: int,
+    upto: int = COUPLING_ORDER,
+) -> bool:
+    """The hypothesis of the general-rank theorem, checked for one complex.
+
+    The rank-two argument needs three things from the moments: ``cos(theta_j)``
+    for each coordinate, to pin each angle up to sign, and ``cos(theta_j -
+    theta_k)`` for each pair, to pin the relative signs.  At general rank it
+    needs exactly the same list -- a basis and its pairwise differences -- so:
+
+        **Theorem.**  If every standard basis class and every pairwise difference
+        appears with non-zero coefficient at some simplex and some order, then
+        the spectral signature determines the connection modulo gauge and one
+        global reflection, and the ambiguity group is ``Z/2``.
+
+    The proof is the rank-two one verbatim: the basis cosines pin each angle to
+    ``+-theta_j``, and ``cos(theta_j - theta_k) = cos theta_j cos theta_k +
+    sin theta_j sin theta_k`` then forces the signs to move together, since
+    flipping one alone would negate ``sin theta_j sin theta_k``.
+
+    What is *not* automatic is the hypothesis.  Every class is carried by some
+    closed Hasse walk on a connected complex, but the moment is a **signed**
+    count and the walks can cancel -- `is_flux_blind` exhibits a simplex where
+    they all do, at every order.  So the hypothesis is a genuine condition, and
+    this function is how one discharges it for a given complex rather than
+    assuming it.  Measured: it holds for fans of one, two and three plaquettes,
+    which is why the rank-three count comes out at ``Z/2``.
+    """
+    if rank < 1:
+        raise ValueError(f"rank must be positive, got {rank}")
+    needed = [
+        tuple(1 if index == axis else 0 for index in range(rank))
+        for axis in range(rank)
+    ]
+    for first in range(rank):
+        for second in range(first + 1, rank):
+            needed.append(
+                tuple(
+                    (1 if index == first else 0) - (1 if index == second else 0)
+                    for index in range(rank)
+                )
+            )
+    return all(
+        resolving_simplex(simplices, connection, target, rank, upto) is not None
+        for target in needed
+    )
 
 
 def truncated_ambiguity_order(order: int, rank: int = 2) -> int:

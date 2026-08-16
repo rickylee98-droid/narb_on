@@ -871,6 +871,29 @@ a fan of three triangles — rank three, fifteen simplices — the count predict
 ambiguity is still exactly `Z/2` one rank up, established by *counting* rather
 than by redoing the argument. That is what a key is for.
 
+**And the general-rank theorem, with its hypothesis made checkable.** The
+rank-two argument needs exactly three things from the moments: `cos(θⱼ)` for each
+coordinate, and `cos(θⱼ − θₖ)` for each pair. At general rank it needs the same
+list and nothing else, so:
+
+> **Theorem.** If every standard basis class and every pairwise difference
+> appears with non-zero coefficient at some simplex and some order, the signature
+> determines the connection modulo gauge and one global reflection, and the
+> ambiguity group is `Z/2`.
+
+The proof is the rank-two one verbatim. What is *not* automatic is the
+hypothesis: every class is carried by some closed Hasse walk on a connected
+complex, but the moment is a **signed** count, and the flux-blind edge above is a
+simplex where all the walks cancel. So `classes_are_resolved` discharges the
+condition for a given complex rather than assuming it — it holds for fans of one,
+two and three plaquettes, which is *why* the rank-three count comes out at `Z/2`,
+and it fails, correctly, when the signature is truncated at order 6.
+
+**Proving the hypothesis in general is open**, and it is the honest residue of
+this section. It would need a non-cancellation lemma for signed closed-walk counts
+on a Hasse diagram, and the flux-blind edge shows such a lemma cannot be
+unconditional.
+
 **And a truncation law falls out of the support law.** Below the coupling order
 no moment contains a term joining two classes, so the signs are independent and
 the ambiguity group is the **full** `(Z/2)^r`, not the diagonal. The same
@@ -935,6 +958,9 @@ analytic embedding for Navier–Stokes. The phase tail in the averaging estimate
 structure. Three stabilizer laws still five-point fits (`|+⟩ⁿ = n`, line graph
 `2n−1`, complete graph `3(n−1)`) — treat as suspect, since `3n+1` looked equally
 solid and died at n = 72. **The metric case for spectral persistence stability.**
+**The non-cancellation hypothesis of the general-rank rigidity theorem** — it is
+checkable per complex and checked on every complex used here, but not proved, and
+the flux-blind edge shows it cannot hold unconditionally.
 
 ---
 
