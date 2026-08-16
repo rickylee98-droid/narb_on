@@ -3578,6 +3578,17 @@ at `N = 5` and `112` at `N = 6`, and brute force returns both. The ambiguity is
 still exactly `Z/2` one rank up, settled by counting rather than by redoing the
 argument. That is what a key is for.
 
+**And a truncation law falls out.** Below the coupling order nothing joins two
+classes, so the signs are independent and the ambiguity is the *full* `(Z/2)^r`:
+
+    order < 8   distinct signatures = ((N + g)/2)^r
+    order ≥ 8   distinct signatures = (N^r + g^r)/2
+
+Both measured. They differ — `25` against `34` at `N = 8`, rank 2. The sharpest
+form: `rigidity_sweep` at order 6 returns **four** connections sharing a
+signature, at order 8 it returns two. So `SIGNATURE_ORDER = 8` is not a safety
+margin but the threshold, and one notch below it the rigidity theorem is false.
+
 **Novelty.** The Fricke identity, the Cayley cubic, the pillowcase and Burnside
 are classical and named as such. Unverified and mine: the integrality and symmetry
 of the character expansion, the per-class support inequality with its

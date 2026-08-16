@@ -163,6 +163,22 @@ and brute force returns ``63`` and ``112``.  So the ambiguity is still exactly
 redoing the argument.  If a rank-three complex admitted an extra coincidence
 the measured count would come in low, and it does not.
 
+**One and a half, the truncation law, which falls straight out of the support
+law.**  Below `COUPLING_ORDER` no moment contains a term joining two classes, so
+the signs are independent, the ambiguity group is the *full* ``(Z/2)^r`` rather
+than the diagonal, and the same Burnside argument gives a different closed form:
+
+    order  < 8    orbits = ( (N + g) / 2 )^r          g = gcd(2, N)
+    order >= 8    orbits = ( N^r + g^r ) / 2
+
+Measured, and they are genuinely different -- ``N = 8`` at rank two gives ``25``
+truncated against ``34`` full; rank three at ``N = 6`` gives ``64`` against
+``112``.  The sharpest form is a sweep: `rigidity.rigidity_sweep` at order six
+returns **four** connections sharing a signature, at order eight it returns two,
+and the four are exactly the independent sign flips ``(6,13), (6,23), (30,13),
+(30,23)``.  So `rigidity.SIGNATURE_ORDER = 8` is not a safety margin, it is the
+threshold, and one notch below it the theorem is false.
+
 **Two, a consistency test for local spectral data that needs no ground truth.**
 The Fricke residual is computable from measured moments alone.  It does not
 compare against a known connection, because there is nothing to compare to: the
@@ -236,6 +252,9 @@ __all__ = [
     "is_cayley_node",
     "node_count",
     "plaquette_fan",
+    "COUPLING_ORDER",
+    "moments_couple_the_signs",
+    "truncated_ambiguity_order",
     "distinguishable_signature_count",
     "measured_signature_count",
     "TOLERANCE",
@@ -452,6 +471,12 @@ def character_expansion_by_transform(
         value = transformed[cell]
         if abs(value) <= TOLERANCE:
             continue
+        if abs(value.imag) > TOLERANCE:
+            raise ArithmeticError(
+                f"transform coefficient at {tuple(int(c) for c in cell)} is not "
+                f"real: {value}; the moments are real, so this means the grid "
+                "aliased -- raise the resolution"
+            )
         vector = tuple(
             int(component) if component <= resolution // 2 else int(component) - resolution
             for component in cell
@@ -929,26 +954,73 @@ def node_count(rank: int) -> int:
 # ---------------------------------------------------------------------------
 
 
-def distinguishable_signature_count(resolution: int, rank: int = 2) -> int:
+#: The order at which the moments first couple the signs of two plaquettes on a
+#: fan of triangles: the difference class needs a walk around two plaquettes, and
+#: on triangles that walk has length eight.  Below this order the signs are
+#: independent and the ambiguity is ``(Z/2)^rank``; at or above it they move
+#: together and the ambiguity is a single ``Z/2``.
+COUPLING_ORDER: int = 8
+
+
+def moments_couple_the_signs(order: int) -> bool:
+    """Is this truncation deep enough for the rigidity theorem to hold?"""
+    if order < 0:
+        raise ValueError(f"order must be non-negative, got {order}")
+    return order >= COUPLING_ORDER
+
+
+def truncated_ambiguity_order(order: int, rank: int = 2) -> int:
+    """Size of the ambiguity group at truncation ``order``.
+
+    ``2^rank`` below `COUPLING_ORDER`, ``2`` at or above it.  The drop is the
+    whole reason the rigidity theorem needs order eight: truncate at six and the
+    two plaquette signs are genuinely independent, so a sweep returns **four**
+    connections sharing a signature rather than two.  Measured, on a ``36 x 36``
+    grid: four at orders four and six, two at order eight.
+    """
+    if rank < 1:
+        raise ValueError(f"rank must be positive, got {rank}")
+    return 2 if moments_couple_the_signs(order) else 2**rank
+
+
+def distinguishable_signature_count(
+    resolution: int, rank: int = 2, order: int = COUPLING_ORDER
+) -> int:
     """How many distinct spectral signatures a torsion grid of connections carries.
 
-    Burnside applied to the inversion action on ``(Z/N)^rank``.  The identity
-    fixes ``N^rank`` points; the inversion fixes the two-torsion, which is
-    ``gcd(2, N)^rank`` points -- ``2^rank`` when ``N`` is even and the single
-    origin when ``N`` is odd.  So
+    Burnside applied to the ambiguity group acting on ``(Z/N)^rank``, and *which*
+    group that is depends on how deep the signature is truncated.  Write
+    ``g = gcd(2, N)`` for the two-torsion of ``Z/N``.
 
-        orbits  =  ( N^rank + gcd(2, N)^rank ) / 2.
+    **At or above `COUPLING_ORDER`** the group is the diagonal ``Z/2``, global
+    inversion.  The identity fixes ``N^rank`` points, the inversion fixes the
+    two-torsion, so
 
-    This is a count of *signatures* only because `rigidity` says the signature
-    separates orbits.  It is therefore a prediction with content: if the theorem
-    were wrong the measured count would come in lower.  It does not.
+        orbits  =  ( N^rank + g^rank ) / 2.
+
+    **Below it** the moments have not yet produced a term joining two classes, so
+    each sign flips independently and the group is the full ``(Z/2)^rank``.  Each
+    of its ``2^rank`` elements fixes ``g^k N^{rank-k}`` points for ``k`` flipped
+    coordinates, and the binomial sum collapses:
+
+        orbits  =  ( (N + g) / 2 )^rank.
+
+    Both are counts of *signatures* only because `rigidity` says the signature
+    separates orbits, so both are predictions with content -- a failure to
+    separate would make the measured count come in lower.  Neither does.  The gap
+    between the two is what makes `rigidity.SIGNATURE_ORDER` load-bearing: at
+    ``N = 8, rank = 2`` the truncated count is ``25`` and the full one is ``34``,
+    and a sweep at order six really does return four matches where a sweep at
+    order eight returns two.
     """
     if resolution < 1:
         raise ValueError(f"resolution must be positive, got {resolution}")
     if rank < 1:
         raise ValueError(f"rank must be positive, got {rank}")
-    fixed = (2 if resolution % 2 == 0 else 1) ** rank
-    return (resolution**rank + fixed) // 2
+    torsion = 2 if resolution % 2 == 0 else 1
+    if moments_couple_the_signs(order):
+        return (resolution**rank + torsion**rank) // 2
+    return ((resolution + torsion) // 2) ** rank
 
 
 def plaquette_fan(count: int) -> tuple[tuple[tuple[int, ...], ...], IntegerConnection]:

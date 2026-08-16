@@ -871,6 +871,28 @@ a fan of three triangles — rank three, fifteen simplices — the count predict
 ambiguity is still exactly `Z/2` one rank up, established by *counting* rather
 than by redoing the argument. That is what a key is for.
 
+**And a truncation law falls out of the support law.** Below the coupling order
+no moment contains a term joining two classes, so the signs are independent and
+the ambiguity group is the **full** `(Z/2)^r`, not the diagonal. The same
+Burnside argument then gives a different closed form:
+
+| truncation | ambiguity group | distinct signatures |
+| --- | --- | --- |
+| order < 8 | `(Z/2)^r` | `((N + g)/2)^r` |
+| order ≥ 8 | diagonal `Z/2` | `(N^r + g^r)/2` |
+
+with `g = gcd(2, N)`. Both measured against brute force, and they differ: `N = 8`
+at rank two gives `25` truncated against `34` full; rank three at `N = 6` gives
+`64` against `112`. The sharpest form is a sweep — at order 6
+`rigidity.rigidity_sweep` returns **four** connections sharing a signature and at
+order 8 it returns two, the four being exactly the independent sign flips
+`(6,13), (6,23), (30,13), (30,23)`.
+
+So `SIGNATURE_ORDER = 8` is not a safety margin, it is the threshold, and one
+notch below it the rigidity theorem is false. That constant was originally chosen
+by guessing generously; it turns out to be exactly tight, and nothing in §12
+could have told us so.
+
 **Two more.** The Fricke residual is a consistency check on local spectral data
 that needs no ground truth, since the cubic is a constraint the data satisfies by
 itself. And the inverse problem now has a normal form: asking what a spectrum

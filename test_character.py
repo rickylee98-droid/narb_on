@@ -184,6 +184,13 @@ class TestTheTwoPathsAgree:
         assert not character.expansions_agree(exact, wrong)
         assert not character.expansions_agree(exact, {(0, 0): 8.0})
 
+    def test_transform_coefficients_are_real(self):
+        """The moments are real, so an imaginary part would mean the grid aliased."""
+        transformed = character.character_expansion_by_transform(
+            TWO_TRIANGLES, (0,), CONNECTION, 8, 2, resolution=16
+        )
+        assert all(isinstance(value, float) for value in transformed.values())
+
     def test_transform_rejects_a_coarse_grid(self):
         with pytest.raises(ValueError, match="at least four"):
             character.character_expansion_by_transform(
@@ -692,6 +699,46 @@ class TestBurnsideCount:
                 resolution, simplices, connection, rank=1
             ) == character.distinguishable_signature_count(resolution, 1)
 
+    @pytest.mark.parametrize(
+        "resolution, expected", [(7, 16), (8, 25), (5, 9), (6, 16)]
+    )
+    def test_truncated_count_matches_brute_force(self, resolution, expected):
+        """Below the coupling order the signs are independent, and the count says so.
+
+        The prediction is ``((N + g) / 2)^rank`` rather than ``(N^rank +
+        g^rank)/2``, and the two differ: ``25`` against ``34`` at ``N = 8``.
+        """
+        assert (
+            character.distinguishable_signature_count(resolution, 2, 6) == expected
+        )
+        assert character.measured_signature_count(resolution, order=6) == expected
+
+    @pytest.mark.parametrize("resolution, expected", [(5, 27), (6, 64)])
+    def test_truncated_count_at_rank_three(self, resolution, expected):
+        simplices, connection = character.plaquette_fan(3)
+        assert (
+            character.distinguishable_signature_count(resolution, 3, 6) == expected
+        )
+        assert (
+            character.measured_signature_count(
+                resolution, simplices, connection, order=6, rank=3
+            )
+            == expected
+        )
+
+    def test_the_two_regimes_differ(self):
+        """Otherwise the truncation law would be saying nothing."""
+        assert character.distinguishable_signature_count(
+            8, 2, 6
+        ) < character.distinguishable_signature_count(8, 2, 8)
+
+    def test_rank_one_has_no_regimes(self):
+        """With a single class there is nothing to couple, so the two agree."""
+        for resolution in (7, 8, 11):
+            assert character.distinguishable_signature_count(
+                resolution, 1, 6
+            ) == character.distinguishable_signature_count(resolution, 1, 8)
+
     def test_measured_count_rejects_zero_rank(self):
         with pytest.raises(ValueError, match="rank must be positive"):
             character.measured_signature_count(4, rank=0)
@@ -705,6 +752,57 @@ class TestBurnsideCount:
             assert character.distinguishable_signature_count(resolution) > (
                 resolution**2
             ) // 2 - 1
+
+
+class TestTruncation:
+    """Why the signature order is load-bearing, and what happens below it."""
+
+    def test_the_coupling_order_matches_the_signature_order(self):
+        assert character.COUPLING_ORDER == rigidity.SIGNATURE_ORDER
+
+    @pytest.mark.parametrize(
+        "order, expected", [(0, False), (4, False), (6, False), (8, True), (10, True)]
+    )
+    def test_coupling_predicate(self, order, expected):
+        assert character.moments_couple_the_signs(order) is expected
+
+    def test_coupling_predicate_rejects_negative_order(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            character.moments_couple_the_signs(-1)
+
+    @pytest.mark.parametrize(
+        "order, rank, expected",
+        [(6, 2, 4), (8, 2, 2), (6, 3, 8), (8, 3, 2), (6, 1, 2), (8, 1, 2)],
+    )
+    def test_ambiguity_order(self, order, rank, expected):
+        assert character.truncated_ambiguity_order(order, rank) == expected
+
+    def test_ambiguity_order_rejects_zero_rank(self):
+        with pytest.raises(ValueError, match="rank must be positive"):
+            character.truncated_ambiguity_order(8, 0)
+
+    @pytest.mark.parametrize("order, expected", [(4, 4), (6, 4), (8, 2)])
+    def test_the_sweep_confirms_it(self, order, expected):
+        """The sharpest form: a sweep truncated at six returns **four** matches.
+
+        The two plaquette signs are independent until a walk crosses both, so
+        below order eight the ambiguity really is ``(Z/2)^2``. The rigidity
+        theorem is a statement about the untruncated signature, and this is the
+        measurement that shows the truncation is not incidental.
+        """
+        matches = rigidity.rigidity_sweep(
+            resolution=36, reference=(6, 13), order=order
+        )
+        assert len(matches) == expected
+        assert len(matches) == character.truncated_ambiguity_order(order, 2)
+
+    def test_the_four_matches_are_the_independent_flips(self):
+        matches = rigidity.rigidity_sweep(resolution=36, reference=(6, 13), order=6)
+        assert set(matches) == {(6, 13), (6, 23), (30, 13), (30, 23)}
+
+    def test_the_two_matches_are_the_diagonal(self):
+        matches = rigidity.rigidity_sweep(resolution=36, reference=(6, 13), order=8)
+        assert set(matches) == {(6, 13), (30, 23)}
 
 
 class TestNovelty:
