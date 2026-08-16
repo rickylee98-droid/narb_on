@@ -3317,70 +3317,73 @@ eigenvalues are not functorial under interleaving and operators change dimension
 along a filtration. At *fixed* combinatorics Weyl gives 1-Lipschitz dependence
 for free, which is all `weyl_bound_holds` claims.
 
-## A twenty-fourth target: the insertion measure
+## A twenty-fourth target: local spectral measures, girth, and Wilson action
 
-`insertion.py` defines an object rather than attacking a conjecture, and derives
-its structure.
+`insertion.py`. **A correction first, because the first version overclaimed.**
+The object is *not* new — it is the **local density of states** of Savostianov,
+Guglielmi, Schaub and Tudisco (arXiv:2502.07558, Def 4.1), whose Chebyshev
+moments `2[T_m(H)]_jj` are already walk moments at a simplex. That claim is
+withdrawn and a test asserts the withdrawal.
 
-**The construction.** `magnetic` established that inserting a simplex is a
-*bordering* of the Dirac operator. A bordering is exactly the situation where a
-Hermitian matrix has a distinguished last basis vector — and that vector carries
-a canonical object, its spectral measure, equivalently the Weyl function
+What appears unclaimed is narrower: taking the measure **at the moment a simplex
+enters a filtration** (a two-parameter (simplex, scale) object — the literature
+computes it at fixed scale), taking it for the **Dirac** operator rather than a
+Hodge Laplacian, and the moment results below.
 
-    m(z) = <e_tau, (D - z)^-1 e_tau> = integral dmu(t)/(t - z)
+**One. Every odd moment vanishes**, any connection — `Gamma` acts on `e_tau` by
+a sign and anticommutes with `D`.
 
-So **every simplex in a filtration carries a probability measure, taken at the
-moment it enters.** Call it the *insertion measure*. Its moments are weighted
-closed-walk counts in the Hasse diagram — and they have far more structure than
-a walk count has any right to.
+**Two. At zero flux the measure is known completely.** `M_2j = (k+1)^j` exactly
+— integers `2,4,8`; `3,9,27`; `4,16,64`; `5,25,125`; `6,36,216`. With vanishing
+odd moments that determines it outright:
 
-**One. Every odd moment vanishes**, for any connection. `Gamma` acts on `e_tau`
-by a sign and anticommutes with `D`. The measure is symmetric about zero.
+    mu_tau = ½ delta_{+sqrt(k+1)} + ½ delta_{-sqrt(k+1)}
 
-**Two. The second moment is purely combinatorial:** `M_2 = dim(tau) + 1`, the
-face count. Independent of the connection, the ambient complex, everything.
-Zero failures across 150 random cases. A closed two-walk goes down to a face and
-straight back, so the phase meets its own conjugate — **flux is invisible at
-second order.**
+A symmetric Bernoulli measure supported on the square root of the face count.
 
-**Three. At zero flux the measure is known completely.** The moments are exact
-integers `M_2j = (k+1)^j` — `2, 4, 8`; `3, 9, 27`; `4, 16, 64`; `5, 25, 125`;
-`6, 36, 216`. With vanishing odd moments that determines the measure outright:
+**Three — the girth law. Flux enters the local moments at order exactly `2g`**,
+where `g` is the shortest bounding cycle through the simplex:
 
-    mu_tau  =  ½ delta_{+sqrt(k+1)}  +  ½ delta_{-sqrt(k+1)}
+| structure | girth | first flux-bearing moment |
+| --- | --- | --- |
+| tree | ∞ | **none** (blind at M2–M10) |
+| 2-simplex | 2 | M4 |
+| edge, graph girth 3 | 3 | M6 |
+| edge, graph girth 4 | 4 | M8 |
 
-A flat insertion measure is a **symmetric Bernoulli distribution whose support is
-the square root of the face count.**
+This is the local form of a Kesten–McKay fact: a tree is simply connected, so
+every connection on it is gauge-trivial and the measure at its root cannot depend
+on phases. **A closed walk sees flux only once it is long enough to enclose
+something.** The law subsumes statement two — `g >= 2` always, so `M_2` is
+flux-blind everywhere and equals the face count.
 
-**Four — the result. In dimension two the excess kurtosis is the squared
-curvature:**
+**Four. For a 2-simplex the excess kurtosis is the local Wilson plaquette
+action:**
 
-    M_4 - M_2²  =  |h - 1|²
+    M_4 - M_2²  =  |h - 1|²  =  2(1 - Re h)
 
-exactly, every connection, every ambient. Max residual `1.3e-15` over 120 random
-cases. The right-hand side is not a new quantity — `|h - 1|` is precisely
-`magnetic.curvature_norm`, the size of `d²`. So a purely spectral fourth moment
-reproduces the differential-geometric curvature of the cell being inserted, while
-the second moment is blind to it. **The insertion measure is combinatorial at
-second order and geometric at fourth.** Equivalently: curvature is exactly the
-amount by which insertion smears the Bernoulli measure, quadratically in the
-holonomy defect.
+exactly, every connection and ambient, residual `1.3e-15` over 120 cases.
 
-**Where it stops, recorded as a result.** The identity is **dimension-two only**.
-For `k >= 3` the excess kurtosis is *not* proportional to any sum of face
-holonomies: regressing against `sum |h-1|²` gives residuals of 2.45 at `k = 3`
-and 2.48 at `k = 4` — comparable to the signal, not a small correction. The
-natural `2/(k+1)` coefficient is wrong too (fitted 0.28 and 0.093 against 0.5 and
-0.4). Above dimension two the triangular faces share edges, so their holonomies
-interfere rather than add. `KURTOSIS_IDENTITY_MAX_DIMENSION` records the boundary
-and a test measures the failure rather than asserting it.
+**The naming was wrong in the first version and is corrected.** This was written
+up as "the excess kurtosis is the squared curvature". The two forms `|h-1|²` and
+`2(1 - Re h)` are *identical* for unitary holonomy, so nothing is approximated —
+but `|F|²` in the differential-geometric sense is recovered from the Wilson
+action only in the continuum, small-flux limit. The lattice name is the honest
+one.
 
-**Novelty.** The insertion measure appears to be new as a definition, and
-statements two through four new as results. Every *tool* is classical — Weyl
-functions, moments as walk counts, the chiral symmetry from `magnetic`. What is
-new is putting a Weyl function on each simplex of a filtration and finding its
-low moments separate combinatorics from curvature this cleanly. **Unverified
-against the literature** — arxiv.org is unreachable from this environment.
+Two structural precedents: **Kenyon** (Ann. Probab. 39, 2011) weights
+cycle-rooted spanning forests by `2 - tr(hol)`, and for `U(1)` that is exactly
+this excess kurtosis — the same quantity in a determinant identity rather than a
+moment one. And **Chamseddine–Connes** (hep-th/9606001) show the fourth
+heat-expansion coefficient of `Tr F(D/Lambda)` contains Yang–Mills; this is a
+discrete *localised* analogue, localised being the operative word since existing
+discrete work (arXiv:2509.04311) takes global traces.
+
+**Where it stops.** Statement four is **dimension-two only**. For `k >= 3` the
+excess kurtosis is not proportional to any sum of face holonomies — residuals
+2.45 and 2.48, comparable to the signal, and the natural `2/(k+1)` coefficient is
+wrong (fitted 0.28, 0.093). Above dimension two the triangular faces share edges,
+so their holonomies interfere rather than add. A test *measures* that failure.
 
 ## Reference document
 

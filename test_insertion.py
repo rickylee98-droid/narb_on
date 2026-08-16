@@ -177,7 +177,7 @@ class TestStatementThreeBernoulli:
 
 
 class TestStatementFourCurvatureIsKurtosis:
-    """The result: excess kurtosis equals squared curvature, in dimension two."""
+    """The result: excess kurtosis is the Wilson plaquette action, in dimension two."""
 
     def test_flat_triangle_has_no_excess(self):
         assert insertion.excess_kurtosis(TRIANGLE, (0, 1, 2), FLAT) == pytest.approx(
@@ -272,7 +272,145 @@ class TestWhereItStops:
         assert excess > 0
         assert abs(excess - face_sum) > 1e-3
 
+    def test_the_definition_is_not_claimed_as_new(self):
+        """The object is the local density of states, and the claim was withdrawn.
+
+        Savostianov, Guglielmi, Schaub and Tudisco (arXiv:2502.07558, Def 4.1)
+        define exactly this measure, with Chebyshev moments that are already
+        walk moments at a simplex.  An earlier version of this module proposed
+        it as a new definition.  Asserted here so the withdrawal cannot erode.
+        """
+        assert "is **not** new" in insertion.__doc__
+        assert "2502.07558" in insertion.__doc__
+        assert "that claim has been withdrawn" in insertion.__doc__
+
+    def test_the_right_hand_side_is_named_wilson_not_curvature(self):
+        """"Squared curvature" was the wrong name and is not used.
+
+        ``|h-1|^2`` and ``2(1 - Re h)`` are identical for unitary holonomy, so
+        no approximation is involved -- but ``|F|^2`` is recovered only in the
+        continuum small-flux limit, so the lattice name is the honest one.
+        """
+        assert "Wilson plaquette action" in insertion.__doc__
+        assert "squared curvature" in insertion.__doc__
+        assert "It is not, quite" in insertion.__doc__
+
     def test_novelty_claim_is_marked_unverified(self):
         """arxiv.org is unreachable here; the claim rests on nothing checked."""
         assert "unverified" in insertion.__doc__
         assert "arxiv.org is unreachable" in insertion.__doc__
+
+
+class TestStatementThreeGirthLaw:
+    """Flux enters the local moments at order exactly ``2g``."""
+
+    TREE = insertion.close_under_faces([(0, 1), (1, 2), (2, 3), (3, 4)])
+    TRIANGLE_GRAPH = insertion.close_under_faces([(0, 1), (0, 2), (1, 2)])
+    SQUARE_GRAPH = insertion.close_under_faces([(0, 1), (1, 2), (2, 3), (0, 3)])
+    CELL = insertion.close_under_faces([(0, 1, 2)])
+
+    @pytest.mark.parametrize(
+        "girth, order", [(2, 4), (3, 6), (4, 8), (5, 10)]
+    )
+    def test_prediction(self, girth: int, order: int):
+        assert insertion.first_flux_bearing_moment(girth) == order
+
+    def test_rejects_girth_below_two(self):
+        with pytest.raises(ValueError, match="at least two"):
+            insertion.first_flux_bearing_moment(1)
+
+    @pytest.mark.parametrize("order", [2, 4, 6, 8, 10])
+    def test_a_tree_is_flux_blind_at_every_order(self, order: int):
+        """Simply connected, so every connection is gauge-trivial.
+
+        This is the local form of the Kesten-McKay fact: the spectral measure at
+        the root of a tree cannot depend on phases, because there is no cycle to
+        carry holonomy.
+        """
+        assert insertion.moment_is_flux_blind(self.TREE, (1, 2), order, seed=3)
+
+    def test_two_simplex_first_sees_flux_at_four(self):
+        assert insertion.moment_is_flux_blind(self.CELL, (0, 1, 2), 2, seed=4)
+        assert not insertion.moment_is_flux_blind(self.CELL, (0, 1, 2), 4, seed=4)
+        assert insertion.first_flux_bearing_moment(2) == 4
+
+    def test_edge_in_girth_three_first_sees_flux_at_six(self):
+        for order in (2, 4):
+            assert insertion.moment_is_flux_blind(
+                self.TRIANGLE_GRAPH, (0, 1), order, seed=5
+            )
+        assert not insertion.moment_is_flux_blind(
+            self.TRIANGLE_GRAPH, (0, 1), 6, seed=5
+        )
+        assert insertion.first_flux_bearing_moment(3) == 6
+
+    def test_edge_in_girth_four_first_sees_flux_at_eight(self):
+        for order in (2, 4, 6):
+            assert insertion.moment_is_flux_blind(
+                self.SQUARE_GRAPH, (0, 1), order, seed=6
+            )
+        assert not insertion.moment_is_flux_blind(
+            self.SQUARE_GRAPH, (0, 1), 8, seed=6
+        )
+        assert insertion.first_flux_bearing_moment(4) == 8
+
+    def test_law_subsumes_the_second_moment_statement(self):
+        """``g >= 2`` always, so ``M_2`` is flux-blind everywhere."""
+        for complex_, simplex in [
+            (self.TREE, (1, 2)),
+            (self.TRIANGLE_GRAPH, (0, 1)),
+            (self.SQUARE_GRAPH, (0, 1)),
+            (self.CELL, (0, 1, 2)),
+        ]:
+            assert insertion.moment_is_flux_blind(complex_, simplex, 2, seed=7)
+
+    def test_blindness_check_rejects_tiny_sample(self):
+        with pytest.raises(ValueError, match="at least two"):
+            insertion.moment_is_flux_blind(self.CELL, (0, 1, 2), 4, samples=1)
+
+
+#: Module level, not a class attribute: `phase_function` returns a *function*,
+#: and a function stored on a class becomes a bound method on attribute access,
+#: so ``self.WEIGHT(u, v)`` would pass ``self`` as a third argument.  That is how
+#: the first version of these tests failed.
+WILSON_WEIGHT = insertion.phase_function({(0, 1): 0.3, (0, 2): 0.9, (1, 2): 0.4})
+
+
+class TestWilsonNaming:
+    """The right-hand side, named correctly and cross-checked."""
+
+    def test_wilson_action_equals_excess_kurtosis(self):
+        assert insertion.wilson_plaquette_action(
+            (0, 1, 2), WILSON_WEIGHT
+        ) == pytest.approx(
+            insertion.excess_kurtosis(TRIANGLE, (0, 1, 2), WILSON_WEIGHT), abs=1e-12
+        )
+
+    def test_wilson_action_is_the_kenyon_weight(self):
+        """``|h-1|^2 = 2 - tr(hol)`` for ``U(1)``.
+
+        Kenyon writes the determinant of a connection Laplacian as a sum over
+        cycle-rooted spanning forests with exactly this weight -- so the same
+        quantity appears in a determinant identity and in this moment identity.
+        """
+        assert insertion.wilson_action_is_the_kenyon_weight((0, 1, 2), WILSON_WEIGHT)
+
+    @pytest.mark.parametrize("seed", [1, 2, 3])
+    def test_kenyon_identity_under_random_phases(self, seed: int):
+        weight = insertion.phase_function(_random_angles(3, seed))
+        assert insertion.wilson_action_is_the_kenyon_weight((0, 1, 2), weight)
+
+    def test_both_forms_agree_exactly(self):
+        """``|h-1|^2`` and ``2(1 - Re h)`` are the same for unitary holonomy."""
+        for seed in range(4):
+            weight = insertion.phase_function(_random_angles(3, seed))
+            holonomy = (
+                weight(0, 1) * weight(1, 2) * weight(2, 0)
+            )
+            assert insertion.wilson_plaquette_action(
+                (0, 1, 2), weight
+            ) == pytest.approx(2 * (1 - holonomy.real), abs=1e-12)
+
+    def test_rejects_wrong_dimension(self):
+        with pytest.raises(ValueError, match="2-simplex"):
+            insertion.wilson_action_is_the_kenyon_weight((0, 1), WILSON_WEIGHT)
