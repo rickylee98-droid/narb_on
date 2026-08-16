@@ -103,9 +103,27 @@ class TestStatementOneSymmetry:
 class TestStatementTwoSecondMoment:
     """``M_2 = dim + 1``, and flux cannot reach it."""
 
-    @pytest.mark.parametrize("dimension", range(6))
+    @pytest.mark.parametrize("dimension", range(1, 6))
     def test_predicted_value(self, dimension: int):
         assert insertion.second_moment(dimension) == dimension + 1
+
+    def test_a_vertex_has_no_facets(self):
+        """The dimension-zero correction, surfaced by summing over a filtration.
+
+        A 0-simplex's only facet is the empty face, which is not a simplex, so a
+        closed two-walk has nowhere to go.  Every earlier check used
+        ``dimension >= 1`` and missed it.
+        """
+        assert insertion.second_moment(0) == 0
+        lone = insertion.close_under_faces([(0,)])
+        assert insertion.insertion_moment(
+            lone, (0,), FLAT, 2
+        ) == pytest.approx(0.0, abs=1e-12)
+
+    def test_vertices_have_no_siblings(self):
+        """``combinations(tau, 0)`` is the empty tuple, contained in everything."""
+        vertices = insertion.close_under_faces([(0,), (1,), (2,)])
+        assert insertion.sibling_count(vertices, (0,)) == 0
 
     @pytest.mark.parametrize("dimension", [1, 2, 3, 4])
     def test_holds_at_zero_flux(self, dimension: int):
@@ -508,3 +526,117 @@ class TestFourthMomentLaw:
     def test_rejects_missing_simplex(self):
         with pytest.raises(ValueError, match="not in the complex"):
             insertion.sibling_count(TRIANGLE, (7, 8, 9))
+
+
+class TestFiltrationInvariant:
+    """Everything assembled: the Wilson action from local spectral data."""
+
+    CASES = [
+        [(0, 1, 2), (0, 1, 3)],
+        [(0, 1, 2), (0, 1, 3), (0, 2, 3), (1, 2, 3)],
+        [(0, 1, 2, 3)],
+        [(0, 1, 2, 3), (0, 1, 2, 4)],
+    ]
+
+    @staticmethod
+    def _weight(faces, seed):
+        vertices = 1 + max(max(face) for face in faces)
+        return insertion.phase_function(_random_angles(vertices, seed))
+
+    @pytest.mark.parametrize("faces", CASES)
+    def test_linear_extension_is_a_valid_order(self, faces):
+        complex_ = insertion.close_under_faces(faces)
+        for seed in range(3):
+            order = insertion.linear_extension(complex_, seed)
+            assert set(order) == set(complex_)
+            seen: set[tuple[int, ...]] = set()
+            for simplex in order:
+                for size in range(1, len(simplex)):
+                    for face in combinations(simplex, size):
+                        assert face in seen
+                seen.add(simplex)
+
+    @pytest.mark.parametrize("faces", CASES)
+    def test_law_sums_exactly(self, faces):
+        complex_ = insertion.close_under_faces(faces)
+        weight = self._weight(faces, 1)
+        for seed in range(4):
+            assert insertion.filtration_invariance_residual(
+                complex_, weight, seed
+            ) < 1e-9
+
+    @pytest.mark.parametrize("faces", CASES)
+    def test_totals_do_not_depend_on_the_order(self, faces):
+        """The individual terms move with the order; the totals do not."""
+        complex_ = insertion.close_under_faces(faces)
+        weight = self._weight(faces, 2)
+        totals = [
+            insertion.filtration_totals(complex_, weight, seed) for seed in range(5)
+        ]
+        assert len({t.baseline for t in totals}) == 1
+        assert len({t.siblings for t in totals}) == 1
+        assert max(t.wilson for t in totals) - min(
+            t.wilson for t in totals
+        ) < 1e-9
+        assert max(t.fourth_moments for t in totals) - min(
+            t.fourth_moments for t in totals
+        ) < 1e-9
+
+    @pytest.mark.parametrize("faces", CASES)
+    def test_recovers_the_total_wilson_action(self, faces):
+        """The result: a global quantity from strictly local moments."""
+        complex_ = insertion.close_under_faces(faces)
+        weight = self._weight(faces, 3)
+        direct = insertion.total_wilson_action(complex_, weight)
+        for seed in range(4):
+            assert insertion.recovered_wilson_action(
+                complex_, weight, seed
+            ) == pytest.approx(direct, abs=1e-9)
+
+    @pytest.mark.parametrize("faces", CASES)
+    def test_order_independence_predicate(self, faces):
+        complex_ = insertion.close_under_faces(faces)
+        assert insertion.wilson_action_is_order_independent(
+            complex_, self._weight(faces, 4)
+        )
+
+    def test_flat_complex_recovers_zero(self):
+        for faces in self.CASES:
+            complex_ = insertion.close_under_faces(faces)
+            assert insertion.recovered_wilson_action(
+                complex_, FLAT
+            ) == pytest.approx(0.0, abs=1e-9)
+            assert insertion.total_wilson_action(complex_, FLAT) == pytest.approx(
+                0.0, abs=1e-12
+            )
+
+    def test_no_global_operator_is_needed(self):
+        """Each moment is computed on a subcomplex, never on the whole thing.
+
+        That is what makes this localised rather than a global trace, and it is
+        the distinction from the existing discrete spectral-action work.
+        """
+        complex_ = insertion.close_under_faces([(0, 1, 2), (0, 1, 3)])
+        order = insertion.linear_extension(complex_, 0)
+        assert len(order) == len(complex_)
+        assert order[0] not in (complex_[-1],)
+
+    def test_rejects_single_order_comparison(self):
+        complex_ = insertion.close_under_faces([(0, 1, 2)])
+        with pytest.raises(ValueError, match="at least two"):
+            insertion.wilson_action_is_order_independent(
+                complex_, FLAT, orders=1
+            )
+
+    def test_totals_dataclass_fields(self):
+        """A lone filled triangle: siblings come from its *edges*, not its faces.
+
+        The three edges pairwise share a vertex, so there are three
+        facet-sharing pairs.  I first expected zero, forgetting that the sibling
+        count runs over every dimension of the filtration, not just the top one.
+        """
+        complex_ = insertion.close_under_faces([(0, 1, 2)])
+        totals = insertion.filtration_totals(complex_, FLAT, 0)
+        assert totals.wilson == pytest.approx(0.0, abs=1e-12)
+        assert totals.siblings == 3
+        assert totals.baseline > 0

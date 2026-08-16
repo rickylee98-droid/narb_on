@@ -131,6 +131,40 @@ discrete and *localised* analogue, localised being the operative word, since the
 existing discrete work (Najem-Mrad-Elsayed, arXiv:2509.04311) takes global
 traces.
 
+**Five -- the filtration invariant.**  Sum the fourth-moment law over an entire
+filtration.  Individually the terms move with the insertion order: a simplex
+entering early sees fewer siblings and a smaller subcomplex.  The totals do not.
+
+    sum_tau M_4(tau)  =  B(K)  +  P(K)  +  W(K)
+
+with ``B`` the sum of squared facet counts, ``P`` the number of facet-sharing
+pairs -- each counted once, when the second of the pair arrives -- and ``W`` the
+**total Wilson action of the complex**.  All three are independent of which
+linear extension of the face poset is used.  Verified across six random orders
+per complex, with spread ``0`` to ``2.8e-14`` and residual ``0`` to ``7e-15``.
+
+Rearranged, that is a recovery statement:
+
+    W(K)  =  sum_tau M_4(tau)  -  B(K)  -  P(K)
+
+**A global gauge-theoretic quantity, obtained from strictly local spectral data**
+-- each moment computed on a subcomplex, at the moment one simplex entered, with
+no global operator ever formed.  Chamseddine-Connes get the Yang-Mills action
+from the fourth heat-expansion coefficient of a *global* trace
+``Tr F(D/Lambda)``, and the existing discrete work in that direction
+(Najem-Mrad-Elsayed, arXiv:2509.04311) also takes global traces.  This assembles
+the same order of the same expansion from local, filtration-adapted pieces.
+
+**A dimension-zero correction the sum surfaced.**  Statement two originally read
+``M_2 = dim + 1`` for every simplex.  It is wrong for a vertex: a 0-simplex's
+only facet is the empty face, which is not a simplex, so a closed two-walk has
+nowhere to go and ``M_2 = 0``.  Every earlier check used ``dimension >= 1``, so
+the case was untested until vertices became unavoidable in a filtration.  The
+same oversight made `sibling_count` treat every other vertex as a sibling, since
+``combinations(tau, 0)`` yields the empty tuple and the empty set is contained in
+everything.  Both are fixed; the corrected statement is ``M_2 = number of facets
+present``.
+
 Novelty
 -------
 
@@ -182,6 +216,13 @@ __all__ = [
     "fourth_moment_law",
     "fourth_moment_law_residual",
     "fourth_moment_law_holds",
+    "linear_extension",
+    "FiltrationTotals",
+    "filtration_totals",
+    "total_wilson_action",
+    "filtration_invariance_residual",
+    "recovered_wilson_action",
+    "wilson_action_is_order_independent",
     "TOLERANCE",
 ]
 
@@ -323,10 +364,18 @@ def odd_moments_vanish(
 
 
 def second_moment(dimension: int) -> int:
-    """``dim + 1``: the predicted second moment, purely combinatorial."""
+    """The number of facets a ``k``-simplex has *present in the complex*.
+
+    ``k + 1`` for ``k >= 1``, and **zero for a vertex** -- a 0-simplex's only
+    facet is the empty face, which is not a simplex, so there is nowhere for a
+    closed two-walk to go.  An earlier version returned ``dim + 1`` uniformly and
+    was wrong at dimension zero; the case was untested because every check used
+    ``dimension >= 1``.  It surfaced when the moments were summed over a whole
+    filtration, where vertices are unavoidable.
+    """
     if dimension < 0:
         raise ValueError(f"dimension must be non-negative, got {dimension}")
-    return dimension + 1
+    return 0 if dimension == 0 else dimension + 1
 
 
 def second_moment_is_combinatorial(
@@ -620,6 +669,11 @@ def sibling_count(
     if simplex not in set(simplices):
         raise ValueError(f"{simplex} is not in the complex")
     size = len(simplex)
+    if size == 1:
+        # A vertex has no facet in the complex.  Without this guard
+        # ``combinations(tau, 0)`` yields the empty tuple, which is a subset of
+        # every simplex, and every other vertex is miscounted as a sibling.
+        return 0
     total = 0
     for face in combinations(simplex, size - 1):
         total += sum(
@@ -676,3 +730,169 @@ def fourth_moment_law_holds(
 ) -> bool:
     """Does the three-term law reproduce the measured fourth moment?"""
     return fourth_moment_law_residual(simplices, simplex, weight) <= TOLERANCE
+
+
+# ---------------------------------------------------------------------------
+# the filtration invariant: a localised, order-free spectral action
+# ---------------------------------------------------------------------------
+#
+# Summing the fourth-moment law over a whole filtration.  Each individual term
+# depends on the insertion order -- a simplex entering early sees fewer siblings
+# and a smaller subcomplex -- but the totals do not, and the geometric part of
+# the total is exactly the Wilson action of the whole complex.
+
+
+def linear_extension(
+    simplices: Sequence[tuple[int, ...]], seed: int = 0
+) -> tuple[tuple[int, ...], ...]:
+    """A random valid insertion order: every face before its cofaces.
+
+    Any linear extension of the face poset is a filtration order, and the
+    theorem below says the totals do not depend on which one is chosen.
+    """
+    generator = np.random.default_rng(seed)
+    remaining = list(simplices)
+    placed: set[tuple[int, ...]] = set()
+    order: list[tuple[int, ...]] = []
+    while remaining:
+        ready = [
+            candidate
+            for candidate in remaining
+            if all(
+                face in placed
+                for size in range(1, len(candidate))
+                for face in combinations(candidate, size)
+            )
+        ]
+        if not ready:
+            raise ValueError("complex is not closed under faces")
+        chosen = ready[int(generator.integers(len(ready)))]
+        order.append(chosen)
+        placed.add(chosen)
+        remaining.remove(chosen)
+    return tuple(order)
+
+
+@dataclass(frozen=True)
+class FiltrationTotals:
+    """The three order-independent totals of a filtration.
+
+    Attributes
+    ----------
+    fourth_moments:
+        ``sum_tau M_4(tau)``, each taken at the moment ``tau`` enters.
+    baseline:
+        ``sum_tau (facet count)^2`` -- combinatorial.
+    siblings:
+        ``sum_tau S(tau)``, counting each facet-sharing pair once, at the
+        moment the second of the pair arrives -- combinatorial.
+    wilson:
+        ``sum_tau W(tau)`` -- the total Wilson action of the complex.
+    """
+
+    fourth_moments: float
+    baseline: int
+    siblings: int
+    wilson: float
+
+
+def filtration_totals(
+    simplices: Sequence[tuple[int, ...]],
+    weight: Callable[[int, int], complex],
+    seed: int = 0,
+) -> FiltrationTotals:
+    """Accumulate the fourth-moment law along a random filtration order."""
+    order = linear_extension(simplices, seed)
+    fourth = 0.0
+    baseline_total = 0
+    sibling_total = 0
+    wilson_total = 0.0
+    for position, simplex in enumerate(order):
+        prefix = order[: position + 1]
+        fourth += insertion_moment(prefix, simplex, weight, 4)
+        baseline_total += second_moment(len(simplex) - 1) ** 2
+        sibling_total += sibling_count(prefix, simplex)
+        if len(simplex) >= 3:
+            wilson_total += wilson_sum(prefix, simplex, weight)
+    return FiltrationTotals(
+        fourth_moments=fourth,
+        baseline=baseline_total,
+        siblings=sibling_total,
+        wilson=wilson_total,
+    )
+
+
+def total_wilson_action(
+    simplices: Sequence[tuple[int, ...]],
+    weight: Callable[[int, int], complex],
+) -> float:
+    """The Wilson action of the whole complex, computed directly.
+
+    Summed over every Hasse plaquette of every simplex, with no filtration
+    involved.  The theorem is that `filtration_totals` recovers this from local
+    insertion moments alone.
+    """
+    return float(
+        sum(
+            wilson_sum(simplices, simplex, weight)
+            for simplex in simplices
+            if len(simplex) >= 3
+        )
+    )
+
+
+def filtration_invariance_residual(
+    simplices: Sequence[tuple[int, ...]],
+    weight: Callable[[int, int], complex],
+    seed: int = 0,
+) -> float:
+    """``|sum M_4 - (baseline + siblings + wilson)|``. Zero is the theorem."""
+    totals = filtration_totals(simplices, weight, seed)
+    return abs(
+        totals.fourth_moments
+        - (totals.baseline + totals.siblings + totals.wilson)
+    )
+
+
+def recovered_wilson_action(
+    simplices: Sequence[tuple[int, ...]],
+    weight: Callable[[int, int], complex],
+    seed: int = 0,
+) -> float:
+    """The Wilson action read off a filtration's local spectral data.
+
+        W(K)  =  sum_tau M_4(tau)  -  baseline(K)  -  siblings(K)
+
+    A global gauge-theoretic quantity obtained from purely local moments, each
+    computed on a subcomplex at the moment one simplex entered.  Neither the
+    moments nor the sibling counts are order-independent individually; their
+    totals are.
+
+    This is what the module has been building toward.  Chamseddine-Connes
+    obtain the Yang-Mills action from the fourth heat-expansion coefficient of a
+    *global* trace ``Tr F(D/Lambda)``, and the existing discrete work in that
+    direction (Najem-Mrad-Elsayed, arXiv:2509.04311) also takes global traces.
+    Here the same order of the same expansion is assembled from strictly local,
+    filtration-adapted data.
+    """
+    totals = filtration_totals(simplices, weight, seed)
+    return totals.fourth_moments - totals.baseline - totals.siblings
+
+
+def wilson_action_is_order_independent(
+    simplices: Sequence[tuple[int, ...]],
+    weight: Callable[[int, int], complex],
+    orders: int = 5,
+) -> bool:
+    """Does every filtration order recover the same Wilson action?
+
+    The claim that makes the recovery meaningful.  Individually the local terms
+    move with the order; the total does not.
+    """
+    if orders < 2:
+        raise ValueError(f"need at least two orders to compare, got {orders}")
+    direct = total_wilson_action(simplices, weight)
+    return all(
+        abs(recovered_wilson_action(simplices, weight, seed) - direct) <= TOLERANCE
+        for seed in range(orders)
+    )

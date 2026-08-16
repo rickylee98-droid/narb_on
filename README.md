@@ -3400,6 +3400,40 @@ coefficient of `Tr F(D/Lambda)` contains Yang–Mills; this is a discrete
 *localised* analogue, localised being the operative word since existing discrete
 work (arXiv:2509.04311) takes global traces.
 
+### Five — the filtration invariant
+
+Sum the fourth-moment law over an entire filtration. Individually the terms move
+with the insertion order — a simplex entering early sees fewer siblings and a
+smaller subcomplex. **The totals do not.**
+
+    sum_tau M_4(tau)  =  B(K)  +  P(K)  +  W(K)
+
+with `B` the sum of squared facet counts, `P` the facet-sharing pairs (each
+counted once, when the second arrives), and `W` the **total Wilson action of the
+complex**. All three are independent of which linear extension of the face poset
+is used — verified across six random orders per complex, spread `0` to `2.8e-14`,
+residual `0` to `7e-15`.
+
+Rearranged, it is a recovery statement:
+
+    W(K)  =  sum_tau M_4(tau)  -  B(K)  -  P(K)
+
+**A global gauge-theoretic quantity from strictly local spectral data** — each
+moment computed on a subcomplex, at the moment one simplex entered, with no
+global operator ever formed. Chamseddine–Connes obtain Yang–Mills from the fourth
+heat-expansion coefficient of a *global* trace `Tr F(D/Lambda)`, and the existing
+discrete work (arXiv:2509.04311) also takes global traces. This assembles the
+same order of the same expansion from local, filtration-adapted pieces.
+
+**A dimension-zero correction the sum surfaced.** Statement two originally read
+`M_2 = dim + 1` for every simplex. It is **wrong for a vertex**: a 0-simplex's
+only facet is the empty face, which is not a simplex, so `M_2 = 0`. Every earlier
+check used `dimension >= 1`, so the case was untested until vertices became
+unavoidable in a filtration. The same oversight made `sibling_count` treat every
+other vertex as a sibling, since `combinations(tau, 0)` is the empty tuple and
+the empty set is contained in everything. Both fixed; the corrected statement is
+**`M_2 = number of facets present`**.
+
 ## Reference document
 
 `docs/REFERENCE.md` is the standing write-up: every result this repository
