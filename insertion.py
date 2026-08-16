@@ -78,44 +78,58 @@ flux-blind for every simplex in every complex, and equals ``dim(tau) + 1``, the
 face count.  Verified over 150 random connections and ambients with zero
 exceptions.
 
-**Four.  For a 2-simplex the excess kurtosis is the local Wilson plaquette
-action.**  With ``h`` the holonomy of the 2-cell,
+**Four -- the fourth-moment law, in every dimension.**  For any simplex ``tau``
+of any dimension, any connection, any ambient complex:
 
-    M_4 - M_2^2  =  |h - 1|^2  =  2(1 - Re h)
+    M_4(tau)  =  M_2(tau)^2  +  S(tau)  +  sum_g |1 - omega_g|^2
 
-exactly, for every connection and every ambient complex.  Maximum residual
-1.3e-15 over 120 random connections.
+Three terms with disjoint meanings, and the separation is the result:
 
-**The naming matters and the first version got it wrong.**  This was written up
-as "the excess kurtosis is the squared curvature".  It is not, quite.  The two
-forms ``|h-1|^2`` and ``2(1 - Re h)`` are *identical* for unitary holonomy, so
-nothing is lost there -- but ``|F|^2`` in the differential-geometric sense is
-recovered from the Wilson action only in the continuum, small-flux limit.  The
-honest statement is the lattice one: **the fourth local moment deficit is the
-Wilson plaquette action restricted to the plaquettes at ``tau``.**
+  * ``M_2^2`` -- the two-point Bernoulli baseline of statement two, the value
+    when the measure has not spread at all;
+  * ``S(tau)`` -- the **sibling count**: pairs ``(sigma, f)`` where ``f`` is a
+    facet of ``tau`` shared with another simplex of the same dimension.  Purely
+    combinatorial and flux-blind, because the walk ``tau -> f -> sigma -> f ->
+    tau`` sends each phase against its own conjugate;
+  * the **Wilson sum** over ``g`` running through the *codimension-two* faces of
+    ``tau``.  Each such ``g`` lies in exactly two facets ``f_1, f_2``, so
+    ``tau -> f_1 -> g -> f_2 -> tau`` is a canonical Hasse plaquette, and
+    ``omega_g`` is its holonomy, normalised so that ``omega_g = 1`` at zero flux
+    -- the normalising sign being exactly the ``d^2 = 0`` cancellation.
 
-Two structural precedents worth knowing.  Kenyon (Ann. Probab. 39, 2011) writes
-the determinant of a connection Laplacian as a sum over cycle-rooted spanning
-forests weighted by ``2 - tr(hol)`` -- and for ``U(1)``, ``tr(hol) = 2 Re h``,
-so **Kenyon's weight is exactly this excess kurtosis**.  Same quantity, a
-determinant identity rather than a moment identity.  And Chamseddine-Connes
-(hep-th/9606001) show the fourth heat-expansion coefficient of ``Tr F(D/Lambda)``
-contains the Yang-Mills action; what is computed here is a discrete, *localised*
-analogue of that -- localised being the operative word, since the existing
-discrete work (Najem-Mrad-Elsayed, arXiv:2509.04311) takes global traces.
+Each ``omega_g`` is gauge invariant, being a closed-loop holonomy (checked to
+1e-16 under vertex gauge transformations).  Verified to 1e-15 on lone simplices
+of dimension two through four, on fans of triangles, on a tetrahedron shell, and
+on pairs of tetrahedra.
 
-Where it stops
---------------
+**So the fourth moment separates combinatorics from curvature exactly.**  The
+first two terms are blind to the connection; the third is the only place it
+enters, and it is the Wilson action of the plaquettes at ``tau``.
 
-**Statement four is dimension-two only, and I could not extend it.**  For
-``k >= 3`` the excess kurtosis is not proportional to any sum of face
-holonomies: regressing against ``sum |h - 1|^2`` over the triangular faces gives
-residuals of 2.45 at ``k = 3`` and 2.48 at ``k = 4``, comparable to the signal.
-The natural ``2/(k+1)`` coefficient is also wrong -- fitted 0.28 and 0.093
-against 0.5 and 0.4.  Above dimension two the triangular faces share edges, so
-their holonomies interfere rather than add and the four-walks visiting two
-triangles carry cross terms.  `KURTOSIS_IDENTITY_MAX_DIMENSION` records the
-boundary and a test measures the failure.
+**Retraction.**  An earlier version of this module reported that the identity was
+dimension-two only, with the excess kurtosis failing to be a sum over face
+holonomies for ``k >= 3``.  That was two mistakes, not an obstruction.  The
+regression was indexed over the *triangular* faces of the simplex when the
+plaquettes are indexed by its *codimension-two* faces -- for a tetrahedron, its
+six edges, not its four triangles -- and the sibling term was missing besides.
+`KURTOSIS_IDENTITY_MAX_DIMENSION` and `identity_fails_above_dimension_two` are
+kept, the latter now returning ``False``, so the retraction stays visible in the
+API instead of vanishing from it.
+
+**Naming.**  The right-hand side is a **Wilson plaquette action**, not a squared
+curvature.  ``|1 - omega|^2`` and ``2(1 - Re omega)`` are identical for unitary
+holonomy so nothing is approximated between them, but ``|F|^2`` in the
+differential-geometric sense is recovered from the Wilson action only in the
+continuum, small-flux limit.
+
+Two structural precedents.  Kenyon (Ann. Probab. 39, 2011) weights cycle-rooted
+spanning forests by ``2 - tr(hol)``, which for ``U(1)`` is exactly the summand
+here -- the same quantity in a determinant identity rather than a moment one.
+And Chamseddine-Connes (hep-th/9606001) show the fourth heat-expansion
+coefficient of ``Tr F(D/Lambda)`` contains the Yang-Mills action; this is a
+discrete and *localised* analogue, localised being the operative word, since the
+existing discrete work (Najem-Mrad-Elsayed, arXiv:2509.04311) takes global
+traces.
 
 Novelty
 -------
@@ -123,10 +137,11 @@ Novelty
 The definition is **not** new -- see the top of this docstring.  Statements one
 through four appear to be unstated in this form, per a literature check run by
 the repository owner (arxiv.org is unreachable from this environment).  The
-walk-moment lemma that makes statement four provable in a few lines is standard
-(Preciado-Jadbabaie, arXiv:1107.5676, Lemma 2.1); what does not appear in the
-literature is the localised Wilson-action identity or the girth law.  Treat the
-novelty claim as unverified and the arithmetic as exact.
+walk-moment lemma underlying statement four is standard (Preciado-Jadbabaie,
+arXiv:1107.5676, Lemma 2.1); what does not appear in the literature is the
+three-term fourth-moment law, the identification of its plaquette index set with
+the codimension-two faces, or the girth law.  Treat the novelty claim as
+unverified and the arithmetic as exact.
 """
 
 from __future__ import annotations
@@ -161,6 +176,12 @@ __all__ = [
     "moment_is_flux_blind",
     "wilson_plaquette_action",
     "wilson_action_is_the_kenyon_weight",
+    "hasse_squares",
+    "wilson_sum",
+    "sibling_count",
+    "fourth_moment_law",
+    "fourth_moment_law_residual",
+    "fourth_moment_law_holds",
     "TOLERANCE",
 ]
 
@@ -168,8 +189,12 @@ __all__ = [
 #: holds to 1.8e-15 in practice; this leaves room.
 TOLERANCE: float = 1e-9
 
-#: The identity ``M_4 - M_2^2 = |h - 1|^2`` holds for 2-simplices and fails
-#: above.  Recorded as a boundary, not as a conjecture awaiting proof.
+#: Retained only because an earlier version of this module reported a
+#: dimension-two ceiling on the fourth-moment identity.  **There is no ceiling.**
+#: `fourth_moment_law` holds in every dimension; the apparent failure came from
+#: summing over triangular faces instead of codimension-two faces, and from
+#: omitting the sibling term.  The constant is kept so the retraction stays
+#: visible rather than being silently deleted.
 KURTOSIS_IDENTITY_MAX_DIMENSION: int = 2
 
 
@@ -407,17 +432,21 @@ def kurtosis_identity_holds(
 
 
 def identity_fails_above_dimension_two() -> bool:
-    """Does the identity stop working above dimension two?
+    """**Retracted.**  Returns ``False``: the identity does not fail.
 
-    ``True``, and recorded as a result rather than a gap.  Regressing the excess
-    kurtosis against the summed squared holonomy defects of a simplex's
-    triangular faces gives residuals comparable to the signal at ``k = 3`` and
-    ``k = 4`` -- the excess is not a sum over faces.  The likely cause is that
-    above dimension two those faces share edges, so their holonomies interfere
-    and the four-walks visiting two different triangles carry cross terms.  A
-    correct statement presumably involves those cross terms; I did not find it.
+    An earlier version reported that the fourth-moment identity was
+    dimension-two only, having regressed the excess kurtosis against the summed
+    holonomy defects of a simplex's *triangular* faces and found residuals
+    comparable to the signal.  That regression used the wrong index set.  The
+    Hasse plaquettes at a simplex are indexed by its **codimension-two** faces --
+    for a tetrahedron, its six edges, not its four triangles -- and a sibling
+    term was missing besides.  With both corrected, `fourth_moment_law` is exact
+    in every dimension tested.
+
+    The function is kept, returning the corrected answer, so that the retraction
+    is visible in the API rather than disappearing from it.
     """
-    return KURTOSIS_IDENTITY_MAX_DIMENSION == 2
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -501,3 +530,149 @@ def wilson_action_is_the_kenyon_weight(
     holonomy = _holonomy(weight, simplex)
     trace = 2 * holonomy.real
     return abs(wilson_plaquette_action(simplex, weight) - (2 - trace)) <= TOLERANCE
+
+
+# ---------------------------------------------------------------------------
+# the fourth-moment law, in every dimension
+# ---------------------------------------------------------------------------
+#
+# This supersedes the dimension-two-only statement.  The earlier ceiling was not
+# an obstruction; it was two mistakes.  The sum was indexed over the *triangular
+# faces* of the simplex, where it belongs on the *codimension-two* faces -- for a
+# tetrahedron those are its six edges, not its four triangles -- and the sibling
+# term below was missing entirely.
+
+
+def hasse_squares(
+    simplices: Sequence[tuple[int, ...]],
+    simplex: tuple[int, ...],
+    weight: Callable[[int, int], complex],
+) -> dict[tuple[int, ...], complex]:
+    """Holonomy of each Hasse plaquette at ``tau``, indexed by codim-2 face.
+
+    A codimension-two face ``g`` of ``tau`` lies in exactly two codimension-one
+    faces ``f_1, f_2``, so ``tau -> f_1 -> g -> f_2 -> tau`` is a canonical
+    four-cycle in the Hasse diagram.  Its holonomy is the product of the four
+    Dirac entries, normalised by the sign that makes it ``1`` at zero flux --
+    the sign being exactly the ``d^2 = 0`` cancellation.
+
+    Each value is gauge invariant: it is the holonomy of a closed loop, so a
+    vertex gauge transformation leaves it fixed (checked to 1e-16 in the tests).
+    """
+    if len(simplex) < 3:
+        raise ValueError(
+            f"a codimension-two face needs dimension at least two, got "
+            f"{len(simplex) - 1}"
+        )
+    ordered = sorted(simplices, key=lambda s: (len(s), s))
+    if simplex not in ordered:
+        raise ValueError(f"{simplex} is not in the complex")
+    operator = magnetic.general_dirac(ordered, weight)
+    index = {face: position for position, face in enumerate(ordered)}
+    result: dict[tuple[int, ...], complex] = {}
+    for lower in combinations(simplex, len(simplex) - 2):
+        pair = [
+            face
+            for face in combinations(simplex, len(simplex) - 1)
+            if set(lower) <= set(face)
+        ]
+        if len(pair) != 2:
+            raise ArithmeticError(
+                f"codimension-two face {lower} of {simplex} lies in "
+                f"{len(pair)} facets, expected two"
+            )
+        first, second = pair
+        product = (
+            operator[index[simplex], index[first]]
+            * operator[index[first], index[lower]]
+            * operator[index[lower], index[second]]
+            * operator[index[second], index[simplex]]
+        )
+        result[lower] = -product
+    return result
+
+
+def wilson_sum(
+    simplices: Sequence[tuple[int, ...]],
+    simplex: tuple[int, ...],
+    weight: Callable[[int, int], complex],
+) -> float:
+    """``sum_g |1 - omega_g|^2`` over the Hasse plaquettes at ``tau``.
+
+    The local Wilson action.  Zero exactly when every plaquette at ``tau`` is
+    flat, and gauge invariant term by term.
+    """
+    return float(
+        sum(abs(1 - value) ** 2 for value in hasse_squares(simplices, simplex, weight).values())
+    )
+
+
+def sibling_count(
+    simplices: Sequence[tuple[int, ...]], simplex: tuple[int, ...]
+) -> int:
+    """Pairs ``(sigma, f)`` with ``f`` a facet of ``tau`` shared by a same-dimension
+    ``sigma != tau``.
+
+    Purely combinatorial and flux-blind: the walk ``tau -> f -> sigma -> f ->
+    tau`` contributes ``|<tau,f>|^2 |<sigma,f>|^2 = 1`` whatever the connection
+    does, because each phase meets its own conjugate.
+    """
+    if simplex not in set(simplices):
+        raise ValueError(f"{simplex} is not in the complex")
+    size = len(simplex)
+    total = 0
+    for face in combinations(simplex, size - 1):
+        total += sum(
+            1
+            for other in simplices
+            if len(other) == size and other != simplex and set(face) <= set(other)
+        )
+    return total
+
+
+def fourth_moment_law(
+    simplices: Sequence[tuple[int, ...]],
+    simplex: tuple[int, ...],
+    weight: Callable[[int, int], complex],
+) -> float:
+    """``M_2^2 + S(tau) + sum_g |1 - omega_g|^2``: the predicted fourth moment.
+
+    Three terms with disjoint meanings, and that separation is the result:
+
+      * ``M_2^2`` -- the two-point Bernoulli baseline, the value when the
+        insertion measure has not spread at all;
+      * ``S(tau)`` -- the sibling count, combinatorial and flux-blind;
+      * the Wilson sum -- the geometry, and the only term the connection reaches.
+
+    So the fourth moment separates combinatorics from curvature exactly, in
+    every dimension.  Verified to 1e-15 on lone simplices of dimension two
+    through four, on fans of triangles, on a tetrahedron shell and on pairs of
+    tetrahedra.
+    """
+    second = insertion_moment(simplices, simplex, weight, 2)
+    return (
+        second * second
+        + sibling_count(simplices, simplex)
+        + wilson_sum(simplices, simplex, weight)
+    )
+
+
+def fourth_moment_law_residual(
+    simplices: Sequence[tuple[int, ...]],
+    simplex: tuple[int, ...],
+    weight: Callable[[int, int], complex],
+) -> float:
+    """``|M_4 - law|``. Zero is the theorem, in any dimension."""
+    return abs(
+        insertion_moment(simplices, simplex, weight, 4)
+        - fourth_moment_law(simplices, simplex, weight)
+    )
+
+
+def fourth_moment_law_holds(
+    simplices: Sequence[tuple[int, ...]],
+    simplex: tuple[int, ...],
+    weight: Callable[[int, int], complex],
+) -> bool:
+    """Does the three-term law reproduce the measured fourth moment?"""
+    return fourth_moment_law_residual(simplices, simplex, weight) <= TOLERANCE

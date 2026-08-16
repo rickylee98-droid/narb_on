@@ -244,33 +244,35 @@ class TestStatementFourCurvatureIsKurtosis:
 class TestWhereItStops:
     """The dimension-two boundary, recorded as a result."""
 
-    def test_boundary_is_two(self):
-        assert insertion.KURTOSIS_IDENTITY_MAX_DIMENSION == 2
-        assert insertion.identity_fails_above_dimension_two() is True
+    def test_the_ceiling_was_retracted(self):
+        """There is no dimension-two ceiling; the earlier report was wrong.
 
-    def test_no_higher_dimensional_identity_is_offered(self):
-        """The natural generalisation was tried and does not work.
-
-        Regressing the excess kurtosis against the summed squared holonomy
-        defects of a simplex's triangular faces gives residuals comparable to
-        the signal at ``k = 3`` and ``k = 4``, and the natural ``2/(k+1)``
-        coefficient is wrong by a factor of two or more.  Above dimension two
-        the triangular faces share edges, so their holonomies interfere rather
-        than add.  No function here claims otherwise.
+        The constant is kept so the retraction stays visible, but the predicate
+        now returns ``False``: `fourth_moment_law` is exact in every dimension
+        once the plaquettes are indexed by codimension-two faces and the sibling
+        term is included.
         """
-        assert not hasattr(insertion, "higher_kurtosis_identity")
-        assert not hasattr(insertion, "curvature_sum_identity")
+        assert insertion.KURTOSIS_IDENTITY_MAX_DIMENSION == 2
+        assert insertion.identity_fails_above_dimension_two() is False
+        assert "Retraction" in insertion.__doc__
 
-    def test_tetrahedron_excess_is_not_a_face_sum(self):
-        """Measured, so the negative result is not merely asserted."""
+    def test_the_wrong_index_set_really_does_fail(self):
+        """Why the earlier attempt failed, preserved as a measurement.
+
+        Summing over *triangular* faces is wrong; the plaquettes live on
+        *codimension-two* faces.  For a tetrahedron that is six edges against
+        four triangles, so the two index sets do not even have the same size.
+        """
         weight = insertion.phase_function(_random_angles(4, 41))
         excess = insertion.excess_kurtosis(TETRAHEDRON, (0, 1, 2, 3), weight)
-        face_sum = sum(
+        triangular = sum(
             insertion.holonomy_defect_squared(triangle, weight)
             for triangle in combinations(range(4), 3)
         )
-        assert excess > 0
-        assert abs(excess - face_sum) > 1e-3
+        correct = insertion.wilson_sum(TETRAHEDRON, (0, 1, 2, 3), weight)
+        assert abs(excess - triangular) > 1e-3
+        assert excess == pytest.approx(correct, abs=1e-9)
+        assert len(insertion.hasse_squares(TETRAHEDRON, (0, 1, 2, 3), weight)) == 6
 
     def test_the_definition_is_not_claimed_as_new(self):
         """The object is the local density of states, and the claim was withdrawn.
@@ -292,8 +294,8 @@ class TestWhereItStops:
         continuum small-flux limit, so the lattice name is the honest one.
         """
         assert "Wilson plaquette action" in insertion.__doc__
-        assert "squared curvature" in insertion.__doc__
-        assert "It is not, quite" in insertion.__doc__
+        assert "**Naming.**" in insertion.__doc__
+        assert "small-flux limit" in insertion.__doc__
 
     def test_novelty_claim_is_marked_unverified(self):
         """arxiv.org is unreachable here; the claim rests on nothing checked."""
@@ -414,3 +416,95 @@ class TestWilsonNaming:
     def test_rejects_wrong_dimension(self):
         with pytest.raises(ValueError, match="2-simplex"):
             insertion.wilson_action_is_the_kenyon_weight((0, 1), WILSON_WEIGHT)
+
+
+class TestFourthMomentLaw:
+    """The general law: baseline, siblings, Wilson action."""
+
+    CASES = [
+        ([(0, 1, 2)], (0, 1, 2), 0, 3),
+        ([(0, 1, 2), (0, 1, 3)], (0, 1, 2), 1, 3),
+        ([(0, 1, 2), (0, 1, 3), (0, 1, 4)], (0, 1, 2), 2, 3),
+        ([(0, 1, 2), (0, 1, 3), (0, 2, 3), (1, 2, 3)], (0, 1, 2), 3, 3),
+        ([(0, 1, 2, 3)], (0, 1, 2, 3), 0, 6),
+        ([(0, 1, 2, 3), (0, 1, 2, 4)], (0, 1, 2, 3), 1, 6),
+        ([(0, 1, 2, 3, 4)], (0, 1, 2, 3, 4), 0, 10),
+    ]
+
+    @pytest.mark.parametrize("faces, simplex, expected_siblings, plaquettes", CASES)
+    def test_law_is_exact(self, faces, simplex, expected_siblings, plaquettes):
+        complex_ = insertion.close_under_faces(faces)
+        vertices = 1 + max(max(face) for face in faces)
+        assert insertion.sibling_count(complex_, simplex) == expected_siblings
+        for seed in range(4):
+            weight = insertion.phase_function(_random_angles(vertices, seed))
+            assert len(insertion.hasse_squares(complex_, simplex, weight)) == plaquettes
+            assert insertion.fourth_moment_law_holds(complex_, simplex, weight)
+            assert insertion.fourth_moment_law_residual(
+                complex_, simplex, weight
+            ) < 1e-12
+
+    def test_plaquettes_are_indexed_by_codimension_two_faces(self):
+        """Six for a tetrahedron, not four -- edges, not triangles."""
+        for dimension in (2, 3, 4, 5):
+            simplex = tuple(range(dimension + 1))
+            complex_ = insertion.close_under_faces([simplex])
+            squares = insertion.hasse_squares(complex_, simplex, FLAT)
+            assert len(squares) == len(list(combinations(simplex, dimension - 1)))
+
+    def test_flat_plaquettes_are_all_one(self):
+        """The normalising sign is exactly the ``d^2 = 0`` cancellation."""
+        for dimension in (2, 3, 4):
+            simplex = tuple(range(dimension + 1))
+            complex_ = insertion.close_under_faces([simplex])
+            for value in insertion.hasse_squares(complex_, simplex, FLAT).values():
+                assert value == pytest.approx(1.0, abs=1e-12)
+
+    @pytest.mark.parametrize("dimension", [2, 3])
+    def test_plaquette_holonomies_are_gauge_invariant(self, dimension: int):
+        """A vertex gauge transformation cannot move a closed-loop holonomy."""
+        simplex = tuple(range(dimension + 1))
+        complex_ = insertion.close_under_faces([simplex])
+        rng = np.random.default_rng(dimension)
+        angles = _random_angles(dimension + 1, 5)
+        shift = {v: float(rng.uniform(0, 2 * np.pi)) for v in simplex}
+        gauged = {
+            edge: value + shift[edge[1]] - shift[edge[0]]
+            for edge, value in angles.items()
+        }
+        before = insertion.hasse_squares(
+            complex_, simplex, insertion.phase_function(angles)
+        )
+        after = insertion.hasse_squares(
+            complex_, simplex, insertion.phase_function(gauged)
+        )
+        for face in before:
+            assert before[face] == pytest.approx(after[face], abs=1e-12)
+
+    def test_sibling_term_is_flux_blind(self):
+        """It is a count, so no connection can change it."""
+        complex_ = insertion.close_under_faces([(0, 1, 2), (0, 1, 3)])
+        assert insertion.sibling_count(complex_, (0, 1, 2)) == 1
+        assert insertion.sibling_count(complex_, (0, 1, 3)) == 1
+
+    def test_wilson_sum_vanishes_at_zero_flux(self):
+        for faces, simplex, _, _ in self.CASES:
+            complex_ = insertion.close_under_faces(faces)
+            assert insertion.wilson_sum(complex_, simplex, FLAT) == pytest.approx(
+                0.0, abs=1e-12
+            )
+
+    def test_two_simplex_case_reduces_to_the_holonomy(self):
+        """One plaquette carries the flux and the other two are trivial."""
+        weight = insertion.phase_function(_random_angles(3, 2))
+        assert insertion.wilson_sum(TRIANGLE, (0, 1, 2), weight) == pytest.approx(
+            insertion.holonomy_defect_squared((0, 1, 2), weight), abs=1e-12
+        )
+
+    def test_rejects_low_dimension(self):
+        with pytest.raises(ValueError, match="dimension at least two"):
+            insertion.hasse_squares(TRIANGLE, (0, 1), FLAT)
+
+    def test_rejects_missing_simplex(self):
+        with pytest.raises(ValueError, match="not in the complex"):
+            insertion.sibling_count(TRIANGLE, (7, 8, 9))

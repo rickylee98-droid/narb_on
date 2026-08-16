@@ -3357,33 +3357,48 @@ on phases. **A closed walk sees flux only once it is long enough to enclose
 something.** The law subsumes statement two — `g >= 2` always, so `M_2` is
 flux-blind everywhere and equals the face count.
 
-**Four. For a 2-simplex the excess kurtosis is the local Wilson plaquette
-action:**
+**Four — the fourth-moment law, in every dimension.** For any simplex, any
+dimension, any connection, any ambient complex:
 
-    M_4 - M_2²  =  |h - 1|²  =  2(1 - Re h)
+    M_4(tau)  =  M_2(tau)²  +  S(tau)  +  sum_g |1 - omega_g|²
 
-exactly, every connection and ambient, residual `1.3e-15` over 120 cases.
+Three terms with disjoint meanings, and **the separation is the result**:
 
-**The naming was wrong in the first version and is corrected.** This was written
-up as "the excess kurtosis is the squared curvature". The two forms `|h-1|²` and
-`2(1 - Re h)` are *identical* for unitary holonomy, so nothing is approximated —
-but `|F|²` in the differential-geometric sense is recovered from the Wilson
-action only in the continuum, small-flux limit. The lattice name is the honest
-one.
+| term | meaning | sees the connection? |
+| --- | --- | --- |
+| `M_2²` | the two-point Bernoulli baseline | no |
+| `S(tau)` | sibling count: facets shared with another same-dimension simplex | no |
+| `sum_g \|1 - omega_g\|²` | Wilson action over the Hasse plaquettes at `tau` | **yes** |
+
+Each codim-2 face `g` lies in exactly two facets `f_1, f_2`, so
+`tau -> f_1 -> g -> f_2 -> tau` is a canonical Hasse plaquette; `omega_g` is its
+holonomy, normalised so `omega_g = 1` at zero flux — **the normalising sign being
+exactly the `d² = 0` cancellation.** Each is gauge-invariant (checked to `1e-16`
+under vertex gauge transformations). Verified to `1e-15` on lone simplices of
+dimension 2–4, triangle fans, a tetrahedron shell, and pairs of tetrahedra.
+
+So **the fourth moment separates combinatorics from curvature exactly.** The
+first two terms are blind to the connection; the third is the only place it
+enters.
+
+**Retraction.** An earlier version reported this identity as dimension-two only.
+That was two mistakes, not an obstruction: the sum was indexed over the simplex's
+**triangular** faces when the plaquettes live on its **codimension-two** faces —
+for a tetrahedron, its 6 edges, not its 4 triangles — and the sibling term was
+missing. `identity_fails_above_dimension_two` is kept in the API, now returning
+`False`, so the retraction stays visible instead of vanishing.
+
+**Naming.** The right-hand side is a Wilson plaquette action, not a squared
+curvature — `|1-omega|²` and `2(1 - Re omega)` are identical for unitary holonomy,
+but `|F|²` is recovered only in the continuum small-flux limit.
 
 Two structural precedents: **Kenyon** (Ann. Probab. 39, 2011) weights
-cycle-rooted spanning forests by `2 - tr(hol)`, and for `U(1)` that is exactly
-this excess kurtosis — the same quantity in a determinant identity rather than a
-moment one. And **Chamseddine–Connes** (hep-th/9606001) show the fourth
-heat-expansion coefficient of `Tr F(D/Lambda)` contains Yang–Mills; this is a
-discrete *localised* analogue, localised being the operative word since existing
-discrete work (arXiv:2509.04311) takes global traces.
-
-**Where it stops.** Statement four is **dimension-two only**. For `k >= 3` the
-excess kurtosis is not proportional to any sum of face holonomies — residuals
-2.45 and 2.48, comparable to the signal, and the natural `2/(k+1)` coefficient is
-wrong (fitted 0.28, 0.093). Above dimension two the triangular faces share edges,
-so their holonomies interfere rather than add. A test *measures* that failure.
+cycle-rooted spanning forests by `2 - tr(hol)`, exactly this summand for `U(1)` —
+the same quantity in a determinant identity rather than a moment one. And
+**Chamseddine–Connes** (hep-th/9606001) show the fourth heat-expansion
+coefficient of `Tr F(D/Lambda)` contains Yang–Mills; this is a discrete
+*localised* analogue, localised being the operative word since existing discrete
+work (arXiv:2509.04311) takes global traces.
 
 ## Reference document
 
