@@ -4,7 +4,7 @@ A standing record of what this repository establishes, what it refutes, and
 what it leaves open. Every result here is backed by a module and a test suite;
 the code is the authority and this document is the map.
 
-**Status at time of writing:** 3718 tests passing, branch
+**Status at time of writing:** 3800+ tests passing, branch
 `claude/tetrahedron-packing-spectral-u7029m`.
 
 **On citations:** author, title and year are reliable. arXiv identifiers were
@@ -28,7 +28,7 @@ Three rules, in the order they matter.
 3. **Every identity computed two ways that share no code.** Exact arithmetic
    wherever the problem admits it — `Fraction`, `sympy`, cyclotomic integers.
 
-The failure catalogue in §12 is the most transferable artifact here.
+The failure catalogue in §13 is the most transferable artifact here.
 
 ---
 
@@ -528,7 +528,107 @@ Anh–Dik–Anh, arXiv:2506.21352; Jung–Kang–Park, arXiv:2512.05463.*
 
 ---
 
-## 11. Ledger
+## 11. Local spectral measures: girth, Wilson action, and a filtration invariant
+
+*Module: `insertion.py`. Statements 3–5 are original.*
+
+**The object is not new.** It is the *local density of states* of Savostianov,
+Guglielmi, Schaub and Tudisco (arXiv:2502.07558, Def 4.1) — the spectral measure
+of an operator at one simplex's basis vector, whose Chebyshev moments
+`2[T_m(H)]_jj` are already walk moments at a simplex. An earlier draft proposed
+it as a new definition; that claim is withdrawn and a test asserts the
+withdrawal. What is narrower and appears unclaimed: taking it **at the moment a
+simplex enters a filtration**, taking it for the **Dirac** operator, and the
+moment results below.
+
+**Why this measure.** §10 established that insertion is a *bordering*, which is
+exactly the situation where a Hermitian matrix has a distinguished last basis
+vector — and that vector carries its spectral measure. Its Stieltjes transform
+`m(z) = <e_tau, (D-z)^-1 e_tau>` is the rank-one Donoghue M-function of
+`(D, e_tau)`. Standard in degree zero (Post 2009; Pankrashkin math-ph/0512090,
+where magnetic phases already enter the boundary functionals), never pushed
+above vertices nor composed with a filtration.
+
+**One. Every odd moment vanishes**, any connection — `Gamma` acts on `e_tau` by
+a sign and anticommutes with `D`. Inherited from §10.
+
+**Two. At zero flux the measure is known completely.** `M_2j = (k+1)^j` exactly
+— integers `2,4,8`; `3,9,27`; `4,16,64`; `5,25,125`; `6,36,216`. With vanishing
+odd moments this determines it outright:
+
+```
+mu_tau = ½ delta_{+sqrt(k+1)} + ½ delta_{-sqrt(k+1)}
+```
+
+A symmetric Bernoulli measure supported on the square root of the facet count.
+
+**Three — the girth law.** *Flux enters the local moments at order exactly `2g`*,
+where `g` is the shortest bounding cycle through the simplex:
+
+| structure | girth | first flux-bearing moment |
+| --- | --- | --- |
+| tree | ∞ | **none** (blind M2–M10) |
+| 2-simplex | 2 | M4 |
+| edge, graph girth 3 | 3 | M6 |
+| edge, graph girth 4 | 4 | M8 |
+
+The local form of a Kesten–McKay fact: a tree is simply connected, so every
+connection on it is gauge-trivial and the measure at its root cannot depend on
+phases. **A closed walk sees flux only once it is long enough to enclose
+something.**
+
+**Four — the fourth-moment law, every dimension.**
+
+```
+M_4(tau) = M_2(tau)² + S(tau) + sum_g |1 - omega_g|²
+```
+
+Three terms with disjoint meanings, and **the separation is the result**: `M_2²`
+is the Bernoulli baseline, `S(tau)` counts facets shared with a same-dimension
+simplex (combinatorial, flux-blind), and the Wilson sum is the only place the
+connection enters. Each codim-2 face `g` lies in exactly two facets, so
+`tau -> f_1 -> g -> f_2 -> tau` is a canonical Hasse plaquette and `omega_g` is
+its holonomy — **normalised by the sign that is exactly the `d²=0`
+cancellation.** So curvature is precisely the failure of that cancellation,
+measured at fourth order. Each `omega_g` is gauge-invariant to `1e-16`.
+
+The right-hand side is a **Wilson plaquette action**, not a squared curvature:
+`|1-omega|²` and `2(1 - Re omega)` are identical for unitary holonomy, but
+`|F|²` is recovered only in the continuum small-flux limit. Kenyon
+(Ann. Probab. 39, 2011) weights cycle-rooted spanning forests by `2 - tr(hol)` —
+exactly this summand for `U(1)`, the same quantity in a determinant identity.
+
+**Five — the filtration invariant.** Summed over an entire filtration:
+
+```
+sum_tau M_4(tau) = B(K) + P(K) + W(K)
+W(K) = sum_tau M_4(tau) - B(K) - P(K)
+```
+
+The individual terms move with the insertion order; **the totals do not** —
+verified across six random linear extensions per complex, spread `0` to
+`2.8e-14`. So the **total Wilson action is recoverable from strictly local
+spectral data**, each moment computed on a subcomplex with no global operator
+ever formed. Chamseddine–Connes (hep-th/9606001) obtain Yang–Mills from the
+fourth heat coefficient of a *global* trace, and the existing discrete work
+(arXiv:2509.04311) also takes global traces; this assembles the same order of
+the same expansion locally.
+
+**Two retractions, both kept visible in the API.** The definition (above), and a
+reported dimension-two ceiling on statement four. The ceiling was two mistakes,
+not an obstruction — the sum was indexed over *triangular* faces when the
+plaquettes live on *codimension-two* faces (for a tetrahedron, 6 edges against 4
+triangles, index sets of different size), and the sibling term was missing.
+`identity_fails_above_dimension_two` now returns `False`.
+
+*Savostianov–Guglielmi–Schaub–Tudisco, arXiv:2502.07558; Kenyon, Ann. Probab. 39
+(2011); Chamseddine–Connes, hep-th/9606001; Najem–Mrad–Elsayed, arXiv:2509.04311;
+Preciado–Jadbabaie, arXiv:1107.5676 (the walk-moment lemma); Anh–Dik–Anh,
+arXiv:2506.21352.*
+
+---
+
+## 12. Ledger
 
 **Solved.** The graviton/Friedmann identification with computed coefficients.
 The massive w₁₊∞ integer-Δ obstruction. The flat-space polytope mass resummation.
@@ -549,7 +649,7 @@ solid and died at n = 72. **The metric case for spectral persistence stability.*
 
 ---
 
-## 12. The failure catalogue
+## 13. The failure catalogue
 
 The most transferable artifact in this repository.
 
@@ -572,6 +672,25 @@ The most transferable artifact in this repository.
 12. `helicity_two_is_isolated` → returned `False` for *gravity itself*; the gauge
     quotient leaves `{0, ±2}` and the residual zero mode is killed by the
     Hamiltonian constraint, not by gauge.
+
+13. **The insertion measure as a new definition** → it is the published local
+    density of states. Withdrawn.
+14. **"Excess kurtosis = squared curvature"** → it is the Wilson plaquette
+    action; `|F|²` only in the continuum limit.
+15. **A dimension-two ceiling on the fourth-moment law** → two mistakes, not an
+    obstruction: the sum was indexed over *triangular* faces instead of
+    *codimension-two* faces, and the sibling term was missing.
+16. **`M_2 = dim + 1` for every simplex** → false at dimension zero. A vertex's
+    only facet is the empty face, which is not a simplex, so `M_2 = 0`. Every
+    earlier check used `dimension >= 1`.
+
+**The pattern behind 13–16, and the one worth carrying.** *Every time a result
+was aggregated, the aggregation found a boundary case the local tests had
+structurally excluded.* Interlacing over a filtration found the `t = 0` tie
+where the harmonic modes sit. Generalising the moment law found the wrong index
+set. Summing over a whole filtration made vertices unavoidable and found
+dimension zero. Local tests share the assumptions of the local result; only
+aggregation crosses them.
 
 **A pattern worth naming.** In `complexity.py` two tests failed the same way: the
 complete-graph/GHZ ratio asserted `> 2` when it is `3 − 3/n`, exactly 2 at n = 3;
@@ -597,10 +716,16 @@ right each time — a constant had been guessed instead of read off the formula.
   `magnetic.py` sat at exactly `t = 0`, where harmonic modes lie at machine
   epsilon with mixed signs. The test was wrong, not the theorem.
 - **Background job hygiene.** `pkill -f "slowdown"` killed the shell running it.
+- **A function stored as a class attribute becomes a bound method.**
+  `phase_function` returns a closure; `self.WEIGHT(u, v)` then passes `self` as a
+  third argument. Python semantics, not mathematics — move it to module level.
+- **`combinations(x, 0)` is the empty tuple, and the empty set is contained in
+  everything.** That silently turned "facets of a vertex" into "all other
+  vertices".
 
 ---
 
-## 13. How to read this
+## 14. How to read this
 
 The two results I would defend hardest are not the most impressive-looking.
 
@@ -608,6 +733,6 @@ The two results I would defend hardest are not the most impressive-looking.
 boundary and saturating there — is evidence the Navier–Stokes geometry tracks
 something real.
 
-**The retraction in §4** (the phase floor) and **the refutation in §8** (my own
-`3n+1` law) are the reason to believe the first. A repository that only ever
+**The retraction in §4** (the phase floor), **the refutation in §8** (my own
+`3n+1` law) and **the two withdrawals in §11** are the reason to believe the first. A repository that only ever
 confirms its own guesses is measuring nothing.
