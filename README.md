@@ -3628,8 +3628,20 @@ spectrum classes against **74** signature classes — and 74 is exactly the Burn
 count, so the local data separates every orbit while the spectrum loses a third of
 them. The exhibit is a *curve*, not a pair: the whole line `θ₁ + θ₂ = π` is
 isospectral to `2e-15` while the local moments vary continuously and separate
-every point of it. A generic level set is not. **Why half-flux does this is not
-explained here** — measured fact, open mechanism.
+every point of it. A generic level set is not.
+
+**And the mechanism is derived, in exact integers.** `tr(D^k) = Σ_τ M_k(τ)`, so
+power sums are sums of local moments. The total expansion is **swap-symmetric**
+(exchanging the apexes fixes every minimal-vertex basepoint), and on the line
+`θ₂ = s − θ₁` each class contributes at frequency `a₁ − a₂` with phase
+`e^{i a₂ s}`. At `s = π` that phase is `(−1)^{a₂}` and the non-constant part
+cancels exactly — every order tested leaves a constant and nothing else. **The
+diagnostic answers no:** at `s = 0`, the other central element `+I`, all phases
+are `+1`, the pairs *add*, and the trace is not constant (`9e-1` against
+`2e-15`). So it is not "the holonomy is central" — it is the *non-trivial*
+central element specifically, which is where Lieb's flux phase theorem and
+Kasteleyn orientations live. Whether the cancellation is already known in
+determinant form is not settled.
 
 **Novelty.** Fricke–Klein, the Cayley cubic, the pillowcase (Hedden–Herald–Kirk),
 Procesi's generation theorem, Loll's inequalities, Giles' reconstruction,

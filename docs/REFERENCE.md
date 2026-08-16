@@ -958,12 +958,42 @@ Three things the correct framing hands over and the wrong one hid:
   their own explanations and do not get one from here.
 - **The four nodes are orbifold points** — the points of `T²` with non-trivial
   `W`-stabiliser, i.e. the two-torsion. Singular on the cubic and degenerate for
-  `rigidity` are the same fact stated twice.
+  `rigidity` are the same fact stated twice. They are *not* the
+  eigenvalue-collision points — but that withdrawal says only "my nodes are not
+  those points", **not** that the apparatus for collisions is irrelevant. Conical
+  intersections live over this flux torus on their own account, and at two of the
+  four two-torsion points the loci do coincide, which is precisely the case
+  Berkolaiko–Zelenko (arXiv:2304.04331) is built to handle.
 - **The image is compact semi-algebraic, not the whole complex surface.** Every
   coordinate lies in `[−1,1]` because an `SU(2)` element has trace `2cos θ`. Those
   range restrictions are **Loll's inequalities** (hep-th/9309056): the Mandelstam
   identities alone do not cut out the `SU(2)` locus, and the extra inequalities
   are what make a pillowcase a pillowcase rather than a variety.
+
+**And the cubic needs no invariant theory at all.** It is the trigonometric
+identity `cos²A + cos²B + cos²C − 2cosA cosB cosC = 1` whenever `C = ±(A+B)`. So
+`(θ₁,θ₂) ↦ (2cosθ₁, 2cosθ₂, 2cos(θ₁+θ₂))` lands on the Cayley cubic
+*automatically*, because the third loop is the product of the first two. **The
+cubic is the relation `θ₃ = θ₁ + θ₂`, and nothing more** — one line implying all
+three bullets at once, and the honest level at which to state the result.
+
+**What the pillowcase is here — the same error one level down, avoided.** The
+character variety of the complex is still the *torus*. The pillowcase is `T/W`
+where `W` is the residual symmetry of the **observable**. So:
+
+> The pillowcase is the moduli space of the spectral **signature**, not of the
+> connection.
+
+It sits downstream of the connection moduli, and the `Z/2` is a statement about
+what the measurement cannot see, not about what the connection is. The 40-vs-74
+gap below is exactly a measurement of that.
+
+One check that came out right without being aimed at: the quotient is by the
+**diagonal** inversion, not a `Z/2` on each factor — because the Weyl element
+conjugates both commuting matrices simultaneously, and walk reversal inverts all
+holonomies at once. Same action. A per-factor `(Z/2)²` was the natural wrong
+guess, and it is exactly what the *truncated* regime gives, so the distinction is
+checkable rather than rhetorical.
 
 A structural remark that follows, and that §12 had no way to see: **the pillowcase
 needs dimension two.** For a graph, `π₁` is free, so `X(Γ, SU(2)) = SU(2)^b/SU(2)`
@@ -974,14 +1004,15 @@ the basepoint correction turns on, reached from the opposite direction.
 
 ### What the local measure buys over the global spectrum
 
-The published obstruction to this whole programme is that **the spectrum does not
-determine the magnetic potential** — Fabila-Carrasco, Lledó and Post construct
-isospectral magnetic graphs (*Anal. Math. Phys.* 13:64, 2023). If that killed the
-inverse problem, the rigidity theorem would be worthless.
+The published obstruction is that **the spectrum does not determine the magnetic
+potential** — Fabila-Carrasco, Lledó and Post construct isospectral magnetic
+graphs (*Anal. Math. Phys.* 13:64, 2023).
 
-It does not, and the reason is that the signature is *local* — one measure per
-simplex — while the spectrum is their sum. Measured on the running example at
-`N = 12`:
+**It bites, exactly where it claims to.** The global Dirac spectrum here loses a
+third of the classes — that *is* the obstruction, measured, not evaded. What the
+measurement shows is narrower and better: it obstructs the **global** invariant
+and not the **local** one, because the signature is one measure per simplex while
+the spectrum is their sum. On the running example at `N = 12`:
 
 | invariant | classes |
 | --- | --- |
@@ -996,9 +1027,41 @@ the entire line `θ₁ + θ₂ = π` is isospectral: the global Dirac spectrum i
 constant along it to `2e-15`, while the local moments vary continuously and the
 recovered cosines separate every point. A generic level `θ₁ + θ₂ = c` is *not*
 isospectral (variation `1e-1`), so the curve is picked out by its half-flux
-condition — the outer four-cycle carries holonomy `−1`. **Why half-flux produces
-an isospectral family is not explained here.** The fact is measured; the mechanism
-is open, and it is the most interesting thing left in this section.
+condition — the outer four-cycle carries holonomy `−1`.
+
+**The mechanism, derived in exact integers.** `tr(D^k) = Σ_τ M_k(τ)`, so the
+global spectrum is the *sum* of the local measures and the power sums fix the
+characteristic polynomial. Summing the exact local expansions gives `tr(D^k)` as
+an integer character expansion, and it comes out **swap-symmetric** — the
+coefficient at `(a₁,a₂)` equals the one at `(a₂,a₁)`, exactly, because exchanging
+the two apexes is an automorphism fixing every simplex's minimal-vertex basepoint.
+
+On the line `θ₂ = s − θ₁` the class `a` contributes at frequency `a₁ − a₂` with
+**phase** `e^{i a₂ s}`. At `s = π` that phase is `(−1)^{a₂}`, and the entire
+non-constant part cancels. At `k = 8`, in integers:
+
+| frequency | contributions | total |
+| --- | --- | --- |
+| 1 | `(1,0) = −256` at phase `+1`; `(0,−1) = −256` at phase `−1` | **0** |
+| 2 | `(2,0) + (0,−2) = 8` at phase `+1`; `(1,−1) = 8` at phase `−1` | **0** |
+
+Every order tested (`k = 4, 6, 8, 10`) leaves `{0: constant}` and nothing else. So
+each power sum is constant on the line and so is the characteristic polynomial —
+isospectrality *proved per order*, not observed in eigenvalues.
+
+**And the diagnostic answers no.** At `s = 0` — the *other* central element, `+I`
+— every phase `e^{i a₂ · 0}` is `+1`, the swap-symmetric pairs **add** instead of
+cancelling, and the trace is not constant. Measured: deviation `9e-1` along
+`θ₁ + θ₂ = 0` against `2e-15` along `θ₁ + θ₂ = π`. So the mechanism is **not**
+"the holonomy is central" — it is specifically the *non-trivial* central element,
+whose `(−1)^{a₂}` does the cancelling.
+
+That distinguishes half-flux from flat the way **Lieb's flux phase theorem** does,
+and the natural place to look for a combinatorial account is Kasteleyn theory — a
+Kasteleyn orientation being a `±1` connection with holonomy `−1` around every even
+face (Lieb–Loss, *Duke Math. J.* 71:337, 1993; Kenyon's cycle-rooted spanning
+forests, whose determinant weight `2 − tr(hol)` is maximal at `−I`). **Whether the
+cancellation above is already known in determinant form is not settled here.**
 
 **Novelty, flatly.** *Classical, not mine:* the Fricke identity and the Cayley
 cubic (Fricke–Klein, 1897); `(T × T)/W` as the pillowcase and its role in
@@ -1027,6 +1090,23 @@ the local signature strictly dominates the global spectrum.
 four nodes are eigenvalue degeneracies: measured, two of the four two-torsion
 points carry repeated eigenvalues and two carry none, so the Weyl-degeneracy locus
 and the eigenvalue-collision locus are **different sets**.
+
+**On the flux torus, refined.** For a *graph* every connection is flat — no
+2-cells — so the flux torus and the `U(1)` character variety coincide outright.
+On a complex they do not, and the right statement is an exact sequence:
+
+```
+1 → H¹(K; U(1)) → U(1)^E / U(1)^V --F--> U(1)^F
+```
+
+The flux torus of the 1-skeleton is `T^{|E|−|V|+1}`; the character variety is the
+**zero-curvature fibre** of the curvature map, and the non-flat connections this
+repository is actually about are the other fibres. That is better than a bare
+identification: Berkolaiko's Morse theory lives on the *whole* flux torus, so it
+applies to the entire parameter space here, with the character variety a
+distinguished submanifold inside it where Hodge theory and cohomology switch on.
+**Morse theory relative to that submanifold** appears to be unasked, and is the
+natural next question.
 
 *Status of the check:* a literature sweep on all four questions was run externally.
 It found no paper joining a magnetic Dirac operator on a complex to a character
