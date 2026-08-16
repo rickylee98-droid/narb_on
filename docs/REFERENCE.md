@@ -4,7 +4,7 @@ A standing record of what this repository establishes, what it refutes, and
 what it leaves open. Every result here is backed by a module and a test suite;
 the code is the authority and this document is the map.
 
-**Status at time of writing:** 3800+ tests passing, branch
+**Status at time of writing:** 3908 tests passing, branch
 `claude/tetrahedron-packing-spectral-u7029m`.
 
 **On citations:** author, title and year are reliable. arXiv identifiers were
@@ -28,7 +28,7 @@ Three rules, in the order they matter.
 3. **Every identity computed two ways that share no code.** Exact arithmetic
    wherever the problem admits it — `Fraction`, `sympy`, cyclotomic integers.
 
-The failure catalogue in §13 is the most transferable artifact here.
+The failure catalogue in §14 is the most transferable artifact here.
 
 ---
 
@@ -628,7 +628,73 @@ arXiv:2506.21352.*
 
 ---
 
-## 12. Ledger
+## 12. Flux chirality: the one bit spectra cannot see
+
+*Module: `rigidity.py`. Original.*
+
+Every result above computes spectra *forward*. This asks the inverse question,
+which the moment results provoke and do not answer:
+
+> How much of a gauge field does its local spectral data determine?
+
+Collecting the insertion moments over all simplices gives the **spectral
+signature** of a connection.
+
+**One — proved. Reversing every flux is invisible.** `D` of the conjugate
+connection is the entrywise conjugate of `D`, and a diagonal moment at a real
+basis vector is real, so
+
+```
+<e_tau, conj(D)^j e_tau> = conj(<e_tau, D^j e_tau>) = <e_tau, D^j e_tau>
+```
+
+Every moment, every simplex, every order, every complex. The measured residual is
+**exactly `0.0`** — not a tolerance. The cancellation is entry by entry, so a test
+asserts equality with zero rather than smallness: machine noise there would mean
+the argument is wrong.
+
+**Two — computed. That is the only ambiguity.** On two triangles sharing an edge,
+gauge-fixed so the plaquette holonomies are free coordinates, an exhaustive sweep
+of 1296 connections finds exactly two sharing any given signature — the
+connection and its global conjugate. Reversing a *single* plaquette is visible by
+order 1 against a `1e-8` threshold.
+
+```
+ambiguity group = Z/2
+```
+
+**The name.** The surviving bit is the **flux chirality**: whether the fluxes run
+one way or the other. Gauge invariant, spectrally undetectable, and the unique
+non-trivial symmetry of the signature.
+
+**Why that word — three chiralities, one pattern.** This repository has now found
+three distinct chiralities, in three modules, none of them looked for. Every one
+is invisible to a spectrum:
+
+| module | chirality | mechanism |
+| --- | --- | --- |
+| §9 `dirac` | geometric — point cloud vs mirror | reflection is an isometry, so distance matrices are identical |
+| §10 `magnetic` | operator — the grading `Gamma` | `Gamma` needs only degree parity, so curvature cannot reach it |
+| §12 `rigidity` | **flux** — sign of the holonomy | diagonal moments are real, so conjugation cancels |
+
+Three unrelated mechanisms, one pattern: **a spectrum is built from `|.|²`-type
+data and cannot resolve an orientation.** In each case the invisible thing is
+exactly a `Z/2`. The first two were refutations of external briefs; the third
+fell out of asking the inverse question. That they land on the same group is
+either meaningful or a very tidy accident, and which is not established.
+
+**Scope, because the halves differ in kind.** Statement one is a proof, general
+in every argument. Statement two is exhaustive computation on small complexes and
+is **not proved**. What is needed is an argument that the real parts of all
+products of plaquette holonomies determine those holonomies up to simultaneous
+conjugation — a determinacy statement for a moment problem over products of unit
+complex numbers. `AMBIGUITY_IS_PROVED` is `False` and a test asserts it. Nothing
+here reconstructs a connection from a signature; the theorem says only how many
+share one.
+
+---
+
+## 13. Ledger
 
 **Solved.** The graviton/Friedmann identification with computed coefficients.
 The massive w₁₊∞ integer-Δ obstruction. The flat-space polytope mass resummation.
@@ -649,7 +715,7 @@ solid and died at n = 72. **The metric case for spectral persistence stability.*
 
 ---
 
-## 13. The failure catalogue
+## 14. The failure catalogue
 
 The most transferable artifact in this repository.
 
@@ -725,11 +791,13 @@ right each time — a constant had been guessed instead of read off the formula.
 
 ---
 
-## 14. How to read this
+## 15. How to read this
 
 The two results I would defend hardest are not the most impressive-looking.
 
-**The α < 5/2 coincidence** in §4 — two unrelated arguments landing on the same
+**The three chiralities** of §9, §10 and §12 — three unrelated mechanisms
+converging on the same `Z/2`, none of them looked for — and **the α < 5/2
+coincidence** in §4 — two unrelated arguments landing on the same
 boundary and saturating there — is evidence the Navier–Stokes geometry tracks
 something real.
 
