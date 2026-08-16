@@ -255,6 +255,34 @@ Cayley cubic in the standard normalisation -- the ``kappa = 2`` level set of the
 commutator trace, i.e. the **commuting** locus of ``X(F_2, SU(2))``.  And
 ``(T x T)/W`` is precisely the pillowcase.
 
+**And the cubic needs no invariant theory at all.**  It is a trigonometric
+identity: ``cos^2 A + cos^2 B + cos^2 C - 2 cos A cos B cos C = 1`` whenever
+``C = +-(A + B)``.  So ``(theta_1, theta_2) -> (2cos theta_1, 2cos theta_2,
+2cos(theta_1 + theta_2))`` lands on the Cayley cubic *automatically*, because the
+third loop is the product of the first two.  **The cubic is the relation
+``theta_3 = theta_1 + theta_2``, and nothing more.**  That one line implies all
+three bullets below at once, and it is the honest level at which to state the
+result.
+
+**What the pillowcase is here -- the same error one level down, avoided.**  The
+character variety of the complex is still the *torus*.  The pillowcase is
+``T/W`` where ``W`` is the residual symmetry of the **observable**.  So:
+
+    the pillowcase is the moduli space of the spectral *signature*, not of the
+    connection.
+
+It is downstream of the connection moduli, and the ``Z/2`` is a statement about
+what the measurement cannot see -- not about what the connection is.  The ``40``
+against ``74`` below is exactly a measurement of that gap.
+
+One check that came out right without being aimed at: the pillowcase quotient is
+by the **diagonal** inversion ``(theta_1, theta_2) -> (-theta_1, -theta_2)``, not
+by a ``Z/2`` on each factor, because the Weyl element conjugates both commuting
+matrices simultaneously.  Walk reversal inverts *all* holonomies at once.  Same
+action -- which is evidence the identification is structural and not
+numerological, since a per-factor ``Z/2`` would have been the natural wrong guess
+and is what the truncated regime actually gives.
+
 Three consequences that the correct framing hands over and the wrong one hid:
 
   * **The ``Z/2`` is the Weyl group.**  Not a coincidence, not an accident of
@@ -263,7 +291,12 @@ Three consequences that the correct framing hands over and the wrong one hid:
   * **The four nodes are orbifold points**, the points of ``T^2`` with
     non-trivial ``W``-stabiliser -- the two-torsion.  Their being singular on the
     cubic and their being the degeneracy locus of `rigidity` are the same fact
-    stated twice.
+    stated twice.  They are *not* the eigenvalue-collision points, and the
+    withdrawal below says only that -- **not** that the Morse-theoretic apparatus
+    for collisions is irrelevant.  Conical intersections exist over this flux
+    torus regardless of where the orbifold points are, and at two of the four
+    two-torsion points the two loci happen to coincide, which is precisely the
+    case Berkolaiko-Zelenko (arXiv:2304.04331) is built to handle.
   * **The image is compact and semi-algebraic, not the whole complex surface.**
     Every coordinate lies in ``[-1, 1]`` because an ``SU(2)`` element has trace
     ``2 cos theta``.  Those range restrictions are Loll's inequalities
@@ -282,14 +315,16 @@ basepoint correction above turns on, arrived at from the opposite direction.
 What the local measure buys over the global spectrum
 ----------------------------------------------------
 
-The published obstruction to this whole programme is that **the spectrum does
-not determine the magnetic potential**: Fabila-Carrasco, Lledo and Post
-construct isospectral magnetic graphs (Anal. Math. Phys. 13:64, 2023).  If that
-killed the inverse problem, the rigidity theorem would be worthless.
+The published obstruction is that **the spectrum does not determine the magnetic
+potential**: Fabila-Carrasco, Lledo and Post construct isospectral magnetic
+graphs (Anal. Math. Phys. 13:64, 2023).
 
-It does not, and the reason is that the signature is *local* data -- one measure
-per simplex -- while the spectrum is their sum.  Measured on the running example
-at ``N = 12``:
+It bites, and it bites exactly where it claims to.  The global Dirac spectrum
+here loses a third of the classes -- that *is* the obstruction, measured, not
+evaded.  What the measurement shows is narrower and better: it is an obstruction
+to the **global** invariant and not to the **local** one, because the signature
+is one measure per simplex while the spectrum is their sum.  On the running
+example at ``N = 12``:
 
     global Dirac spectrum   ->  40 classes
     local signature         ->  74 classes  = the Burnside count exactly
@@ -303,9 +338,47 @@ The exhibit is sharper than a pair.  On two triangles glued along an edge the
 spectrum is constant along it to ``2e-15``, while the local moments vary
 continuously and the recovered cosines separate every point of it.  A generic
 level ``theta_1 + theta_2 = c`` is not isospectral, so the curve is picked out by
-its half-flux condition -- the outer four-cycle carries holonomy ``-1``.  Why
-that particular condition produces an isospectral family is **not explained
-here**; the fact is measured and the mechanism is open.
+its half-flux condition -- the outer four-cycle carries holonomy ``-1``.
+
+**The mechanism, derived.**  ``tr(D^k) = sum_tau M_k(tau)``, so the global
+spectrum is the *sum* of the local measures and the power sums fix the
+characteristic polynomial.  Summing the exact local expansions gives ``tr(D^k)``
+as an integer character expansion (`trace_expansion`), and it comes out
+**swap-symmetric**: the coefficient at ``(a_1, a_2)`` equals the one at
+``(a_2, a_1)``, exactly, because exchanging the two apexes is an automorphism of
+the complex that fixes every simplex's minimal-vertex basepoint.
+
+On the line ``theta_2 = s - theta_1`` the class ``a`` contributes at frequency
+``a_1 - a_2`` with **phase** ``exp(i a_2 s)``.  At ``s = pi`` that phase is
+``(-1)^{a_2}``, and the whole non-constant part cancels.  At ``k = 8``, in
+integers:
+
+    frequency 1:   (1,0) gives -256 at phase +1
+                   (0,-1) gives -256 at phase -1     ->  0
+    frequency 2:   (2,0) and (0,-2) give 4 + 4 at phase +1
+                   (1,-1) gives 8 at phase -1        ->  0
+
+Every order tested (``k = 4, 6, 8, 10``) leaves ``{0: constant}`` and nothing
+else, in exact integer arithmetic -- so every power sum is constant on the line
+and the characteristic polynomial is too.  That is the isospectrality, proved per
+order rather than observed in eigenvalues (`trace_is_constant_on_line`).
+
+**And the sign is the whole story.**  At ``s = 0`` -- the *other* central element,
+``+I`` -- every phase ``exp(i a_2 . 0)`` is ``+1``, so the swap-symmetric pairs
+**add** instead of cancelling and the trace is not constant.  Measured: deviation
+``9e-1`` along ``theta_1 + theta_2 = 0`` against ``2e-15`` along
+``theta_1 + theta_2 = pi``.  So the mechanism is **not** "the holonomy is
+central".  It is specifically the *non-trivial* central element, whose
+``(-1)^{a_2}`` is what does the cancelling.
+
+That distinguishes half-flux from flat in exactly the way Lieb's flux phase
+theorem does, and the natural place to look for a combinatorial account is
+Kasteleyn theory -- a Kasteleyn orientation being a ``+-1`` connection with
+holonomy ``-1`` around every even face (Lieb and Loss, "Fluxes, Laplacians, and
+Kasteleyn's theorem," Duke Math. J. 71:337, 1993; Kenyon's cycle-rooted spanning
+forests, whose determinant weight ``2 - tr(hol)`` is maximal at ``-I``).  Whether
+the cancellation above is an instance of something already known in determinant
+form is **not settled here**.
 
 Novelty, stated flatly
 ----------------------
@@ -334,6 +407,21 @@ signatures and its truncated form; and the measurement that the local signature
 strictly dominates the global spectrum, with the half-flux isospectral curve as
 the exhibit.
 
+**On the flux torus, refined.**  For a *graph* every connection is flat -- no
+2-cells -- so the flux torus and the ``U(1)`` character variety coincide outright.
+On a complex they do not, and the correct statement is an exact sequence:
+
+    1 -> H^1(K; U(1)) -> U(1)^E / U(1)^V --F--> U(1)^F
+
+The flux torus of the 1-skeleton is ``T^{|E|-|V|+1}``; the character variety is
+the **zero-curvature fibre** of the curvature map, and the non-flat connections
+this repository is actually about are the other fibres.  That is better than a
+bare identification: Berkolaiko's Morse theory lives on the *whole* flux torus,
+so it applies to the entire parameter space here, with the character variety a
+distinguished submanifold inside it where Hodge theory and cohomology switch on.
+Morse theory *relative* to that submanifold is a question nobody appears to have
+asked, and it is the natural next thing to ask.
+
 **Status of the check.**  A literature sweep on all four questions was run
 externally (arxiv.org is unreachable from this environment).  It returned: no
 paper joining a magnetic Dirac operator on a complex to a character variety; no
@@ -350,6 +438,10 @@ Also withdrawn: any suggestion that the four nodes are eigenvalue degeneracies.
 Measured on the running example, two of the four two-torsion points carry
 repeated eigenvalues and two carry none, so the ``W``-degeneracy locus and the
 eigenvalue-collision locus are **different sets** and must not be conflated.
+The withdrawal is "my nodes are not those points", not "that apparatus does not
+apply" -- conical intersections live over this flux torus on their own account,
+and at the two points where the loci do coincide Berkolaiko-Zelenko is exactly
+what handles them.
 """
 
 from __future__ import annotations
@@ -402,6 +494,9 @@ __all__ = [
     "HALF_FLUX_IS_ISOSPECTRAL",
     "half_flux_curve",
     "local_data_beats_the_spectrum",
+    "trace_expansion",
+    "trace_restricted_to_line",
+    "trace_is_constant_on_line",
     "resolving_simplex",
     "classes_are_resolved",
     "moments_couple_the_signs",
@@ -1243,6 +1338,77 @@ def local_data_beats_the_spectrum(
                 )
             )
     return (len(spectra), len(signatures))
+
+
+def trace_expansion(
+    simplices: Sequence[tuple[int, ...]],
+    connection: IntegerConnection,
+    order: int,
+    rank: int,
+) -> dict[tuple[int, ...], int]:
+    """``tr(D^order)`` as an exact integer character expansion.
+
+    The bridge between the local and the global.  ``tr(D^k) = sum_tau M_k(tau)``,
+    so the *global* spectrum is nothing but the sum of the local measures -- and
+    the power sums determine the characteristic polynomial.  Summing the local
+    expansions therefore gives the global invariant in the same coordinates,
+    exactly, with no floating point anywhere.
+    """
+    total: dict[tuple[int, ...], int] = {}
+    for simplex in sorted(simplices, key=lambda s: (len(s), s)):
+        for vector, coefficient in character_expansion(
+            simplices, simplex, connection, order, rank
+        ).items():
+            _add(total, vector, coefficient)
+    return total
+
+
+def trace_restricted_to_line(
+    expansion: dict[tuple[int, ...], int], shift: float
+) -> dict[int, complex]:
+    """Restrict a rank-two expansion to the line ``theta_1 + theta_2 = shift``.
+
+    On that line ``theta_2 = shift - theta_1``, so the class ``a`` contributes at
+    frequency ``a_1 - a_2`` with phase ``exp(i a_2 shift)``.  The result is keyed
+    by frequency; a support of ``{0: c}`` alone means the trace is *constant*
+    along the line, which is isospectrality at that order.
+    """
+    collected: dict[int, complex] = {}
+    for vector, coefficient in expansion.items():
+        if len(vector) != 2:
+            raise ValueError(f"class {vector} is not rank two")
+        frequency = vector[0] - vector[1]
+        collected[frequency] = collected.get(frequency, 0j) + coefficient * cmath.exp(
+            1j * vector[1] * shift
+        )
+    return {
+        frequency: value
+        for frequency, value in collected.items()
+        if abs(value) > TOLERANCE
+    }
+
+
+def trace_is_constant_on_line(
+    shift: float,
+    upto: int = 10,
+    simplices: Sequence[tuple[int, ...]] | None = None,
+    connection: IntegerConnection | None = None,
+) -> bool:
+    """Is every power sum constant along ``theta_1 + theta_2 = shift``?
+
+    If so the whole characteristic polynomial is constant there, and the line is
+    an **isospectral family**.  This is the derivation of the half-flux curve, and
+    it is done in exact integer arithmetic rather than by comparing eigenvalues.
+    """
+    live_simplices = TWO_TRIANGLES if simplices is None else simplices
+    live = TWO_TRIANGLE_CONNECTION if connection is None else connection
+    for order in range(2, upto + 1, 2):
+        restricted = trace_restricted_to_line(
+            trace_expansion(live_simplices, live, order, 2), shift
+        )
+        if set(restricted) - {0}:
+            return False
+    return True
 
 
 def resolving_simplex(

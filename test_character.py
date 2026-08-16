@@ -924,6 +924,45 @@ class TestTheCubicIsAnSU2Phenomenon:
         assert "Weyl" in character.__doc__
         assert "hep-th/9309056" in character.__doc__
 
+    def test_the_cubic_needs_no_invariant_theory(self):
+        """It is the relation ``theta_3 = theta_1 + theta_2``, and nothing more."""
+        assert "needs no invariant theory" in character.__doc__
+        for first in (0.3, 1.1, 2.4):
+            for second in (0.2, 1.7, 3.0):
+                assert character.fricke_identity_holds(
+                    float(np.cos(first)),
+                    float(np.cos(second)),
+                    float(np.cos(first + second)),
+                )
+                assert character.fricke_identity_holds(
+                    float(np.cos(first)),
+                    float(np.cos(second)),
+                    float(np.cos(first - second)),
+                )
+
+    def test_the_quotient_is_diagonal_not_per_factor(self):
+        """Walk reversal inverts all holonomies at once, like the Weyl element.
+
+        A per-factor ``(Z/2)^2`` would have been the natural wrong guess -- and it
+        is exactly what the truncated regime gives, which is why the distinction
+        is checkable rather than rhetorical.
+        """
+        assert character.truncated_ambiguity_order(8, 2) == 2
+        assert character.truncated_ambiguity_order(6, 2) == 4
+        assert set(
+            rigidity.rigidity_sweep(resolution=36, reference=(6, 13), order=8)
+        ) == {(6, 13), (30, 23)}
+
+    def test_the_pillowcase_is_the_moduli_of_the_observable(self):
+        """Not of the connection -- the same category error one level down."""
+        assert "moduli space of the spectral *signature*, not of the" in (
+            character.__doc__
+        )
+
+    def test_the_flux_torus_refinement_is_recorded(self):
+        assert "zero-curvature fibre" in character.__doc__
+        assert "H^1(K; U(1))" in character.__doc__
+
     def test_the_nodes_are_not_eigenvalue_degeneracies(self):
         """Withdrawn conflation, pinned so it cannot creep back.
 
@@ -1003,8 +1042,88 @@ class TestLocalDataBeatsTheSpectrum:
         holonomy = complex(np.cos(sum(thetas)), np.sin(sum(thetas)))
         assert holonomy.real == pytest.approx(-1.0, abs=1e-12)
 
-    def test_the_mechanism_is_marked_open(self):
-        assert "the mechanism is open" in character.__doc__
+    def test_the_trace_is_the_sum_of_the_local_moments(self):
+        """The bridge: ``tr(D^k) = sum_tau M_k(tau)``, so power sums are global."""
+        thetas = (0.7, 1.3)
+        for order in (2, 4, 6, 8):
+            expansion = character.trace_expansion(
+                TWO_TRIANGLES, CONNECTION, order, 2
+            )
+            evaluated = sum(
+                coefficient
+                * np.exp(1j * (vector[0] * thetas[0] + vector[1] * thetas[1]))
+                for vector, coefficient in expansion.items()
+            )
+            spectrum = character.global_spectrum(TWO_TRIANGLES, CONNECTION, thetas)
+            assert float(evaluated.real) == pytest.approx(
+                float(np.sum(spectrum**order)), abs=1e-8
+            )
+            assert abs(evaluated.imag) < 1e-9
+
+    @pytest.mark.parametrize("order", [4, 6, 8, 10])
+    def test_the_trace_expansion_is_swap_symmetric(self, order):
+        """Exchanging the two apexes fixes every minimal-vertex basepoint.
+
+        So the coefficient at ``(a, b)`` equals the one at ``(b, a)`` -- exactly,
+        in integers. This symmetry is what the half-flux cancellation runs on.
+        """
+        expansion = character.trace_expansion(TWO_TRIANGLES, CONNECTION, order, 2)
+        for (first, second), coefficient in expansion.items():
+            assert expansion.get((second, first)) == coefficient
+
+    @pytest.mark.parametrize("order", [4, 6, 8, 10])
+    def test_the_trace_is_constant_at_half_flux(self, order):
+        """The derivation, in exact integer arithmetic rather than eigenvalues."""
+        restricted = character.trace_restricted_to_line(
+            character.trace_expansion(TWO_TRIANGLES, CONNECTION, order, 2), np.pi
+        )
+        assert set(restricted) == {0}
+        assert abs(restricted[0].imag) < 1e-9
+
+    @pytest.mark.parametrize("order", [4, 6, 8])
+    def test_the_trace_is_not_constant_at_zero_flux(self, order):
+        """The other central element. Every phase is ``+1``, so nothing cancels."""
+        restricted = character.trace_restricted_to_line(
+            character.trace_expansion(TWO_TRIANGLES, CONNECTION, order, 2), 0.0
+        )
+        assert set(restricted) - {0}
+
+    def test_the_cancellation_is_exactly_the_published_integers(self):
+        """Pins the worked example in the docstring, coefficient by coefficient."""
+        expansion = character.trace_expansion(TWO_TRIANGLES, CONNECTION, 8, 2)
+        assert expansion[(1, 0)] == expansion[(0, 1)] == -256
+        assert expansion[(2, 0)] == expansion[(0, 2)] == 4
+        assert expansion[(1, -1)] == expansion[(-1, 1)] == 8
+        assert expansion[(0, 0)] == 2592
+
+    def test_only_the_nontrivial_central_element_works(self):
+        """The diagnostic that decided the mechanism.
+
+        ``-I`` gives an isospectral family and ``+I`` does not, so the cause is
+        not "the holonomy is central" -- it is the sign ``(-1)^{a_2}`` that only
+        the non-trivial central element supplies.
+        """
+        assert character.trace_is_constant_on_line(np.pi, 10) is True
+        assert character.trace_is_constant_on_line(0.0, 10) is False
+        assert character.trace_is_constant_on_line(2 * np.pi, 10) is False
+        assert character.trace_is_constant_on_line(2.0, 10) is False
+
+    @pytest.mark.parametrize("parameter", [0.3, 0.9, 1.4, 2.2])
+    def test_zero_flux_line_is_measurably_not_isospectral(self, parameter):
+        """The numerical counterpart of the integer statement above."""
+        reference = character.global_spectrum(TWO_TRIANGLES, CONNECTION, (0.0, 0.0))
+        here = character.global_spectrum(
+            TWO_TRIANGLES, CONNECTION, (parameter, -parameter)
+        )
+        assert not character.spectra_agree(reference, here)
+
+    def test_the_restriction_rejects_a_wrong_rank(self):
+        with pytest.raises(ValueError, match="not rank two"):
+            character.trace_restricted_to_line({(1, 0, 0): 1}, np.pi)
+
+    def test_the_kasteleyn_lead_is_recorded_as_unsettled(self):
+        assert "Kasteleyn" in character.__doc__
+        assert "not settled here" in character.__doc__
 
     def test_spectra_agree_rejects_mismatched_lengths(self):
         with pytest.raises(ValueError, match="different lengths"):
