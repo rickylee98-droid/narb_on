@@ -865,6 +865,12 @@ with no spectral computation at all. Against brute force: `N = 11 → 61`,
 arithmetic — if the signature failed to separate orbits the measured count would
 come in strictly lower.
 
+**And it reaches past what was proved.** §12 argued the ambiguity at rank two. On
+a fan of three triangles — rank three, fifteen simplices — the count predicts
+`63` at `N = 5` and `112` at `N = 6`, and brute force returns `63` and `112`. The
+ambiguity is still exactly `Z/2` one rank up, established by *counting* rather
+than by redoing the argument. That is what a key is for.
+
 **Two more.** The Fricke residual is a consistency check on local spectral data
 that needs no ground truth, since the cubic is a constraint the data satisfies by
 itself. And the inverse problem now has a normal form: asking what a spectrum

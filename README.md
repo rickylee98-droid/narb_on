@@ -3572,6 +3572,12 @@ with no spectral computation at all. Against brute force: `N = 11 → 61`,
 `N = 12 → 74`, `N = 36 → 650`, exact. A test of the theorem, not of arithmetic:
 if the signature failed to separate orbits the measured count would come in low.
 
+**And it reaches past what was proved.** The ambiguity was argued at rank two. On
+a fan of three triangles — rank three, fifteen simplices — the count predicts `63`
+at `N = 5` and `112` at `N = 6`, and brute force returns both. The ambiguity is
+still exactly `Z/2` one rank up, settled by counting rather than by redoing the
+argument. That is what a key is for.
+
 **Novelty.** The Fricke identity, the Cayley cubic, the pillowcase and Burnside
 are classical and named as such. Unverified and mine: the integrality and symmetry
 of the character expansion, the per-class support inequality with its

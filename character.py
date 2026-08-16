@@ -155,6 +155,14 @@ gives ``61``, ``N = 12`` gives ``74``, ``N = 36`` gives ``650``, all exact.  A
 lower bound on how much a connection can hide, from a nineteenth-century
 counting lemma.
 
+And it is a *test that reaches past what was proved*.  `rigidity` argued the
+ambiguity at rank two.  On a fan of three triangles -- rank three, fifteen
+simplices -- the count predicts ``63`` at ``N = 5`` and ``112`` at ``N = 6``,
+and brute force returns ``63`` and ``112``.  So the ambiguity is still exactly
+``Z/2`` one rank up, and that was established by counting rather than by
+redoing the argument.  If a rank-three complex admitted an extra coincidence
+the measured count would come in low, and it does not.
+
 **Two, a consistency test for local spectral data that needs no ground truth.**
 The Fricke residual is computable from measured moments alone.  It does not
 compare against a known connection, because there is nothing to compare to: the
@@ -227,6 +235,7 @@ __all__ = [
     "CAYLEY_CUBIC_NODES",
     "is_cayley_node",
     "node_count",
+    "plaquette_fan",
     "distinguishable_signature_count",
     "measured_signature_count",
     "TOLERANCE",
@@ -942,31 +951,59 @@ def distinguishable_signature_count(resolution: int, rank: int = 2) -> int:
     return (resolution**rank + fixed) // 2
 
 
+def plaquette_fan(count: int) -> tuple[tuple[tuple[int, ...], ...], IntegerConnection]:
+    """``count`` triangles sharing the edge ``(0, 1)``, gauge-fixed to rank ``count``.
+
+    The rank-two case is the running example; higher counts are how the rigidity
+    theorem gets tested beyond the rank it was proved at.  Apex ``k`` is vertex
+    ``k + 2``, and the class of its plaquette is the ``k``-th standard basis
+    vector.
+    """
+    if count < 1:
+        raise ValueError(f"need at least one plaquette, got {count}")
+    simplices = insertion.close_under_faces(
+        [(0, 1, apex + 2) for apex in range(count)]
+    )
+    connection: IntegerConnection = {
+        (1, apex + 2): tuple(1 if index == apex else 0 for index in range(count))
+        for apex in range(count)
+    }
+    return simplices, connection
+
+
 def measured_signature_count(
     resolution: int = 12,
-    simplices: Sequence[tuple[int, ...]] = TWO_TRIANGLES,
+    simplices: Sequence[tuple[int, ...]] | None = None,
     connection: IntegerConnection | None = None,
     order: int = 8,
     digits: int = 7,
+    rank: int = 2,
 ) -> int:
     """Brute force: compute every signature on the grid and count distinct ones.
 
     Rounded to ``digits`` before hashing.  The margin is wide -- distinct
     signatures differ by order one, and equal ones agree to machine precision --
     so the rounding is bookkeeping rather than a threshold to tune.
+
+    Defaults to the running example at rank two.  Pass a `plaquette_fan` and its
+    rank to test the count where the rigidity theorem was never proved.
     """
     if resolution < 1:
         raise ValueError(f"resolution must be positive, got {resolution}")
+    if rank < 1:
+        raise ValueError(f"rank must be positive, got {rank}")
+    live_simplices = TWO_TRIANGLES if simplices is None else simplices
     live = TWO_TRIANGLE_CONNECTION if connection is None else connection
-    ordered = sorted(simplices, key=lambda s: (len(s), s))
+    ordered = sorted(live_simplices, key=lambda s: (len(s), s))
     step = 2 * np.pi / resolution
     seen: set[tuple[float, ...]] = set()
-    for first in range(resolution):
-        for second in range(resolution):
-            weight = insertion.phase_function(
-                angles_from(live, (step * first, step * second))
-            )
-            signature = tuple(
+    for flat in range(resolution**rank):
+        cell = np.unravel_index(flat, (resolution,) * rank)
+        weight = insertion.phase_function(
+            angles_from(live, [step * int(component) for component in cell])
+        )
+        seen.add(
+            tuple(
                 round(
                     insertion.insertion_moment(ordered, simplex, weight, moment),
                     digits,
@@ -974,5 +1011,5 @@ def measured_signature_count(
                 for simplex in ordered
                 for moment in range(order + 1)
             )
-            seen.add(signature)
+        )
     return len(seen)

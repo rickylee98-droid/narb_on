@@ -650,6 +650,52 @@ class TestBurnsideCount:
         with pytest.raises(ValueError, match="resolution must be positive"):
             character.measured_signature_count(0)
 
+    def test_the_fan_is_built_right(self):
+        simplices, connection = character.plaquette_fan(3)
+        assert simplices == insertion.close_under_faces(
+            [(0, 1, 2), (0, 1, 3), (0, 1, 4)]
+        )
+        assert connection == {
+            (1, 2): (1, 0, 0),
+            (1, 3): (0, 1, 0),
+            (1, 4): (0, 0, 1),
+        }
+        assert len(simplices) == 15
+
+    def test_fan_rejects_zero_plaquettes(self):
+        with pytest.raises(ValueError, match="at least one plaquette"):
+            character.plaquette_fan(0)
+
+    @pytest.mark.parametrize("resolution, expected", [(5, 63), (6, 112)])
+    def test_rank_three_matches_too(self, resolution, expected):
+        """A test that reaches past what `rigidity` proved.
+
+        The ambiguity argument was made at rank two.  Counting says it is still
+        exactly ``Z/2`` at rank three, on a fifteen-simplex complex, and brute
+        force agrees.  An extra coincidence at rank three would show up as a
+        count coming in low.
+        """
+        simplices, connection = character.plaquette_fan(3)
+        assert character.distinguishable_signature_count(resolution, 3) == expected
+        assert (
+            character.measured_signature_count(
+                resolution, simplices, connection, rank=3
+            )
+            == expected
+        )
+
+    def test_rank_one_matches_too(self):
+        """The other end: a single triangle, one plaquette, ``T^1/+-``."""
+        simplices, connection = character.plaquette_fan(1)
+        for resolution in (7, 8):
+            assert character.measured_signature_count(
+                resolution, simplices, connection, rank=1
+            ) == character.distinguishable_signature_count(resolution, 1)
+
+    def test_measured_count_rejects_zero_rank(self):
+        with pytest.raises(ValueError, match="rank must be positive"):
+            character.measured_signature_count(4, rank=0)
+
     def test_the_count_is_below_the_grid(self):
         """Roughly half, which is the price of the invisible bit."""
         for resolution in (11, 12, 36):
