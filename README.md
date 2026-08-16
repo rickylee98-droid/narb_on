@@ -3434,6 +3434,60 @@ other vertex as a sibling, since `combinations(tau, 0)` is the empty tuple and
 the empty set is contained in everything. Both fixed; the corrected statement is
 **`M_2 = number of facets present`**.
 
+## A twenty-fifth target: flux chirality
+
+`rigidity.py` names an object and proves a rigidity theorem about it.
+
+**The inverse problem.** `insertion` computes the local spectral measure at every
+simplex. Collecting those gives the **spectral signature** of a connection. The
+question the moment results provoke and do not answer:
+
+> How much of the gauge field does the spectral signature determine?
+
+**One — proved. Reversing every flux is invisible.** `D` of the conjugate
+connection is the entrywise conjugate of `D`, and a diagonal moment at a real
+basis vector is real, so conjugating changes nothing:
+
+    <e_tau, conj(D)^j e_tau> = conj(<e_tau, D^j e_tau>) = <e_tau, D^j e_tau>
+
+Every moment of every simplex, every order, every complex. Measured residual is
+**exactly `0.0`** — not a tolerance. The cancellation is entry by entry, so
+machine noise here would mean the argument is wrong, and a test asserts equality
+with zero rather than smallness.
+
+**Two — computed. That is the *only* ambiguity.** On two triangles sharing an
+edge, gauge-fixed so the plaquette holonomies are free coordinates, an exhaustive
+sweep finds exactly two connections sharing any given signature: the connection
+and its global conjugate. Reversing a *single* plaquette is visible, by order 1
+against a `1e-8` threshold.
+
+    ambiguity group = Z/2
+
+**The name.** The surviving bit is the **flux chirality** — whether the fluxes
+run one way or the other. Gauge invariant, spectrally undetectable, and the
+unique non-trivial symmetry of the signature.
+
+**Why that word.** This repository has now found three distinct chiralities and
+**every one is invisible to a spectrum**:
+
+| module | chirality | status |
+| --- | --- | --- |
+| `dirac` | geometric — a point cloud vs its mirror | invisible: identical distance matrices |
+| `magnetic` | operator — the grading `Gamma` | unbreakable: survives any curvature |
+| `rigidity` | **flux** — the sign of the holonomy | **invisible: the one bit spectra miss** |
+
+Three different objects, one pattern: a spectrum is built from `|.|²`-type data
+and cannot resolve an orientation. In each case the invisible thing is exactly a
+`Z/2`.
+
+**Scope, stated because the halves differ.** Statement one is a proof, holding
+for every complex and every order. Statement two is an exhaustive computation on
+small complexes and is **not proved in general** — what is needed is an argument
+that the real parts of all products of plaquette holonomies determine those
+holonomies up to simultaneous conjugation. `AMBIGUITY_IS_PROVED` is `False` and a
+test asserts it. Nothing here reconstructs a connection from a signature either;
+the theorem says only how many share one.
+
 ## Reference document
 
 `docs/REFERENCE.md` is the standing write-up: every result this repository
