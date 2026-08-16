@@ -28,7 +28,7 @@ Three rules, in the order they matter.
 3. **Every identity computed two ways that share no code.** Exact arithmetic
    wherever the problem admits it — `Fraction`, `sympy`, cyclotomic integers.
 
-The failure catalogue in §14 is the most transferable artifact here.
+The failure catalogue in §15 is the most transferable artifact here.
 
 ---
 
@@ -740,7 +740,150 @@ asserts that no `reconstruct_connection` exists.
 
 ---
 
-## 13. Ledger
+## 13. Local spectral moments are characters, and they obey the Fricke cubic
+
+*Module: `character.py`. Original in its assembly; the cubic is Fricke's.*
+
+§12 proved the rigidity theorem in trigonometry. Rewritten in the right language
+it becomes a statement about a quotient of a torus — and then it stops being a
+fact about Dirac operators and becomes a fact about a classical algebraic
+surface, which is what makes it usable for anything but itself.
+
+**Step one — the moments are integral characters.** Label each edge by an integer
+vector, so a connection is a point `theta` of `T^r` and each Dirac entry is a
+monomial `x^v`. Then
+
+```
+M_n(tau) = sum_a c_a(n, tau) x^a,   every c_a in Z,   c_{-a} = c_a
+         = c_0 + sum_{a > 0} 2 c_a cos(a . theta)
+```
+
+The integrality is because `M_n` is a signed count of closed `n`-walks; the
+symmetry is because a walk and its reverse are in bijection with inverse
+monomials. **This is the character-level form of §12's statement one:**
+conjugating the connection sends `x^a` to `x^{-a}` and therefore fixes every
+moment. Verified two ways sharing no code — an exact matrix power over
+`Z[x_1^±,…,x_r^±]`, and an FFT of the float moments over a grid on the torus.
+
+**Step two — the support law is an inequality, and the obvious equality is
+false.** §11 found flux entering `M_n` at order `2g`; that is the `a`-summed
+statement. Per class:
+
+> The class `a` appears in `M_n(tau)` **no earlier** than the shortest closed
+> Hasse walk at `tau` carrying `x^a` — usually exactly there, not always.
+
+The inequality is a theorem (no walk, no term). Equality is not, because the sum
+is *signed* and same-length walks of the same class can cancel. They do. Checked
+against breadth-first search in the `Z^r`-cover of the Hasse diagram — a genuinely
+different algorithm from a matrix power. Orders on two triangles glued along an
+edge:
+
+| class | at vertex (2) | at vertex (0) | at the shared edge (0,1) |
+| --- | --- | --- | --- |
+| (1, 0) | 4 | 6 | never |
+| (0, 1) | 10 | 6 | never |
+| (1, −1) | 8 | 8 | never |
+| (2, 0) | 8 | 10 | never |
+
+The shared edge is **permanently flux-blind**: moments `4, 16, 64, 256, 1024` =
+`4^{n/2}` for every connection, i.e. a two-point measure at `±2`, i.e. `e_tau` is
+an eigenvector of the magnetic Hodge Laplacian at its Hasse degree whatever the
+field does. Walks carrying every class reach it from length 6 on, and all of them
+cancel.
+
+**This also fixes `rigidity.SIGNATURE_ORDER = 8`.** Order 6 cannot see any
+relation between two plaquettes, and relations between plaquettes are the whole
+content of the rigidity proof. Eight is the first order that can. The constant had
+been picked by guessing generously; it is exactly tight.
+
+**Step two and a half — the basepoint, and a scope correction it forces.**
+Chasing the flux-blind edge turned up something that has to be said out loud.
+`magnetic.general_dirac` puts a simplex's whole transport on its leading edge,
+which is the same as choosing each simplex's **minimal vertex** as a basepoint.
+Any basepoint choice gives a gauge-covariant operator — verified, the moments are
+unchanged by a vertex gauge transformation. But two *different* choices are
+conjugate by a diagonal unitary only if re-basing inside a simplex is path
+independent, and inside a curved simplex it is not:
+
+| relabel two triangles so the shared edge is (2,3) | result |
+| --- | --- |
+| flat connection (pure gauge or zero) | identical spectra, identical moments |
+| curved connection | **different spectra** |
+
+So the Dirac operator here, and every local spectral measure built from it, is an
+invariant of the **ordered** complex, not of the complex. That is a real limit on
+§11 and §12 and it is stated rather than left to be found. Which simplex is
+flux-blind is likewise a fact about the ordering.
+
+What survives is exactly the character layer: **the recovered cosines and the
+Fricke identity come out identical in both labellings**, because they are
+functions of loop holonomies and a loop holonomy does not know what the vertices
+are called. That is a reason to work at the character level, not a footnote about
+it.
+
+**Step three — the cosines satisfy a cubic.** Peel the moments in order of first
+appearance and every `cos(a . theta)` comes out. For any two classes `a`, `b`, set
+`u = cos(a.θ)`, `v = cos(b.θ)`, `w = cos((a−b).θ)`. Then `w − uv = sin(a.θ)
+sin(b.θ)`, so `(w − uv)² = (1−u²)(1−v²)`, which expands to
+
+```
+u² + v² + w² − 2uvw = 1
+```
+
+the **Cayley cubic**, and classically the Fricke relation for the inversion
+quotient of a torus. Stated here it is an exact identity among *measured local
+spectral moments*: three moments at three simplices of any complex give three
+numbers lying on one fixed cubic surface, whatever the connection. Measured
+residual `4e-15`.
+
+**Step four — and now §12 is a picture.** The map `theta ↦ (u, v, w)` is exactly
+the quotient `T² → T²/(θ ~ −θ)`, realised as the Cayley cubic. That quotient is
+the **pillowcase**: two-to-one away from the four fixed points of the inversion,
+one-to-one at them. So
+
+- the `Z/2` of §12 is the deck group of this double cover;
+- its degeneracy locus — both holonomies real — is exactly the four **two-torsion
+  points**, and their images are exactly the four **nodes** of the cubic, where
+  `grad(u²+v²+w²−2uvw) = 2(u−vw, v−uw, w−uv)` vanishes;
+- so the singular points of a surface Fricke wrote down in 1897 and the collapse
+  of a spectral ambiguity found by sweeping a grid **are the same four points**.
+
+Solving the gradient gives entries `±1` with `uvw = 1`: four sign patterns out of
+eight, not eight.
+
+**A door this opens: an exact count of distinguishable connections.** If the
+signature separates inversion orbits — which is §12 — then counting distinct
+signatures is counting orbits, and Burnside gives it in closed form. On the
+`N`-torsion grid of rank `r`,
+
+```
+distinct signatures = ( N^r + gcd(2, N)^r ) / 2
+```
+
+with no spectral computation at all. Against brute force: `N = 11 → 61`,
+`N = 12 → 74`, `N = 36 → 650`, exact. This is a test of the *theorem*, not of
+arithmetic — if the signature failed to separate orbits the measured count would
+come in strictly lower.
+
+**Two more.** The Fricke residual is a consistency check on local spectral data
+that needs no ground truth, since the cubic is a constraint the data satisfies by
+itself. And the inverse problem now has a normal form: asking what a spectrum
+determines about a connection is asking for the fibres of a map into the
+coordinate ring of `T^r/±`, generated by the `cos(a.θ)` with the Fricke cubics as
+relations — a coordinate system fixed before any operator is written down.
+
+**Novelty, flatly.** *Classical, not mine:* the Fricke identity and the Cayley
+cubic (Fricke–Klein, 1897); `T²/±` as a four-nodal cubic surface and its role as
+the pillowcase in character-variety theory; Burnside's lemma; the local density of
+states itself (arXiv:2502.07558 — see §11 for the withdrawal). *Mine, unverified:*
+that local spectral moments of a magnetic Dirac operator are integral characters
+with symmetric support; the per-class support inequality and its cancellation
+exceptions; the recovery procedure; the basepoint scope correction; and the
+consequence that measured local spectral moments satisfy the Cayley cubic exactly.
+
+---
+
+## 14. Ledger
 
 **Solved.** The graviton/Friedmann identification with computed coefficients.
 The massive w₁₊∞ integer-Δ obstruction. The flat-space polytope mass resummation.
@@ -752,7 +895,11 @@ fracton no-escape. The thermodynamic verdict. Exact stabilizer complexity and it
 concentration proof. Both Dirac refutations. **Interlacing and monotonicity for
 the magnetic Dirac operator.** The girth law, the three-term fourth-moment law and
 the filtration invariant. **Both halves of the flux-chirality rigidity theorem,
-including the degeneracy characterisation and the disconnected count.**
+including the degeneracy characterisation and the disconnected count.** The
+character expansion with its integrality and symmetry, the per-class support
+inequality, the basepoint scope correction, **the Cayley-cubic identity satisfied
+by measured local spectral moments, and the Burnside count of distinguishable
+signatures.**
 
 **Open, and stated as open.** The FRW resummation beyond reparameterisations. The
 analytic embedding for Navier–Stokes. The phase tail in the averaging estimate
@@ -763,7 +910,7 @@ solid and died at n = 72. **The metric case for spectral persistence stability.*
 
 ---
 
-## 14. The failure catalogue
+## 15. The failure catalogue
 
 The most transferable artifact in this repository.
 
@@ -797,6 +944,21 @@ The most transferable artifact in this repository.
 16. **`M_2 = dim + 1` for every simplex** → false at dimension zero. A vertex's
     only facet is the empty face, which is not a simplex, so `M_2 = 0`. Every
     earlier check used `dimension >= 1`.
+17. **A guard that rejected sweep index 0** on the stated grounds that its
+    conjugate would not be a distinct grid point — but index `N/2` is equally
+    self-conjugate and was always accepted. The justification was wrong even
+    though the guard looked harmless, and it was hiding half the degeneracy.
+18. **"The class appears at exactly the shortest walk length"** → an equality
+    where only the inequality is a theorem. The moment is a *signed* count, and
+    at the shared edge of two triangles every walk of every class cancels, at
+    every order, forever. Stated as a law it would have been false at one
+    simplex out of eleven.
+19. **The Dirac operator taken for an invariant of the complex** → it is an
+    invariant of the **ordered** complex. Putting the transport on the leading
+    edge picks each simplex's minimal vertex as a basepoint; re-basing inside a
+    curved simplex is path dependent, so relabelling changes the spectrum. Flat
+    connections are unaffected, which is what identifies the cause. Found by
+    chasing a flux-blind edge that turned out not to be geometric.
 
 **The pattern behind 13–16, and the one worth carrying.** *Every time a result
 was aggregated, the aggregation found a boundary case the local tests had
@@ -839,7 +1001,7 @@ right each time — a constant had been guessed instead of read off the formula.
 
 ---
 
-## 15. How to read this
+## 16. How to read this
 
 The two results I would defend hardest are not the most impressive-looking.
 

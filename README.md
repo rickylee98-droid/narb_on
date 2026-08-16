@@ -3520,16 +3520,75 @@ faithful components. Nothing here reconstructs a connection from a signature
 either; the theorem says only how many share one, and a test asserts that no
 `reconstruct_connection` exists.
 
+## A twenty-sixth target: the moments are characters, and they obey a cubic
+
+`character.py` rewrites the rigidity theorem in the language it belongs to, and
+then uses it.
+
+**The moments are integral characters.** Label each edge by an integer vector, so
+a connection is a point of a torus and each Dirac entry is a monomial. Then
+`M_n(tau) = sum_a c_a x^a` with every `c_a` a **rational integer** and
+`c_{-a} = c_a` — a signed count of closed walks, and a walk paired with its
+reverse. Verified two ways sharing no code: an exact matrix power over
+`Z[x^±]`, and an FFT of the float moments over the torus.
+
+**The support law is an inequality, and the equality is false.** A class appears
+no earlier than the shortest closed Hasse walk carrying it — that much is a
+theorem. Equality fails, because the count is *signed*: at the shared edge of two
+triangles every walk of every class cancels, at every order, and its moments are
+`4, 16, 64, 256` for **every** connection. This also shows why
+`rigidity.SIGNATURE_ORDER = 8` is exactly tight: order 8 is the first order at
+which the signature sees a relation *between* two plaquettes.
+
+**A scope correction that came out of chasing that edge.** Putting a simplex's
+transport on its leading edge picks its **minimal vertex** as a basepoint.
+Re-basing inside a *curved* simplex is path dependent, so relabelling the complex
+changes the spectrum — flat connections are unaffected, which is what identifies
+the cause. So the Dirac operator here is an invariant of the **ordered** complex,
+not of the complex. What survives relabelling is exactly the character layer.
+
+**The cubic.** Peel the moments and every `cos(a.θ)` comes out. For classes `a`,
+`b` and their difference, with `u, v, w` the three cosines:
+
+    u² + v² + w² − 2uvw = 1
+
+the **Cayley cubic** — classically Fricke's relation for the inversion quotient of
+a torus. Here it is an exact identity among *measured local spectral moments*,
+residual `4e-15`.
+
+**And now the rigidity theorem is a picture.** The moment map is the quotient
+`T² → T²/±`, the pillowcase, realised as this cubic surface. Its `Z/2` is the deck
+group; its four **nodes** — where the gradient vanishes — are the four two-torsion
+points, which is exactly the degeneracy locus found by sweeping a grid. The
+singular points of a surface from 1897 and the collapse of a spectral ambiguity
+are the same four points.
+
+**A door: an exact count.** If the signature separates orbits — the rigidity
+theorem — then counting signatures is counting orbits, so Burnside gives
+
+    distinct signatures = ( N^r + gcd(2,N)^r ) / 2
+
+with no spectral computation at all. Against brute force: `N = 11 → 61`,
+`N = 12 → 74`, `N = 36 → 650`, exact. A test of the theorem, not of arithmetic:
+if the signature failed to separate orbits the measured count would come in low.
+
+**Novelty.** The Fricke identity, the Cayley cubic, the pillowcase and Burnside
+are classical and named as such. Unverified and mine: the integrality and symmetry
+of the character expansion, the per-class support inequality with its
+cancellation exceptions, the basepoint correction, and the fact that measured
+local spectral moments satisfy the cubic exactly.
+
 ## Reference document
 
 `docs/REFERENCE.md` is the standing write-up: every result this repository
 establishes, what it refutes, and what it leaves open, with the formulas and
-citations in one place. It covers all ten investigation threads, the ledger of
+citations in one place. It covers all the investigation threads, the ledger of
 solved versus open problems, and the failure catalogue.
 
-Read §12 first if you read nothing else — twelve wrong guesses that died in
-computation, the mechanical traps that produced them, and the one pattern behind
-two of them (claims about a *trend* written as tests against a *threshold*).
+Read the failure catalogue first if you read nothing else — nineteen wrong
+guesses that died in computation, the mechanical traps that produced them, and
+the patterns behind them (claims about a *trend* written as tests against a
+*threshold*; results that only broke when they were aggregated).
 
 ## Tests
 
