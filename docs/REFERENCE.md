@@ -4,7 +4,7 @@ A standing record of what this repository establishes, what it refutes, and
 what it leaves open. Every result here is backed by a module and a test suite;
 the code is the authority and this document is the map.
 
-**Status at time of writing:** 4264 tests passing, branch
+**Status at time of writing:** 4321 tests passing, branch
 `claude/tetrahedron-packing-spectral-u7029m`.
 
 **On citations:** author, title and year are reliable. arXiv identifiers were
