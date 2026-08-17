@@ -7,16 +7,18 @@ the code is the authority and this document is the map.
 **Status at time of writing:** 4321 tests passing, branch
 `claude/tetrahedron-packing-spectral-u7029m`.
 
-**On citations:** author, title and year are reliable. arXiv identifiers were
-verified by the repository owner through an external search; `arxiv.org` is
-unreachable from the build environment, so nothing here was checked by the
-code that produced it.
+**On citations:** author, title and year are reliable. arXiv identifiers and
+novelty claims were verified by the repository owner through external searches;
+`arxiv.org` is unreachable from the build environment, so nothing here was
+checked by the code that produced it. Those sweeps have twice overturned a
+framing rather than merely confirming one — see §13 and entries 20–24 of the
+failure catalogue.
 
 ---
 
 ## Method
 
-Three rules, in the order they matter.
+Four rules, in the order they matter.
 
 1. **Literature first, to rule the problem out.** Eight briefs in this
    repository described a frontier that had already moved, or cited a paper
@@ -27,6 +29,15 @@ Three rules, in the order they matter.
    computational agent.
 3. **Every identity computed two ways that share no code.** Exact arithmetic
    wherever the problem admits it — `Fraction`, `sympy`, cyclotomic integers.
+
+A fourth rule earned late, in §13, and stated because it produced more than the
+other three did that week:
+
+4. **When a result is settled, rewrite it in a different language.** Not to check
+   it — to find out what the new language thinks of the *old* work. Recasting the
+   §12 theorem from trigonometry into characters produced four corrections to
+   §10–§12 that no amount of re-checking those sections would have found, and
+   turned a guessed constant into a proved threshold.
 
 The failure catalogue in §15 is the most transferable artifact here.
 
@@ -718,8 +729,23 @@ is invisible to a spectrum:
 Three unrelated mechanisms, one pattern: **a spectrum is built from `|.|²`-type
 data and cannot resolve an orientation.** In each case the invisible thing is
 exactly a `Z/2`. The first two were refutations of external briefs; the third
-fell out of asking the inverse question. That they land on the same group is
-either meaningful or a very tidy accident, and which is not established.
+fell out of asking the inverse question.
+
+**Revised by §13, and revised downwards.** When this was written the shared `Z/2`
+looked like a pattern awaiting an explanation. §13 supplied one — *for the third
+case only*. The flux `Z/2` is the **Weyl group** of `SU(2)`: the moments are
+forced into `2cos θ = tr diag(e^{iθ}, e^{−iθ})`, and walk reversal inverts every
+holonomy at once exactly as the Weyl element conjugates commuting matrices
+simultaneously. That is a specific mechanism belonging to this row and not to the
+other two.
+
+So the honest status is now *worse* for the pattern, not better. A shared group
+with one row explained by a mechanism the other rows do not have is weaker
+evidence of a common cause than a shared group with nothing explained — the
+explanation is a competing account of why this row lands on `Z/2`, and it does
+not generalise. Rows one and two still have no account of their own. **Treat the
+pattern as an open question with one row now spoken for, not as two-thirds of a
+theorem.**
 
 **Scope, and the hypothesis the second proof carries.** Statement one is general
 in every argument. Statement two now has a proof as well as a sweep, but the proof
@@ -1029,9 +1055,10 @@ recovered cosines separate every point. A generic level `θ₁ + θ₂ = c` is *
 isospectral (variation `1e-1`), so the curve is picked out by its half-flux
 condition — the outer four-cycle carries holonomy `−1`.
 
-**The mechanism, derived in exact integers.** `tr(D^k) = Σ_τ M_k(τ)`, so the
-global spectrum is the *sum* of the local measures and the power sums fix the
-characteristic polynomial. Summing the exact local expansions gives `tr(D^k)` as
+### The half-flux mechanism, derived in exact integers
+
+`tr(D^k) = Σ_τ M_k(τ)`, so the global spectrum is the *sum* of the local
+measures and the power sums fix the characteristic polynomial. Summing the exact local expansions gives `tr(D^k)` as
 an integer character expansion, and it comes out **swap-symmetric** — the
 coefficient at `(a₁,a₂)` equals the one at `(a₂,a₁)`, exactly, because exchanging
 the two apexes is an automorphism fixing every simplex's minimal-vertex basepoint.
@@ -1133,7 +1160,12 @@ including the degeneracy characterisation and the disconnected count.** The
 character expansion with its integrality and symmetry, the per-class support
 inequality, the basepoint scope correction, **the Cayley-cubic identity satisfied
 by measured local spectral moments, and the Burnside count of distinguishable
-signatures.**
+signatures** — with its truncated form, its rank-three extension, and the
+identification of the ambiguity as the **Weyl group**. **That the local signature
+strictly dominates the global spectrum** (40 against 74), and **the half-flux
+isospectral curve derived per order in exact integers**, together with the
+diagnostic showing the cause is the non-trivial central element and not
+centrality.
 
 **Open, and stated as open.** The FRW resummation beyond reparameterisations. The
 analytic embedding for Navier–Stokes. The phase tail in the averaging estimate
@@ -1143,7 +1175,13 @@ structure. Three stabilizer laws still five-point fits (`|+⟩ⁿ = n`, line gra
 solid and died at n = 72. **The metric case for spectral persistence stability.**
 **The non-cancellation hypothesis of the general-rank rigidity theorem** — it is
 checkable per complex and checked on every complex used here, but not proved, and
-the flux-blind edge shows it cannot hold unconditionally.
+the flux-blind edge shows it cannot hold unconditionally. **Whether the half-flux
+cancellation is already known in determinant form** — Lieb–Loss and Kenyon's
+`2 − tr(hol)` weight are where to look, and the question is not settled here.
+**Morse theory relative to the zero-curvature fibre** of the curvature map, which
+appears to be unasked and is the best-posed thing left in the pile. **Whether the
+three-chirality `Z/2` is a pattern at all** — §13 explained one row by a mechanism
+the other two do not share, which weakens the case rather than strengthening it.
 
 ---
 
@@ -1206,6 +1244,25 @@ The most transferable artifact in this repository.
     two of the four two-torsion points carry repeated eigenvalues and two carry
     none. The Weyl-degeneracy locus and the eigenvalue-collision locus are
     different sets, and conflating them would have imported the wrong apparatus.
+22. **Over-withdrawing.** Having found the nodes were not the collision points, I
+    wrote that Berkolaiko–Zelenko's apparatus "does not transfer." Wrong in the
+    other direction: conical intersections live over this flux torus on their own
+    account, and at the two two-torsion points where the loci *do* coincide, BZ is
+    exactly what handles them. **A correction that discards more than the error
+    required is a second error**, and it is easier to miss because it feels like
+    rigour.
+23. **"The obstruction doesn't bite."** It bites precisely where it claims to —
+    the global spectrum really does lose a third of the classes. The finding was
+    that it obstructs the *global* invariant and not the *local* one, which is a
+    stronger and more useful claim than evasion. Reaching for "my result escapes
+    the obstruction" when the honest reading is "the obstruction is real and
+    narrower than assumed" understates the work and misdescribes the literature.
+24. **The pillowcase read as the moduli of the connection** → it is the moduli of
+    the **signature**. The character variety of the complex is still a torus; the
+    quotient is by the residual symmetry of the *observable*. Caught before it was
+    written down, but only because the same category error had just been made one
+    level up — which is the useful part: **an error class, once named, is findable
+    in its own neighbourhood.**
 
 **The pattern behind 13–16, and the one worth carrying.** *Every time a result
 was aggregated, the aggregation found a boundary case the local tests had
@@ -1252,20 +1309,27 @@ right each time — a constant had been guessed instead of read off the formula.
 
 The results I would defend hardest are not the most impressive-looking.
 
-**The three chiralities** of §9, §10 and §12 — three unrelated mechanisms
-converging on the same `Z/2`, none of them looked for — and **the α < 5/2
-coincidence** in §4 — two unrelated arguments landing on the same boundary and
-saturating there — are evidence that the geometry tracks something real rather
-than something arranged.
+**The α < 5/2 coincidence** in §4 — two unrelated arguments landing on the same
+boundary and saturating there — is still the cleanest evidence that a geometry
+here tracks something real rather than something arranged.
+
+**The three chiralities** of §9, §10 and §12 used to sit beside it. They no longer
+do, and the demotion is instructive. §13 explained the third `Z/2` as the Weyl
+group of `SU(2)`, which is a mechanism belonging to that row alone. A shared group
+with one row spoken for by a private mechanism is *weaker* evidence of a common
+cause than a shared group with nothing explained — so the better result made the
+pattern claim worse. It is now an open question with one row answered, and it is
+listed that way in the ledger.
 
 **The retraction in §4** (the phase floor), **the refutation in §8** (my own
-`3n+1` law), **the two withdrawals in §11** and **the basepoint correction in
-§13** are the reason to believe the first. A repository that only ever confirms
-its own guesses is measuring nothing.
+`3n+1` law), **the two withdrawals in §11**, and **the four corrections in §13**
+— the basepoint, the `U(1)`/`SL₂` category error, the over-withdrawal, and the
+"doesn't bite" overstatement — are the reason to believe the first. A repository
+that only ever confirms its own guesses is measuring nothing.
 
 ### On §13 in particular
 
-It is the one section that reaches backwards. Three of its findings are about the
+It is the one section that reaches backwards. Four of its findings are about the
 sections before it:
 
 - `SIGNATURE_ORDER = 8` in §12 was chosen by guessing generously. It is exactly
@@ -1276,15 +1340,47 @@ sections before it:
   would have been wrong.
 - The per-class support law, stated as the equality one expects, would have been
   false at one simplex out of eleven.
+- The `Z/2` of §12 is the Weyl group — which answers one row of the
+  three-chirality pattern and, by answering it privately, weakens the pattern.
 
-None of the three came from re-checking those sections. All three came from
-changing language — writing the same theorem in terms of characters instead of
+None of the four came from re-checking those sections. All four came from
+**changing language** — writing the same theorem in characters instead of
 trigonometry — and then finding that the new language had opinions about the old
 results. That is the transferable part, and it is worth more than the cubic.
 
+### Two lessons from how §13 was corrected
+
+Both came from external literature sweeps, and both are about the shape of a
+correction rather than its content.
+
+**A correction can overshoot.** Finding that the four nodes were not the
+eigenvalue-collision points, I concluded the collision apparatus "does not
+transfer." It does — conical intersections live over the flux torus on their own
+account, and at the two points where the loci coincide it is exactly the right
+tool. Discarding more than the error required is a second error, and it is harder
+to notice because it feels like rigour.
+
+**An error class, once named, is findable in its own neighbourhood.** The
+`U(1)`/`SL₂` category error was caught externally. The *same* error one level
+down — reading the pillowcase as the moduli of the connection rather than of the
+signature — was then catchable directly, because the class had a name. Naming the
+kind of mistake bought more than fixing the instance.
+
 ### What is open here, stated plainly
 
-The non-cancellation hypothesis of the general-rank theorem. It is checkable per
-complex, checked on every complex used, and not proved — and the flux-blind edge
-shows it cannot hold unconditionally. Everything else in §13 is either a proof, a
-classical result named as such, or an exact integer count matched by brute force.
+Four things, and they are listed in the ledger:
+
+1. **The non-cancellation hypothesis** of the general-rank theorem — checkable per
+   complex, checked on every complex used, not proved, and the flux-blind edge
+   shows it cannot hold unconditionally.
+2. **Whether the half-flux cancellation is known in determinant form.** Lieb–Loss
+   and Kenyon's `2 − tr(hol)` weight are where to look. The cancellation itself is
+   derived here in exact integers; its provenance is not settled.
+3. **Morse theory relative to the zero-curvature fibre.** Berkolaiko's apparatus
+   lives on the whole flux torus; the character variety is one fibre of the
+   curvature map, and the non-flat connections are the others. Relative Morse
+   theory there appears to be unasked, and is the best-posed question left.
+4. **Whether the three-chirality `Z/2` is a pattern at all.**
+
+Everything else in §13 is a proof, a classical result named as such, or an exact
+integer count matched by brute force.
